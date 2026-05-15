@@ -1,8 +1,9 @@
 /**
  * Add AI Assistant Cosmos DB containers to an existing account + database.
  *
- * Introduces four containers that back the frontend AI Assistant
- * subsystem (phases 0–8 of AI-ASSISTANT-PRODUCTION-READINESS-PLAN.md).
+ * Introduces five containers that back the frontend AI Assistant
+ * subsystem (phases 0–8 of AI-ASSISTANT-PRODUCTION-READINESS-PLAN.md
+ * + Phase 14 v2 autonomous runtime from AI-UNIVERSAL-SURFACE-PLAN.md).
  * Safe to deploy against an existing account — additive only; never
  * modifies or deletes existing containers.  Idempotent.
  *
@@ -20,6 +21,12 @@
  *   4. ai-telemetry-events   — short-retention (30 d) observability
  *                               events from the AI loop (prompt submitted,
  *                               intent parsed, tool invoked, etc).
+ *                               Partition /tenantId.
+ *   5. ai-autopilot          — Phase 14 v2 (2026-05-11): shared container
+ *                               for autopilot recipes AND runs.
+ *                               Discriminated by `entityType`:
+ *                                 - 'autopilot-recipe' (long-lived, no TTL)
+ *                                 - 'autopilot-run' (per-doc 180d TTL)
  *                               Partition /tenantId.
  *
  * TTL values are defaults; production policy should revisit alongside the
@@ -207,6 +214,77 @@ resource aiTelemetryEventsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDa
   }
 }
 
+// ─── ai-autopilot container (Phase 14 v2, 2026-05-11) ─────────────────────────
+//
+// Single container hosting BOTH autopilot recipes and runs, discriminated
+// by the `entityType` field on each document:
+//
+//   - 'autopilot-recipe' — long-lived recipe definitions.  No TTL.
+//   - 'autopilot-run'    — per-fire run state machine.  Per-document
+//                          `ttl: 15552000` (180 d) on each row at
+//                          creation time — Cosmos honors per-doc TTL
+//                          when the container default is -1.
+//
+// Rationale (per the "no schema bloat" rule): recipes and runs share the
+// same partition strategy (/tenantId), tenant lifecycle, and admin
+// surface (`/ai-audit` → Autopilot tab).  Splitting them into two
+// containers buys no operational benefit but doubles the throughput-unit
+// allocation and ops surface.  One container, two entityTypes,
+// per-document TTL.
+resource aiAutopilotContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
+  parent: database
+  name: 'ai-autopilot'
+  properties: {
+    resource: {
+      id: 'ai-autopilot'
+      partitionKey: {
+        paths: ['/tenantId']
+        kind: 'Hash'
+      }
+      // Container default: keep forever.  Runs override per-doc to 180d.
+      defaultTtl: -1
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [{ path: '/*' }]
+        excludedPaths: [
+          { path: '/"_etag"/?' }
+          // Action payloads (recipes + runs) can be large; exclude.
+          { path: '/request/actionPayload/*' }
+          { path: '/pendingApproval/actionPayload/*' }
+        ]
+        compositeIndexes: [
+          // Recipes: listForTenant (entityType+createdAt, tenant-scoped).
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/entityType', order: 'ascending' }
+            { path: '/createdAt', order: 'descending' }
+          ]
+          // Recipes: listAllActiveCronRecipes (cross-tenant sweep).
+          [
+            { path: '/entityType', order: 'ascending' }
+            { path: '/status', order: 'ascending' }
+            { path: '/trigger/kind', order: 'ascending' }
+          ]
+          // Runs: listAwaitingApproval / listRecent.
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/entityType', order: 'ascending' }
+            { path: '/startedAt', order: 'descending' }
+          ]
+          // Runs: findByIdempotencyKey — duplicate-delivery probe on
+          // every Service Bus message receipt.  Hot path.
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/entityType', order: 'ascending' }
+            { path: '/triggeredBy/idempotencyKey', order: 'ascending' }
+          ]
+        ]
+      }
+    }
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 @description('Resource IDs of the AI Assistant containers.')
@@ -215,4 +293,5 @@ output containerIds object = {
   aiConversations: aiConversationsContainer.id
   aiFeatureFlags: aiFeatureFlagsContainer.id
   aiTelemetryEvents: aiTelemetryEventsContainer.id
+  aiAutopilot: aiAutopilotContainer.id
 }

@@ -22,6 +22,8 @@ import {
 } from '../types/qc-management.js';
 import { QCExecutionContext, QCChecklist } from '../types/qc-checklist.types.js';
 import { ApiResponse } from '../types/index.js';
+import type { UserProfile } from '../types/authorization.types.js';
+import { normalizePrivilegedRoleAlias } from '../utils/auth-normalization.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -31,7 +33,26 @@ export interface AuthenticatedRequest extends Request {
     permissions: string[];
     organizationId?: string;
     clientId?: string;
+    tenantId?: string;
   };
+  userProfile?: UserProfile;
+}
+
+type QCExecutionAccessUser = {
+  id?: string;
+  role?: UserProfile['role'];
+  email?: string;
+  clientId?: string;
+  organizationId?: string;
+  tenantId?: string;
+};
+
+function normalizeLegacyRole(role: string | undefined): UserProfile['role'] | undefined {
+  if (!role) {
+    return undefined;
+  }
+
+  return normalizePrivilegedRoleAlias(role) ?? undefined;
 }
 
 export interface QCExecutionSession {
@@ -199,7 +220,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasChecklistExecuteAccess(req.user, checklist)) {
+      if (!this.hasChecklistExecuteAccess(this.getAccessUser(req), checklist)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_EXECUTE_ACCESS_DENIED', 'Access denied to execute this checklist')
@@ -402,7 +423,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasChecklistExecuteAccess(req.user, checklist)) {
+      if (!this.hasChecklistExecuteAccess(this.getAccessUser(req), checklist)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_EXECUTE_ACCESS_DENIED', 'Access denied to execute this checklist')
@@ -502,7 +523,7 @@ export class QCExecutionController {
             continue;
           }
 
-          if (!this.hasChecklistExecuteAccess(req.user, checklist)) {
+          if (!this.hasChecklistExecuteAccess(this.getAccessUser(req), checklist)) {
             validationResults.push({
               index: i,
               valid: false,
@@ -664,7 +685,7 @@ export class QCExecutionController {
       }
 
       // Check access
-      if (!this.hasSessionAccess(req.user, session)) {
+      if (!this.hasSessionAccess(this.getAccessUser(req), session)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_SESSION_ACCESS_DENIED', 'Access denied to this execution session')
@@ -727,7 +748,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasSessionAccess(req.user, session)) {
+      if (!this.hasSessionAccess(this.getAccessUser(req), session)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_SESSION_ACCESS_DENIED', 'Access denied to this execution session')
@@ -791,7 +812,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasSessionAccess(req.user, session)) {
+      if (!this.hasSessionAccess(this.getAccessUser(req), session)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_SESSION_ACCESS_DENIED', 'Access denied to this execution session')
@@ -867,7 +888,7 @@ export class QCExecutionController {
       let sessions = Array.from(this.activeSessions.values());
 
       // Filter by user access
-      sessions = sessions.filter(session => this.hasSessionAccess(req.user, session));
+      sessions = sessions.filter(session => this.hasSessionAccess(this.getAccessUser(req), session));
 
       // Apply filters
       if (status) {
@@ -949,7 +970,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasSessionAccess(req.user, session)) {
+      if (!this.hasSessionAccess(this.getAccessUser(req), session)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_SESSION_ACCESS_DENIED', 'Access denied to cancel this execution')
@@ -1020,7 +1041,7 @@ export class QCExecutionController {
         return;
       }
 
-      if (!this.hasChecklistExecuteAccess(req.user, checklist)) {
+      if (!this.hasChecklistExecuteAccess(this.getAccessUser(req), checklist)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_EXECUTE_ACCESS_DENIED', 'Access denied to execute this checklist')
@@ -1184,7 +1205,7 @@ export class QCExecutionController {
       let sessions = Array.from(this.activeSessions.values());
 
       // Filter by user access
-      sessions = sessions.filter(session => this.hasSessionAccess(req.user, session));
+      sessions = sessions.filter(session => this.hasSessionAccess(this.getAccessUser(req), session));
 
       // Apply filters
       if (checklistId) {
@@ -1265,7 +1286,7 @@ export class QCExecutionController {
 
       // Filter by user access and time range
       sessions = sessions.filter(session => 
-        this.hasSessionAccess(req.user, session) && 
+        this.hasSessionAccess(this.getAccessUser(req), session) && 
         session.startedAt >= cutoffDate
       );
 
@@ -1542,12 +1563,33 @@ export class QCExecutionController {
     return analysis;
   }
 
-  private hasChecklistExecuteAccess(user: any, checklist: any): boolean {
+  private getAccessUser(req: AuthenticatedRequest): QCExecutionAccessUser | undefined {
+    if (req.userProfile) {
+      return req.userProfile as QCExecutionAccessUser;
+    }
+
+    if (!req.user) {
+      return undefined;
+    }
+
+    const canonicalRole = normalizeLegacyRole(req.user.role);
+
+    return {
+      id: req.user.id,
+      email: req.user.email,
+      ...(canonicalRole !== undefined ? { role: canonicalRole } : {}),
+      ...(req.user.clientId ? { clientId: req.user.clientId } : {}),
+      ...(req.user.organizationId ? { organizationId: req.user.organizationId } : {}),
+      ...(req.user.tenantId ? { tenantId: req.user.tenantId } : {}),
+    };
+  }
+
+  private hasChecklistExecuteAccess(user: QCExecutionAccessUser | undefined, checklist: any): boolean {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'system') return true;
-    // Must have qc_execute permission to run a QC checklist
-    const permissions: string[] = user.permissions || [];
-    if (!permissions.includes('*') && !permissions.includes('qc_execute')) return false;
+    if (user.role === 'admin') return true;
+    // Coarse capability is enforced by route-level authorization middleware.
+    // Controller-level checks keep checklist execution scoped to the caller's
+    // accessible client or organization boundary.
     // Unrestricted checklists (no clientId/organizationId) are globally executable
     if (!checklist.clientId && !checklist.organizationId) return true;
     if (checklist.clientId && user.clientId && checklist.clientId === user.clientId) return true;
@@ -1555,9 +1597,9 @@ export class QCExecutionController {
     return false;
   }
 
-  private hasSessionAccess(user: any, session: QCExecutionSession): boolean {
+  private hasSessionAccess(user: QCExecutionAccessUser | undefined, session: QCExecutionSession): boolean {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'system') return true;
+    if (user.role === 'admin') return true;
     if (session.executedBy === user.id) return true;
     // Add additional access logic as needed
     return false;

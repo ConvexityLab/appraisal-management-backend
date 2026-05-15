@@ -175,7 +175,7 @@ interface EngagementLoanProduct {
   productType?: string;
   [key: string]: unknown;
 }
-interface EngagementLoan {
+interface EngagementProperty {
   products?: EngagementLoanProduct[];
   [key: string]: unknown;
 }
@@ -183,7 +183,7 @@ interface EngagementDoc {
   id: string;
   tenantId?: string;
   engagementNumber?: string;
-  loans?: EngagementLoan[];
+  loans?: EngagementProperty[];
   [key: string]: unknown;
 }
 

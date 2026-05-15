@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comparable Sale Service — Phase R1.4
  *
  * Manages PropertyComparableSale documents in the `comparable-sales` container.
@@ -24,7 +24,7 @@
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { PropertyRecordService } from './property-record.service.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
+import { PropertyRecordType } from '@l1/shared-types';
 import type {
   PropertyComparableSale,
   ComparableSaleSearchFilters,

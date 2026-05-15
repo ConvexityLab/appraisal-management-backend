@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HtmlRenderStrategy
  *
  * Compiles a Handlebars template + renders it to PDF via Playwright headless Chromium.
@@ -21,7 +21,8 @@ import { chromium } from 'playwright';
 import { IReportStrategy, ReportGenerationContext } from './report-strategy.interface';
 import { BlobStorageService } from '../../blob-storage.service';
 import { IFieldMapper } from '../field-mappers/field-mapper.interface';
-import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
+import type { EffectiveReportConfig } from '@l1/shared-types';
 
 /** Container in Azure Blob where Handlebars templates (.hbs) are stored. */
 const PDF_TEMPLATES_CONTAINER = 'pdf-report-templates';
@@ -32,6 +33,26 @@ const PDF_TEMPLATES_CONTAINER = 'pdf-report-templates';
 Handlebars.registerHelper('add', (a: unknown, b: unknown) => Number(a) + Number(b));
 Handlebars.registerHelper('sub', (a: unknown, b: unknown) => Number(a) - Number(b));
 Handlebars.registerHelper('eq',  (a: unknown, b: unknown) => a === b);
+
+/**
+ * `{{section_visible effectiveConfig "section_key"}}` — R-18
+ *
+ * Returns `true` when the named section is visible per the merged config.
+ * Defaults to `true` when `effectiveConfig` is absent (graceful degradation).
+ *
+ * Usage in templates:
+ *   {{#if (section_visible effectiveConfig "cost_approach")}}
+ *     {{> cost_approach_partial}}
+ *   {{/if}}
+ */
+Handlebars.registerHelper(
+  'section_visible',
+  (config: EffectiveReportConfig | null | undefined, sectionKey: string): boolean => {
+    if (!config?.sections) return true;
+    const section = config.sections.find((s) => s.key === sectionKey);
+    return section?.visible ?? true;
+  },
+);
 
 /**
  * `{{citeHtml ref}}` — renders an inline citation for html-render templates.
@@ -126,9 +147,63 @@ export class HtmlRenderStrategy implements IReportStrategy {
     // 3. Resolve photos → embed as data URIs in context
     const contextWithPhotos = await this._embedPhotos(templateContext, canonicalDoc);
 
-    // 4. Compile + render HTML
+    // 4. Inject effectiveConfig so templates can call {{section_visible}} (R-18)
+    //    and register client-branded Handlebars partials from templateBlocks (R-21).
+    await this._registerTemplateBlockPartials(ctx.effectiveConfig?.templateBlocks ?? {});
+
+    const finalContext: Record<string, unknown> = {
+      ...contextWithPhotos,
+      effectiveConfig: ctx.effectiveConfig ?? null,
+      // `branding` is a top-level shortcut so templates can write {{branding.logoUrl}}
+      // without needing to navigate through effectiveConfig.
+      branding: ctx.effectiveConfig?.reportBranding ?? null,
+    };
+
+    // 5. Compile + render HTML
     const compiledTemplate = Handlebars.compile(hbsSource);
-    return compiledTemplate(contextWithPhotos);
+    return compiledTemplate(finalContext);
+  }
+
+  /**
+   * Downloads each blob listed in `templateBlocks` and registers it as a
+   * Handlebars partial under the block key (R-21).
+   *
+   * Blob naming convention: `{clientId}/partials/{blockKey}.hbs`
+   * The blob name stored in `templateBlocks` is the full path relative to the
+   * `pdf-report-templates` container.
+   *
+   * Registering is idempotent — re-registering replaces the previous partial.
+   * Only called when `templateBlocks` is non-empty, so the fast path (no
+   * overrides) incurs zero Blob round-trips.
+   */
+  private async _registerTemplateBlockPartials(
+    templateBlocks: Record<string, string>,
+  ): Promise<void> {
+    const entries = Object.entries(templateBlocks);
+    if (entries.length === 0) return;
+
+    await Promise.all(
+      entries.map(async ([blockKey, blobName]) => {
+        try {
+          const { readableStream } = await this.blobStorage.downloadBlob(
+            PDF_TEMPLATES_CONTAINER,
+            blobName,
+          );
+          const source = await HtmlRenderStrategy._streamToString(readableStream);
+          Handlebars.registerPartial(blockKey, source);
+        } catch (err) {
+          // A missing branded partial is non-fatal: the base template's
+          // fallback {{else}} block (or inlined content) will render instead.
+          // Log and continue — do not abort report generation.
+          const message = err instanceof Error ? err.message : String(err);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[HtmlRenderStrategy] Could not load partial "${blockKey}" from blob ` +
+            `"${blobName}": ${message}. Falling back to base template content.`,
+          );
+        }
+      }),
+    );
   }
 
   private async _embedPhotos(

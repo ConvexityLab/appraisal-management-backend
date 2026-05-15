@@ -244,6 +244,18 @@ export class AuthorizationMiddleware {
           // Error propagates to the outer catch → 500 (not silently swallowed).
           const usersContainer = this.dbService.getContainer('users');
           await usersContainer.items.upsert(autoProfile);
+          await this.dbService.upsertDocument('audit-trail', {
+            id: `user-auto-provisioned-${req.user.id}-${Date.now()}`,
+            orderId: 'system',
+            type: 'user-auto-provisioned',
+            actorUserId: req.user.id,
+            userId: req.user.id,
+            tenantId,
+            email: autoProfile.email,
+            role: autoProfile.role,
+            timestamp: new Date().toISOString(),
+            source: 'authorization-middleware',
+          });
           req.userProfile = autoProfile;
           next();
           return;
@@ -522,9 +534,13 @@ export class AuthorizationMiddleware {
       // Map resource types to container names
       const containerMap: Record<string, string> = {
         order: 'orders',
+        engagement: 'engagements',
+        client: 'clients',
         client_order: 'client-orders',
         vendor_order: 'orders',
         vendor: 'vendors',
+        appraiser: 'vendors',
+        document: 'documents',
         qc_review: 'qc_reviews',
         qc_queue: 'qc_queues',
         revision: 'revisions',

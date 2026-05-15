@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DecompositionRule — Cosmos-stored configuration that maps a ClientOrder
  * (productType + scope) to the set of VendorOrders that should be created.
  *
@@ -20,7 +20,7 @@
 
 import type { ProductType } from './product-catalog.js';
 import type { ReviewFlagCondition } from './review-tape.types.js';
-import type { CanonicalReportDocument } from './canonical-schema.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 
 // ─── Discriminator + container ───────────────────────────────────────────────
 
@@ -53,6 +53,14 @@ export interface VendorOrderTemplate {
    * reference siblings within the same rule.
    */
   templateKey?: string;
+  /**
+   * Phase N4 — id of the DecompositionRule that emitted this template.
+   * `composeFromRule` stamps this for every emitted template (static +
+   * selector + conditional). Forwarded onto the resulting VendorOrder
+   * doc so Decision Engine analytics can aggregate "which decomposition
+   * rule produced this vendor order" without joining containers.
+   */
+  decompositionRuleId?: string;
 }
 
 // ─── Rule ────────────────────────────────────────────────────────────────────

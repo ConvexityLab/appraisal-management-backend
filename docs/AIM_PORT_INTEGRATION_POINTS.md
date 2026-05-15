@@ -65,6 +65,25 @@ For outbound traffic:
 
 This means the connection is not hardcoded in request handlers; it is determined from the active vendor-connection configuration.
 
+### Connection management surface
+
+Vendor connections are managed through the authenticated admin API:
+
+- `GET /api/vendor-integrations/connections`
+- `POST /api/vendor-integrations/connections`
+- `GET /api/vendor-integrations/connections/:id`
+- `PUT /api/vendor-integrations/connections/:id`
+- `DELETE /api/vendor-integrations/connections/:id` (deactivates the connection)
+
+For AIM-Port, each connection must explicitly define:
+- `inboundIdentifier`
+- `credentials.inboundApiKeySecretName`
+- `credentials.outboundApiKeySecretName`
+- `credentials.outboundClientId`
+- `outboundEndpointUrl`
+
+If no active connection is configured, inbound requests now fail as a configuration error instead of being reported as a route-level 404.
+
 ---
 
 ## Where Requests Are Initiated
@@ -359,6 +378,8 @@ The following outbound AIM-Port request types are implemented when our platform 
 | `vendor.file.received_no_completion` | `DocsNoCompletionRequest` |
 | `vendor.order.completed` | `OrderFilesRequest` |
 | `vendor.message.received` | `MessageRequest` |
+
+> **Revision requests:** `RevisionRequest` is documented in the AIM-Port spec (v2.9) as "Client to Vendor" direction only — i.e. AIM-Port/lender sends it TO us (inbound). There is no "Vendor to Client" revision event. To surface a revision request from our QC team back through AIM-Port, use `MessageRequest` (which IS bi-directional per spec p.8).
 
 ---
 

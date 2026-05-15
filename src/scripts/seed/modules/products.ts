@@ -11,6 +11,13 @@ import { PRODUCT_IDS } from '../seed-ids.js';
 
 const CONTAINER = 'products';
 
+const DEFAULT_GRADE_LEVELS = [
+  { key: 'trainee',    label: 'Trainee',    scoreBonus: 0  },
+  { key: 'proficient', label: 'Proficient', scoreBonus: 5  },
+  { key: 'expert',     label: 'Expert',     scoreBonus: 10 },
+  { key: 'lead',       label: 'Lead',       scoreBonus: 15 },
+] as const;
+
 function buildProducts(tenantId: string, now: string): Record<string, unknown>[] {
   return [
     {
@@ -20,6 +27,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 450, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 20,
       turnTimeDays: 5, rushTurnTimeDays: 2,
       requiredCapabilities: ['can_sign_reports', 'uad36_compliant'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -29,6 +37,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 275, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 18,
       turnTimeDays: 3, rushTurnTimeDays: 1,
       requiredCapabilities: ['can_sign_reports'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -38,6 +47,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 150, rushFeeMultiplier: 1.4, techFee: 15, feeSplitPercent: 15,
       turnTimeDays: 2, rushTurnTimeDays: 1,
       requiredCapabilities: ['can_sign_reports', 'desktop_qualified'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -47,6 +57,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 500, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 20,
       turnTimeDays: 6, rushTurnTimeDays: 3,
       requiredCapabilities: ['can_sign_reports', 'uad36_compliant'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -56,6 +67,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 650, rushFeeMultiplier: 1.5, techFee: 30, feeSplitPercent: 22,
       turnTimeDays: 7, rushTurnTimeDays: 4,
       requiredCapabilities: ['can_sign_reports', 'uad36_compliant', 'complex_assignments'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -65,6 +77,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 325, rushFeeMultiplier: 1.4, techFee: 20, feeSplitPercent: 18,
       turnTimeDays: 4, rushTurnTimeDays: 2,
       requiredCapabilities: ['can_sign_reports'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -74,6 +87,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 125, rushFeeMultiplier: 1.3, techFee: 10, feeSplitPercent: 12,
       turnTimeDays: 2, rushTurnTimeDays: 1,
       requiredCapabilities: ['can_sign_reports', 'desktop_qualified'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -83,6 +97,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       defaultFee: 95, rushFeeMultiplier: 1.0, techFee: 10, feeSplitPercent: 10,
       turnTimeDays: 3, rushTurnTimeDays: 3,
       requiredCapabilities: ['can_sign_reports'],
+      gradeLevels: DEFAULT_GRADE_LEVELS,
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
   ];

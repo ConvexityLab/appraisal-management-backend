@@ -35,26 +35,47 @@ export function handleValidationErrors(req: Request, res: Response, next: NextFu
 /**
  * Validates the body of POST /api/orders.
  *
- * Required fields: propertyAddress (object with city/state/zipCode),
+ * Required fields: canonical propertyId or embedded propertyAddress,
  * clientId, orderType, productType, dueDate.
  * Optional: priority, specialInstructions, propertyDetails, assignedVendorId.
  */
 export function validateCreateOrder() {
   return [
+    body().custom((value) => {
+      const payload = (value ?? {}) as { propertyAddress?: unknown; propertyId?: unknown };
+      if (payload.propertyAddress == null && payload.propertyId == null) {
+        throw new Error('propertyAddress or propertyId is required');
+      }
+      return true;
+    }),
+    body('propertyId')
+      .optional()
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('propertyId must be a non-empty string'),
     body('propertyAddress')
+      .optional()
       .isObject()
-      .withMessage('propertyAddress is required and must be an object'),
+      .withMessage('propertyAddress must be an object when provided'),
+    body('propertyAddress.streetAddress')
+      .if(body('propertyAddress').exists())
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('propertyAddress.streetAddress is required when propertyAddress is provided'),
     body('propertyAddress.city')
+      .if(body('propertyAddress').exists())
       .isString()
       .isLength({ min: 2 })
-      .withMessage('propertyAddress.city is required (min 2 characters)'),
+      .withMessage('propertyAddress.city is required when propertyAddress is provided (min 2 characters)'),
     body('propertyAddress.state')
+      .if(body('propertyAddress').exists())
       .isString()
       .isLength({ min: 2, max: 2 })
-      .withMessage('propertyAddress.state must be a 2-letter code'),
+      .withMessage('propertyAddress.state must be a 2-letter code when propertyAddress is provided'),
     body('propertyAddress.zipCode')
+      .if(body('propertyAddress').exists())
       .matches(/^\d{5}(-\d{4})?$/)
-      .withMessage('propertyAddress.zipCode must be a valid US ZIP code'),
+      .withMessage('propertyAddress.zipCode must be a valid US ZIP code when propertyAddress is provided'),
     body('clientId')
       .isString()
       .isLength({ min: 1 })

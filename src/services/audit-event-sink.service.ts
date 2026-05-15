@@ -392,7 +392,7 @@ export class AuditEventSinkService {
     // when the VendorOrder doesn't carry it.
     if (data.orderId && !data.orderNumber) {
       lookups.push(
-        this.contextLoader.loadByVendorOrderId(data.orderId)
+        this.contextLoader.loadByVendorOrderId(data.orderId, { includeProperty: true })
           .then(ctx => {
             const order = ctx.vendorOrder as { orderNumber?: string; productType?: string };
             if (order?.orderNumber) {

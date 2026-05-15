@@ -8,6 +8,7 @@ import { DocumentMetadata, DocumentListQuery, DocumentUpdateRequest } from '../t
 import { ApiResponse } from '../types/index';
 import { EventCategory } from '../types/events.js';
 import { buildManualDraftSourceIdentity, extendIntakeSourceIdentity } from '../types/intake-source.types.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 export class DocumentService {
   /** Cosmos container for document metadata */
@@ -150,7 +151,8 @@ export class DocumentService {
    */
   async listDocuments(
     tenantId: string,
-    query?: DocumentListQuery
+    query?: DocumentListQuery,
+    authorizationFilter?: QueryFilter,
   ): Promise<ApiResponse<DocumentMetadata[]>> {
     try {
       const limit = query?.limit || 50;
@@ -180,6 +182,11 @@ export class DocumentService {
       if (query?.entityId) {
         sqlQuery += ` AND c.entityId = @entityId`;
         parameters.push({ name: '@entityId', value: query.entityId });
+      }
+
+      if (authorizationFilter) {
+        sqlQuery += ` AND (${authorizationFilter.sql})`;
+        parameters.push(...authorizationFilter.parameters);
       }
 
       sqlQuery += ` ORDER BY c.uploadedAt DESC OFFSET @offset LIMIT @limit`;

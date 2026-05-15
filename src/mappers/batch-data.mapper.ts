@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BatchData Vendor Mapper
  *
  * Maps the legacy "BatchData" vendor property shape (as stored in existing
@@ -44,7 +44,7 @@ import {
   type MlsExtension,
   type PropertyPhoto,
   type VendorMapper,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPER: safe accessors (vendor data is untyped)

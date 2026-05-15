@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Seed Module: Reports
  *
  * Seeds the `reporting` Cosmos container with canonical-shaped CanonicalReportDocument
@@ -25,7 +25,7 @@ import {
   type CanonicalNeighborhood,
   type CanonicalUtilities,
   type MlsExtension,
-} from '../../../types/canonical-schema.js';
+} from '@l1/shared-types';
 
 import {
   type SeedModule,

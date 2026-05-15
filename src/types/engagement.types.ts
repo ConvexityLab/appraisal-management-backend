@@ -19,9 +19,9 @@
  *                 └── vendorOrderIds (0..N)       — what we ordered from vendors
  *
  * Legacy naming retained for back-compat:
- *   `EngagementLoan` is now a deprecated type alias of `EngagementProperty`.
+ *   `EngagementProperty` is now a deprecated type alias of `EngagementProperty`.
  *   `Engagement.loans` is a deprecated read-alias of `Engagement.properties`.
- *   `EngagementLoanStatus` is a deprecated enum alias of `EngagementPropertyStatus`.
+ *   `EngagementPropertyStatus` is a deprecated enum alias of `EngagementPropertyStatus`.
  *   These will be removed in slice 8k once all consumers have migrated.
  *
  * Lifecycles:
@@ -32,6 +32,7 @@
 
 import { OrderPriority, PropertyDetails } from './order-management.js';
 import type { ProductType } from './product-catalog.js';
+import type { QueryFilter } from './authorization.types.js';
 
 // ── Re-exports for consumers who only import from engagement.types ────────────
 export { OrderPriority } from './order-management.js';
@@ -78,14 +79,6 @@ export enum EngagementPropertyStatus {
   DELIVERED   = 'DELIVERED',    // Deliverable sent to lender
   CANCELLED   = 'CANCELLED',    // Property removed from engagement
 }
-
-/**
- * @deprecated Use `EngagementPropertyStatus`. The old name was
- * loan-anchored; the entity is property-anchored. Will be removed in slice 8k.
- */
-export const EngagementLoanStatus = EngagementPropertyStatus;
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export type EngagementLoanStatus = EngagementPropertyStatus;
 
 /**
  * The status of a single client order within an engagement property.
@@ -165,7 +158,25 @@ export interface EngagementClientOrder {
   fee?: number | undefined;
   /** Lender-facing due date for this client order */
   dueDate?: string | undefined; // ISO date
-  /** VendorOrder IDs that contribute to fulfilling this client order (0-N) */
+  /**
+   * @deprecated Eventually-consistent denormalized cache. NOT a source of truth.
+   *
+   * Source of truth for "which VendorOrders fulfill this client order" is the
+   * `orders` container, queried by engagementId (+ optionally engagementPropertyId
+   * / clientOrderId). The engagement-primacy guard enforces those linkage
+   * fields on every VendorOrder write.
+   *
+   * This embedded array can drift on partial-failure writes (see
+   * client-order.service.ts: "placeClientOrder is NOT atomic"). All authoritative
+   * backend reads (removeLoan guard, getDocuments, getCommunications,
+   * engagement-lifecycle auto-close) now query the orders container directly.
+   * Reconciliation of historical drift is performed by
+   * src/scripts/backfill-engagement-vendor-order-ids.ts.
+   *
+   * The field is retained on the schema for backwards compat until every
+   * remaining writer (frontend CreateVendorOrderDialog.linkOrder, backend
+   * addVendorOrderToClientOrder) has been removed.
+   */
   vendorOrderIds: string[];
 }
 
@@ -194,11 +205,18 @@ export interface EngagementProperty {
   id: string;
 
   // ── Property identity (load-bearing) ────────────────────────────────────
-  /** FK → PropertyRecord.id — the canonical property record for this collateral. */
-  propertyId?: string;
+  /**
+   * FK → PropertyRecord.id — the canonical property record for this collateral.
+   * REQUIRED per the design model: every EngagementProperty anchors on a
+   * PropertyRecord. Construction sites resolve propertyId via
+   * PropertyRecordService.resolveOrCreate BEFORE calling buildLoan().
+   */
+  propertyId: string;
   /**
    * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
-   * Retained as a display cache during Phase R0–R2 migration.
+    * Retained as a thin display/request cache during Phase R0–R2 migration.
+    * This is never canonical property truth and should avoid copying derived
+    * physical facts that already live on `PropertyRecord.currentCanonical`.
    */
   property: PropertyDetails;
 
@@ -233,11 +251,6 @@ export interface EngagementProperty {
   clientOrders: EngagementClientOrder[];
 }
 
-/**
- * @deprecated Use `EngagementProperty`. The old name was loan-anchored; the
- * entity is property-anchored. Will be removed in slice 8k.
- */
-export type EngagementLoan = EngagementProperty;
 
 /**
  * Engagement — the aggregate root for all valuation work.
@@ -303,8 +316,13 @@ export interface Engagement {
 // REQUEST / RESPONSE SHAPES
 // =============================================================================
 
-/** Shape for each property entry when creating an engagement. */
-export type CreateEngagementPropertyRequest = Omit<EngagementProperty, 'id' | 'status' | 'clientOrders'> & {
+/**
+ * Shape for each property entry when creating an engagement.
+ * Note: `propertyId` is omitted — the service resolves it via
+ * PropertyRecordService.resolveOrCreate from the property address before
+ * constructing the EngagementProperty. Callers MUST NOT supply propertyId.
+ */
+export type CreateEngagementPropertyRequest = Omit<EngagementProperty, 'id' | 'status' | 'clientOrders' | 'propertyId'> & {
   clientOrders: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>[];
 };
 
@@ -370,6 +388,7 @@ export interface EngagementListRequest {
   pageSize?: number | undefined;
   sortBy?: keyof Engagement | undefined;
   sortDirection?: 'ASC' | 'DESC' | undefined;
+  authorizationFilter?: QueryFilter | undefined;
 }
 
 export interface EngagementListResponse {

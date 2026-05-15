@@ -272,7 +272,10 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
   const router = Router();
   const logger = new Logger('EngagementAuditController');
 
-  const read = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'read')] : [];
+  const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+  const readResource = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorizeResource('engagement', 'read', { resourceIdParam: 'id' })]
+    : [];
 
   // ── Helper: query all events for an engagement ────────────────────────────
 
@@ -346,7 +349,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
 
   // ── GET /:id/audit ────────────────────────────────────────────────────────
 
-  router.get('/:id/audit', ...read, async (req: Request, res: Response) => {
+  router.get('/:id/audit', ...readResource, async (req: Request, res: Response) => {
     const id = req.params['id'] as string;
     const { page, pageSize, category, severity, eventType, search } = req.query as Record<string, string>;
 
@@ -389,7 +392,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
 
   // ── GET /:id/timeline ─────────────────────────────────────────────────────
 
-  router.get('/:id/timeline', ...read, async (req: Request, res: Response) => {
+  router.get('/:id/timeline', ...readResource, async (req: Request, res: Response) => {
     const id = req.params['id'] as string;
 
     try {
@@ -433,7 +436,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
   // The client opens this connection and receives events as they're written
   // to engagement-audit-events. Polls Cosmos every 2s for new events.
 
-  router.get('/:id/events/stream', async (req: Request, res: Response) => {
+  router.get('/:id/events/stream', ...readResource, async (req: Request, res: Response) => {
     const engagementId = req.params['id'] as string;
     const tenantId = (req as any).user?.tenantId;
     if (!tenantId) {
@@ -514,7 +517,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
   // Writes a `human.intervention` audit event and dispatches to the relevant service.
 
   const write = authzMiddleware
-    ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'update')]
+    ? [...loadProfile, authzMiddleware.authorizeResource('engagement', 'update', { resourceIdParam: 'id' })]
     : [];
 
   router.post('/:id/intervene', ...write, async (req: Request, res: Response) => {

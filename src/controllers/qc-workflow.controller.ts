@@ -16,11 +16,17 @@ import { EscalationWorkflowService } from '../services/escalation-workflow.servi
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AxiomService } from '../services/axiom.service.js';
+import {
+  VendorOrderScorecardService,
+  ScorecardError,
+} from '../services/vendor-order-scorecard.service.js';
+import { AuditTrailService } from '../services/audit-trail.service.js';
 import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js';
 import { FieldOverride } from '../types/final-report.types.js';
 import { FinalReportService } from '../services/final-report.service.js';
 import { Logger } from '../utils/logger.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 const logger = new Logger();
 
@@ -31,22 +37,47 @@ const escalationService = new EscalationWorkflowService();
 const slaService = new SLATrackingService();
 const dbService = new CosmosDbService();
 const axiomService = new AxiomService();
+const scorecardAuditService = new AuditTrailService(dbService);
+const scorecardService = new VendorOrderScorecardService(dbService, scorecardAuditService);
 
 export function createQCWorkflowRouter(authzMiddleware?: AuthorizationMiddleware): express.Router {
   const router = express.Router();
 
+  type AuthorizedRequest = Request & { authorizationFilter?: QueryFilter };
+
+  const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+
   // Guard arrays — empty when authzMiddleware is absent (e.g. test/legacy mode)
-  const qcQueueRead     = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'read')]    : [];
-  const qcQueueUpdate   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'update')]  : [];
-  const qcQueueExecute  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'execute')] : [];
-  const revisionRead    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'read')]    : [];
-  const revisionCreate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'create')]  : [];
-  const revisionUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'update')]  : [];
-  const escalationRead  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','read')]    : [];
-  const escalationCreate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','create')]  : [];
-  const escalationUpdate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','update')]  : [];
-  const analyticsRead   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('analytics', 'read')]    : [];
-  const qcReviewUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'update')]  : [];
+  const qcQueueRead     = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue',  'read')]    : [];
+  // Collection-level reads: get coarse role check + a query filter to scope by parent order
+  const qcQueueReadScoped = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read'), authzMiddleware.authorizeQuery('order', 'read')]
+    : [];
+  // Per-resource reads where :orderId is in the URL — resolve auth against the parent order directly
+  const qcQueueReadForDirectOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read'), authzMiddleware.authorizeResource('order', 'read', { resourceIdParam: 'orderId' })]
+    : [];
+  const qcQueueUpdate   = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue',  'update')]  : [];
+  // Updates on queue items — resolve parent orderId from the queue item and check write auth against it
+  const qcQueueUpdateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'update'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const qcQueueExecute  = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue',  'execute')] : [];
+  const revisionRead    = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('revision',  'read')]    : [];
+  const revisionReadScoped = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('revision', 'read'), authzMiddleware.authorizeQuery('order', 'read')]
+    : [];
+  const revisionCreate  = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('revision',  'create')]  : [];
+  const revisionUpdate  = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('revision',  'update')]  : [];
+  const escalationRead  = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('escalation','read')]    : [];
+  const escalationCreate= authzMiddleware ? [...loadProfile, authzMiddleware.authorize('escalation','create')]  : [];
+  // Escalation creation — parent orderId arrives in the body; copy to params, then check write auth on the order
+  const escalationCreateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('escalation', 'create'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const escalationUpdate= authzMiddleware ? [...loadProfile, authzMiddleware.authorize('escalation','update')]  : [];
+  const analyticsRead   = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('analytics', 'read')]    : [];
+  const qcReviewUpdate  = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_review', 'update')]  : [];
 
   /** Lazy-init: resolved once for the controller-level CosmosDB instance */
 let _controllerDbInit: Promise<void> | null = null;
@@ -74,6 +105,105 @@ const handleValidationErrors = (req: Request, res: Response, next: Function): vo
   next();
 };
 
+// Copy a string field from req.body into req.params so the downstream
+// authorizeResource middleware (which reads from params) can pick it up.
+const copyBodyStringToParam = (bodyField: string, paramName: string) =>
+  (req: Request, _res: Response, next: Function): void => {
+    const value = req.body?.[bodyField];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      req.params[paramName] = value;
+    }
+    next();
+  };
+
+// For QC-workflow resources (queue items, revisions) the auth boundary is the
+// PARENT order. This middleware loads the resource, extracts its orderId, and
+// surfaces it as `orderIdForAuth` so authorizeResource('order', ...) can run.
+const loadOrderIdFromDocument = (containerName: string, resourceIdParam: string, label: string) =>
+  async (req: Request, res: Response, next: Function): Promise<void> => {
+    try {
+      await ensureControllerDb();
+
+      const resourceId = req.params[resourceIdParam] ?? req.body?.[resourceIdParam];
+      if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+        res.status(400).json({ success: false, error: `${resourceIdParam} is required` });
+        return;
+      }
+
+      const document = await dbService.getDocument<any>(containerName, resourceId);
+      if (!document) {
+        res.status(404).json({ success: false, error: `${label} not found` });
+        return;
+      }
+
+      if (typeof document.orderId !== 'string' || document.orderId.trim().length === 0) {
+        logger.error('QC workflow resource is missing parent orderId', { containerName, resourceId, label });
+        res.status(500).json({
+          success: false,
+          error: `${label} is missing parent order linkage`,
+        });
+        return;
+      }
+
+      req.params.orderIdForAuth = document.orderId;
+      next();
+    } catch (error) {
+      logger.error('Failed to resolve parent order for QC workflow authorization', {
+        containerName,
+        resourceIdParam,
+        label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to resolve parent order authorization context',
+      });
+    }
+  };
+
+// Resolve the set of orderIds the caller is allowed to read, given the
+// authorizationFilter the order-level query middleware attached. Returns
+// the intersection with the supplied candidate orderIds.
+async function getAuthorizedOrderIds(orderIds: string[], authorizationFilter?: QueryFilter): Promise<Set<string>> {
+  if (orderIds.length === 0) {
+    return new Set();
+  }
+
+  if (!authorizationFilter || authorizationFilter.sql.trim() === '1=1') {
+    return new Set(orderIds);
+  }
+
+  if (authorizationFilter.sql.trim() === '1=0') {
+    return new Set();
+  }
+
+  await ensureControllerDb();
+
+  const orders = dbService.getContainer('orders');
+  const { resources } = await orders.items.query<string>({
+    query: `SELECT VALUE c.id FROM c WHERE ARRAY_CONTAINS(@orderIds, c.id) AND (${authorizationFilter.sql})`,
+    parameters: [{ name: '@orderIds', value: orderIds }, ...authorizationFilter.parameters],
+  }).fetchAll();
+
+  return new Set(resources);
+}
+
+// Filter a result set down to entries whose orderId is in the authorized set.
+async function filterItemsByAuthorizedOrder<T extends { orderId?: string }>(
+  req: AuthorizedRequest,
+  items: T[],
+): Promise<T[]> {
+  const orderIds = [
+    ...new Set(
+      items
+        .map((item) => item.orderId)
+        .filter((orderId): orderId is string => typeof orderId === 'string' && orderId.length > 0),
+    ),
+  ];
+  const allowedOrderIds = await getAuthorizedOrderIds(orderIds, req.authorizationFilter);
+  return items.filter((item) => item.orderId && allowedOrderIds.has(item.orderId));
+}
+
 // ===========================
 // QC REVIEW QUEUE ENDPOINTS
 // ===========================
@@ -84,7 +214,7 @@ const handleValidationErrors = (req: Request, res: Response, next: Function): vo
  */
 router.get(
   '/queue',
-  ...qcQueueRead,
+  ...qcQueueReadScoped,
   [
     query('orderId').optional().isString(),
     query('status').optional().isString(),
@@ -108,8 +238,9 @@ router.get(
       };
 
       const queueItems = await qcQueueService.searchQueue(criteria);
+      const scopedQueueItems = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, queueItems);
 
-      return res.json(queueItems);
+      return res.json(scopedQueueItems);
 
     } catch (error) {
       logger.error('Failed to get queue', { 
@@ -134,7 +265,7 @@ router.get(
  */
 router.get(
   '/queue/order/:orderId/current',
-  ...qcQueueRead,
+  ...qcQueueReadForDirectOrder,
   [param('orderId').notEmpty().withMessage('orderId is required')],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -254,7 +385,9 @@ router.get('/queue/statistics', ...qcQueueRead, async (req: Request, res: Respon
  */
 router.post(
   '/queue/assign',
-  ...qcQueueUpdate,
+  copyBodyStringToParam('queueItemId', 'queueItemId'),
+  loadOrderIdFromDocument('qc-reviews', 'queueItemId', 'QC queue item'),
+  ...qcQueueUpdateForOrder,
   [
     body('queueItemId').notEmpty(),
     body('analystId').notEmpty(),
@@ -374,14 +507,15 @@ router.get('/analysts/workload', ...qcQueueRead, async (req: Request, res: Respo
  * GET /api/qc-workflow/revisions/active
  * Get all active revisions
  */
-router.get('/revisions/active', ...revisionRead, async (req: Request, res: Response) => {
+router.get('/revisions/active', ...revisionReadScoped, async (req: Request, res: Response) => {
   try {
     const revisions = await revisionService.getActiveRevisions();
+    const scopedRevisions = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, revisions);
 
     return res.json({
       success: true,
-      data: revisions,
-      count: revisions.length
+      data: scopedRevisions,
+      count: scopedRevisions.length
     });
 
   } catch (error) {
@@ -617,7 +751,8 @@ router.post(
  */
 router.post(
   '/escalations',
-  ...escalationCreate,
+  copyBodyStringToParam('orderId', 'orderIdForAuth'),
+  ...escalationCreateForOrder,
   [
     body('orderId').notEmpty(),
     body('escalationType').isIn([
@@ -1067,6 +1202,12 @@ router.post(
     body('notes').optional().isString(),
     body('conditions').optional().isArray(),
     body('score').optional().isNumeric(),
+    // Vendor scorecard — REQUIRED when outcome=APPROVED per the David/Doug meeting:
+    // the QCer can't release to client without scoring the assignment.
+    body('scorecard').optional().isObject(),
+    body('scorecard.scores').optional().isObject(),
+    body('scorecard.generalComments').optional().isString(),
+    body('scorecard.supersedes').optional().isString(),
   ],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -1126,6 +1267,54 @@ router.post(
           }
         } catch (mopErr) {
           logger.warn('Could not fetch MOP snapshot for QC decision record', { mopErr, orderId });
+        }
+      }
+
+      // ── Scorecard gate (David/Doug meeting): APPROVED requires a scorecard
+      //    The scorecard is appended BEFORE we record the decision or transition
+      //    the order, so a missing / invalid scorecard rejects the whole action
+      //    with a clear 400. This is the "QCer can't leave the queue without
+      //    scoring" gate. Re-scoring uses the same path with `supersedes` set.
+      const incomingOutcome: string = req.body.outcome;
+      const incomingScorecard = req.body.scorecard as
+        | { scores?: unknown; generalComments?: string; supersedes?: string }
+        | undefined;
+
+      if (incomingOutcome === 'APPROVED') {
+        if (!incomingScorecard || !incomingScorecard.scores) {
+          res.status(400).json({
+            success: false,
+            error:
+              'A vendor scorecard with all five categories is required to approve and release this assignment.',
+            code: 'SCORECARD_REQUIRED',
+          });
+          return;
+        }
+        try {
+          await scorecardService.appendScorecard(
+            orderId,
+            {
+              scores: incomingScorecard.scores as never,
+              ...(incomingScorecard.generalComments
+                ? { generalComments: incomingScorecard.generalComments }
+                : {}),
+              ...(incomingScorecard.supersedes
+                ? { supersedes: incomingScorecard.supersedes }
+                : {}),
+            },
+            req.body.reviewedBy,
+            { allowPreDelivery: true },
+          );
+        } catch (scErr) {
+          if (scErr instanceof ScorecardError) {
+            res.status(scErr.statusCode).json({
+              success: false,
+              error: scErr.message,
+              code: 'SCORECARD_INVALID',
+            });
+            return;
+          }
+          throw scErr;
         }
       }
 
@@ -1200,6 +1389,36 @@ router.post(
           status: 'COMPLETED' as any,
         });
         logger.info('Order transitioned to COMPLETED after QC approval', { orderId: result.orderId });
+
+        // Phase 8e: auto-generate report if the order has it enabled
+        try {
+          const orderResp = await dbService.getItem<any>('orders', result.orderId, (result as any).tenantId ?? result.orderId);
+          const orderDoc = orderResp?.data;
+          if (orderDoc?.autoGenerateReport && orderDoc?.defaultReportTemplateId) {
+            logger.info('Auto-generating report after QC approval', {
+              orderId: result.orderId,
+              templateId: orderDoc.defaultReportTemplateId,
+            });
+            // Fire-and-forget with its own error boundary — approval must not roll back
+            const autoFinalReportService = new FinalReportService(dbService);
+            autoFinalReportService.generateReport({
+              orderId: result.orderId,
+              templateId: orderDoc.defaultReportTemplateId,
+              requestedBy: reviewedBy,
+              notes: 'Auto-generated on QC approval',
+            }).catch((autoErr: unknown) => {
+              logger.error('Auto-report generation failed after QC approval', {
+                orderId: result.orderId,
+                error: autoErr,
+              });
+            });
+          }
+        } catch (lookupErr) {
+          logger.error('Failed to look up order for auto-report check', {
+            orderId: result.orderId,
+            error: lookupErr,
+          });
+        }
       }
 
       if (outcome === 'CONDITIONAL') {

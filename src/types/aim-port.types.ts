@@ -244,12 +244,50 @@ export const AIM_PORT_REQUEST_TYPES: AimPortRequestType[] = [
   'OrderUpdateRequest',
 ];
 
+/**
+ * Canonical AIM-Port product catalogue — used only when building ACK responses
+ * to ProductListRequest. Authoritative source: AIM-Port vendor documentation.
+ */
+export const AIM_PORT_PRODUCT_NAMES: Record<number, string> = {
+  48899: '1004D/442 - Recertification of Value',
+  48900: '1004D/442 - Update / Completion Certificate',
+  48909: '2000/1032 - One-Unit Residential Field Review',
+  48910: '2000A/1072 - 2-4 Unit Residential Field Review',
+  48912: 'URAR Appraisal Desk Review - DRF',
+  48930: 'Condo 1073/465 - FHA',
+  48935: 'Condo 1073/465',
+  49003: 'Condo 1073/465 + Operating Income Stmt (216) & Rent Schedule (1007)',
+  49033: 'Condo 1073/465 + Rent Schedule (1007)',
+  49052: 'Condo 1073/465 + Operating Income Stmt (216)',
+  48860: 'Manufactured Home 1004C/70B - FHA',
+  48869: 'Multi-Family 2-4 Unit 1025/72 - FHA',
+  48873: 'Land Appraisal',
+  48915: 'Manufactured Home 1004C/70B',
+  48944: 'SFR 1004/70 - LB Platinum',
+  48952: 'SFR 1004/70',
+  48982: 'Multi-Family 2-4 Unit 1025/72 - FHA + Operating Income Stmt (216)',
+  48994: 'SFR 1004/70 + Operating Income Stmt (216) & Rent Schedule (1007)',
+  49032: 'SFR 1004/70 + Rent Schedule (1007)',
+  49046: 'SFR 1004/70 + Operating Income Stmt (216)',
+  49079: 'SFR 1004/70 - FHA',
+  49081: 'SFR 1004/70 - FHA',
+  49099: 'Multi-Family 2-4 Unit 1025/72 + Operating Income Stmt (216)',
+};
+
 export interface AimPortAckResponse {
   client_id: string;
-  success: 'true' | 'false';
+  success: 'true' | 'false' | string;
   order_id?: string;
   message?: string;
   fee?: number;
+  /**
+   * Returned in response to GetOrderRequest — the current status string for the order.
+   * Not populated by the adapter itself (which has no DB access); a higher-layer service
+   * can enrich this by looking up the order before returning the HTTP response.
+   */
+  order_status?: string;
+  /** Returned in response to ProductListRequest — lists products supported by this connection. */
+  products?: Array<{ id: number; name: string }>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

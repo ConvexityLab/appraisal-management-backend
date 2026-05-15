@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UAD 3.6 API Controller
  * 
  * RESTful endpoints for UAD appraisal validation and MISMO XML generation
@@ -7,7 +7,7 @@
 import express, { Request, Response } from 'express';
 import { UadValidationService } from '../services/uad-validation.service.js';
 import { MismoXmlGenerator, SubmissionInfo } from '../services/mismo-xml-generator.service.js';
-import { UadAppraisalReport } from '../types/uad-3.6.js';
+import { UadAppraisalReport } from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 
 export const createUadRouter = () => {

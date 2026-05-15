@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property Record Service — Phase R1.1
  *
  * The canonical service for the PropertyRecord aggregate root.
@@ -23,15 +23,15 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
+import { PropertyRecordType } from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 import type {
   PropertyRecord,
-  CanonicalAddress,
   PropertyVersionEntry,
   CreatePropertyRecordInput,
   PropertyResolutionResult,
   PropertyIdResolutionMethod,
-} from '../types/property-record.types.js';
+} from '@l1/shared-types';
 
 // ─── Container name constant ──────────────────────────────────────────────────
 
@@ -403,6 +403,15 @@ export class PropertyRecordService {
     source: PropertyVersionEntry['source'],
     changedBy: string,
     sourceProvider?: string,
+    /**
+     * Optional opaque correlation id (Axiom evaluationId, geocoding
+     * artifact id, etc.) — recorded on the version-history entry so
+     * downstream observability can stitch back to the source event.
+     * Added 2026-05-12 to unblock deploy after parallel-agent
+     * callers (bulk-portfolio, property-enrichment) updated the call
+     * sites without extending the signature.
+     */
+    sourceArtifactId?: string,
   ): Promise<PropertyRecord> {
     if (!reason || !reason.trim()) {
       throw new Error('PropertyRecordService.createVersion: reason is required');
@@ -444,6 +453,7 @@ export class PropertyRecordService {
       reason,
       source,
       ...(sourceProvider ? { sourceProvider } : {}),
+      ...(sourceArtifactId ? { sourceArtifactId } : {}),
       changedFields,
       previousValues,
     };

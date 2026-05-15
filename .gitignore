@@ -73,6 +73,7 @@ func.log
 !infrastructure/parameters/*.json
 !seed-data/**/*.json
 !scripts/user-identities.json
+!tests/fixtures/**/*.json
 
 # Local development
 .env.local
@@ -97,3 +98,5 @@ DEPLOYMENT_QUICKSTART.md
 .credentials
 *.key
 *.pem
+# Client CSV drops (PII; ingest only — never commit raw data)
+data/*.csv

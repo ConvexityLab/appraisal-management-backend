@@ -4,18 +4,14 @@ import express from 'express';
 import { CosmosDbService } from '../src/services/cosmos-db.service.js';
 import { OrderController } from '../src/controllers/order.controller.js';
 import { VendorController } from '../src/controllers/production-vendor.controller.js';
-import { PropertyController } from '../src/controllers/property.controller.js';
 import { 
-  PropertyType, 
-  PropertyCondition, 
+  OccupancyType,
   OrderStatus, 
   Priority, 
+  PropertyType,
   ProductType, 
   OrderType, 
-  VendorStatus,
-  OccupancyType,
-  ViewType,
-  ConstructionType
+  VendorStatus
 } from '../src/types/index.js';
 
 /**
@@ -27,7 +23,6 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
   let app: express.Application;
   let orderController: OrderController;
   let vendorController: VendorController;
-  let propertyController: PropertyController;
   let dbSvc: CosmosDbService;
 
   beforeAll(async () => {
@@ -36,7 +31,25 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     await dbSvc.initialize();
   }, 30_000);
 
+  // Track every vendor created by ANY test in this file so the afterAll
+  // sweep can purge them. Without this, each run accumulates more
+  // "Test Appraisal Services" rows in the staging vendors container that
+  // the UI shows but cannot navigate to (no proper tenant envelope for
+  // a real user).
+  const createdVendorIds: string[] = [];
+
   afterAll(async () => {
+    // Best-effort cleanup of vendors this run created. Direct container
+    // delete instead of going through the controller — the test app is
+    // gone by this point (per-test recreated in beforeEach).
+    for (const id of createdVendorIds) {
+      try {
+        const container = dbSvc.getContainer('vendors');
+        await container.item(id, undefined).delete().catch(() => undefined);
+      } catch {
+        // Swallow; cleanup must never fail the suite.
+      }
+    }
     if (dbSvc?.isDbConnected()) {
       await dbSvc.disconnect();
     }
@@ -63,245 +76,14 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     orderController = new OrderController(dbSvc);
     // VendorController takes dbService; exposes public router
     vendorController = new VendorController(dbSvc);
-    // PropertyController has its own setupRoutes(app) pattern
-    propertyController = new PropertyController();
 
     // Mount routers at the paths the tests target
     app.use('/api/orders', orderController.router);
     app.use('/api/vendors', vendorController.router);
-    propertyController.setupRoutes(app); // mounts at /api/properties internally
   });
 
   afterEach(() => {
     // Cleanup if needed
-  });
-
-  // ===============================
-  // Property CRUD Tests
-  // ===============================
-
-  describe('Property Management API', () => {
-    let createdPropertyId: string;
-
-    const samplePropertyData = {
-      address: {
-        streetAddress: '456 Test Avenue',
-        city: 'San Francisco',
-        state: 'CA',
-        zipCode: '94103',
-        county: 'San Francisco',
-        coordinates: {
-          latitude: 37.7849,
-          longitude: -122.4094
-        }
-      },
-      details: {
-        propertyType: PropertyType.SFR,
-        occupancy: OccupancyType.OWNER_OCCUPIED,
-        yearBuilt: 2020,
-        grossLivingArea: 2800,
-        lotSize: 7000,
-        bedrooms: 4,
-        bathrooms: 3.5,
-        stories: 2,
-        garage: true,
-        pool: true,
-        features: ['modern kitchen', 'hardwood floors', 'solar panels'],
-        condition: PropertyCondition.EXCELLENT,
-        viewType: ViewType.WATER,
-        constructionType: ConstructionType.FRAME
-      },
-      metadata: {
-        notes: 'Test property for API validation'
-      }
-    };
-
-    it('should create a new property', async () => {
-      const response = await request(app)
-        .post('/api/properties')
-        .send(samplePropertyData)
-        .expect(201);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('propertyId');
-      expect(response.body.data.address.streetAddress).toBe(samplePropertyData.address.streetAddress);
-      expect(response.body.data.details.propertyType).toBe(samplePropertyData.details.propertyType);
-
-      createdPropertyId = response.body.data.propertyId;
-    });
-
-    it('should validate required fields when creating property', async () => {
-      const incompleteData = {
-        address: {
-          streetAddress: 'Test Street'
-          // Missing required fields
-        },
-        details: {}
-      };
-
-      const response = await request(app)
-        .post('/api/properties')
-        .send(incompleteData)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('required');
-    });
-
-    it('should retrieve property by ID', async () => {
-      // First create a property
-      const createResponse = await request(app)
-        .post('/api/properties')
-        .send(samplePropertyData);
-
-      const propertyId = createResponse.body.data.propertyId;
-
-      // Then retrieve it
-      const response = await request(app)
-        .get(`/api/properties/${propertyId}`)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.id).toBe(propertyId);
-      expect(response.body.data.address.streetAddress).toBe(samplePropertyData.address.streetAddress);
-    });
-
-    it('should update property details', async () => {
-      // First create a property
-      const createResponse = await request(app)
-        .post('/api/properties')
-        .send(samplePropertyData);
-
-      const propertyId = createResponse.body.data.propertyId;
-
-      // Update the property
-      const updates = {
-        details: {
-          yearBuilt: 2021,
-          features: ['updated kitchen', 'new flooring']
-        }
-      };
-
-      const response = await request(app)
-        .put(`/api/properties/${propertyId}`)
-        .send(updates)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.details.yearBuilt).toBe(2021);
-    });
-
-    it('should delete property', async () => {
-      // First create a property
-      const createResponse = await request(app)
-        .post('/api/properties')
-        .send(samplePropertyData);
-
-      const propertyId = createResponse.body.data.propertyId;
-
-      // Delete the property
-      const response = await request(app)
-        .delete(`/api/properties/${propertyId}`)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-
-      // Verify it's deleted
-      await request(app)
-        .get(`/api/properties/${propertyId}`)
-        .expect(404);
-    });
-
-    it('should list properties with pagination', async () => {
-      // Create multiple properties first
-      for (let i = 0; i < 3; i++) {
-        const testData = {
-          ...samplePropertyData,
-          address: {
-            ...samplePropertyData.address,
-            streetAddress: `${i + 100} Test Street`
-          }
-        };
-        await request(app).post('/api/properties').send(testData);
-      }
-
-      const response = await request(app)
-        .get('/api/properties')
-        .query({ limit: 2, offset: 0 })
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toBeInstanceOf(Array);
-      expect(response.body.pagination).toHaveProperty('total');
-      expect(response.body.pagination.limit).toBe(2);
-    });
-
-    it('should search properties with filters', async () => {
-      // Create properties with different characteristics
-      const property1 = {
-        ...samplePropertyData,
-        address: { ...samplePropertyData.address, city: 'Oakland' },
-        details: { ...samplePropertyData.details, propertyType: PropertyType.CONDO }
-      };
-
-      await request(app).post('/api/properties').send(property1);
-
-      const response = await request(app)
-        .get('/api/properties')
-        .query({ 
-          city: 'Oakland',
-          propertyType: PropertyType.CONDO
-        })
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.length).toBeGreaterThan(0);
-      expect(response.body.data[0].address.city).toBe('Oakland');
-    });
-
-    it('should get property analytics', async () => {
-      // Create a property first
-      const createResponse = await request(app)
-        .post('/api/properties')
-        .send(samplePropertyData);
-
-      const propertyId = createResponse.body.data.propertyId;
-
-      const response = await request(app)
-        .get(`/api/properties/${propertyId}/analytics`)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('propertyOverview');
-      expect(response.body.data).toHaveProperty('marketMetrics');
-      expect(response.body.data).toHaveProperty('riskAssessment');
-    });
-
-    it('should validate property data', async () => {
-      const validData = {
-        address: samplePropertyData.address,
-        details: samplePropertyData.details
-      };
-
-      const response = await request(app)
-        .post('/api/properties/validate')
-        .send(validData)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.valid).toBe(true);
-    });
-
-    it('should get property enums', async () => {
-      const response = await request(app)
-        .get('/api/properties/meta/enums')
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('propertyTypes');
-      expect(response.body.data).toHaveProperty('propertyConditions');
-      expect(response.body.data.propertyTypes).toContain(PropertyType.SFR);
-    });
   });
 
   // ===============================
@@ -478,7 +260,14 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     let createdVendorId: string;
     let createdPropertyId: string;
 
-    const sampleOrderData = {
+    // Lazily evaluated: describe.skipIf(...) doesn't prevent the describe body
+    // from running at collection time, so a top-level `const sampleOrderData`
+    // here would dereference PropertyType / ProductType / OrderType / Priority
+    // before module evaluation has fully bound them in some ESM resolution
+    // orders (seen on CI when VITEST_INTEGRATION is unset). Wrapping in a
+    // factory defers the enum reads until inside a test body / hook, by which
+    // point all imports are guaranteed to have resolved.
+    const buildSampleOrderData = () => ({
       clientId: 'test-client-001',
       orderNumber: 'TEST-ORDER-001',
       propertyAddress: {
@@ -522,7 +311,9 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       },
       priority: Priority.NORMAL,
       specialInstructions: 'Test order for API validation'
-    };
+    });
+    let sampleOrderData: ReturnType<typeof buildSampleOrderData>;
+    beforeAll(() => { sampleOrderData = buildSampleOrderData(); });
 
     beforeEach(async () => {
       // Create a vendor for order assignment tests
@@ -548,6 +339,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
 
       // VendorController returns unwrapped VendorProfile
       createdVendorId = vendorResponse.body.id;
+      createdVendorIds.push(createdVendorId);
     });
 
     it('should create a new order', async () => {

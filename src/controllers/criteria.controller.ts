@@ -15,6 +15,7 @@ import {
   QCTemplateConfig
 } from '../types/qc-checklist.types.js';
 import { ApiResponse } from '../types/index.js';
+import type { UserProfile } from '../types/authorization.types.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -25,6 +26,7 @@ export interface AuthenticatedRequest extends Request {
     organizationId?: string;
     clientId?: string;
   };
+  userProfile?: UserProfile;
 }
 
 export class QCChecklistController {
@@ -880,7 +882,7 @@ export class QCChecklistController {
     if (!user) return false;
 
     // System admin has access to all checklists
-    if (user.role === 'admin' || user.role === 'system') return true;
+    if (user.role === 'admin') return true;
 
     // Unrestricted checklists (no clientId/organizationId) are globally accessible
     if (!checklist.clientId && !checklist.organizationId) return true;

@@ -5,9 +5,10 @@
  *   - enrichOrder: happy-path with a full provider result (enriched status)
  *   - enrichOrder: provider miss (provider_miss status)
  *   - enrichOrder: createVersion called with correct building + top-level fields
- *   - enrichOrder: tax assessment appended when present
- *   - enrichOrder: tax assessment skipped when year already exists
+ *   - enrichOrder: tax assessment facts emitted via immutable observations
+ *   - enrichOrder: no longer appends tax assessment history onto PropertyRecord
  *   - enrichOrder: enrichment record persisted to Cosmos
+ *   - enrichOrder: AVM updates are emitted as immutable observations, not root PropertyRecord writes
  *   - enrichOrder: enrichment failure is non-fatal (does not throw)
  *   - enrichOrder: throws on missing orderId / tenantId / address fields
  *   - enrichOrder: returns status=cached when PropertyRecord is fresh (no Bridge call)
@@ -24,10 +25,11 @@ import {
   PropertyEnrichmentService,
   PROPERTY_ENRICHMENTS_CONTAINER,
 } from '../src/services/property-enrichment.service';
+import { PROPERTY_OBSERVATIONS_CONTAINER } from '../src/services/property-observation.service';
 import type { PropertyEnrichmentRecord } from '../src/services/property-enrichment.service';
 import type { PropertyDataProvider, PropertyDataResult } from '../src/types/property-data.types';
-import type { PropertyRecord } from '../src/types/property-record.types';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import type { PropertyRecord } from '@l1/shared-types';
+import { PropertyRecordType } from '@l1/shared-types';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -132,6 +134,7 @@ function makePropertyRecordService(isNew: boolean = false) {
 
 function makeCosmosService(existingEnrichments: PropertyEnrichmentRecord[] = []) {
   return {
+    getDocument: vi.fn().mockResolvedValue(null),
     createDocument: vi.fn().mockImplementation(async (_container: string, doc: any) => doc),
     queryDocuments: vi.fn().mockResolvedValue(existingEnrichments),
   };
@@ -156,6 +159,14 @@ function makeNoopGeocoder() {
  */
 function makeBridgeService() {
   return { getZestimateByStructuredAddress: vi.fn().mockResolvedValue(null) };
+}
+
+function makeNumericBridgeService(value: number = 401_000) {
+  return {
+    getZestimateByStructuredAddress: vi.fn().mockResolvedValue({
+      bundle: [{ zestimate: value }],
+    }),
+  };
 }
 
 // ─── enrichOrder: happy path ──────────────────────────────────────────────────
@@ -199,6 +210,24 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
         },
         tenantId: TENANT,
       }),
+    );
+  });
+
+  it('loads property observations before cache/geocode decisions', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    expect(cosmos.queryDocuments).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.stringContaining('SELECT * FROM c'),
+      expect.arrayContaining([
+        expect.objectContaining({ name: '@tenantId', value: TENANT }),
+        expect.objectContaining({ name: '@propertyId', value: PROPERTY_ID }),
+      ]),
     );
   });
 
@@ -270,16 +299,26 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
-    const [, , firstCallChanges, , , , firstCallSourceProvider] =
-      propSvc.createVersion.mock.calls[0] as [string, string, any, string, string, string, string | undefined];
+    const [, , firstCallChanges, , , , firstCallSourceProvider, sourceArtifactId] =
+      propSvc.createVersion.mock.calls[0] as [
+        string,
+        string,
+        any,
+        string,
+        string,
+        string,
+        string | undefined,
+        string,
+      ];
 
     // Top-level lastVerifiedSource is set on the PropertyRecord changes payload
     expect(firstCallChanges.lastVerifiedSource).toBe('Bridge Interactive');
     // The 7th argument to createVersion is the per-version sourceProvider audit value
     expect(firstCallSourceProvider).toBe('Bridge Interactive');
+    expect(sourceArtifactId).toBeUndefined();
   });
 
-  it('appends tax assessment when year not already present', async () => {
+  it('records tax assessment facts on immutable observations instead of appending PropertyRecord.taxAssessments', async () => {
     const provider = makeProvider(makeFullDataResult());
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
@@ -287,22 +326,29 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
-    // createVersion should have been called at least twice:
-    // once for building/top-level, once for tax assessment
-    const taxCall = propSvc.createVersion.mock.calls.find(
-      (args: any[]) => (args[5] as string) === 'SYSTEM:property-enrichment' &&
-        (args[4] as string) === 'PUBLIC_RECORDS_API' &&
-        Array.isArray(args[2].taxAssessments)
+    const taxAssessmentWrite = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => Array.isArray(args[2]?.taxAssessments),
     );
-    expect(taxCall).toBeDefined();
-    expect(taxCall![2].taxAssessments[0]).toMatchObject({
-      taxYear: 2025,
-      totalAssessedValue: 385_000,
-      annualTaxAmount: 9_200,
-    });
+    expect(taxAssessmentWrite).toBeUndefined();
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        observationType: 'provider-enrichment',
+        normalizedFacts: expect.objectContaining({
+          taxAssessment: expect.objectContaining({
+            taxYear: 2025,
+            totalAssessedValue: 385_000,
+            annualTaxAmount: 9_200,
+          }),
+        }),
+      }),
+    );
   });
 
-  it('skips tax assessment append when year already exists in record', async () => {
+  it('does not append tax assessment history onto PropertyRecord even when the record already has the same tax year cached', async () => {
     const provider = makeProvider(makeFullDataResult());
 
     // Record already has a 2025 assessment
@@ -328,6 +374,42 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     expect(taxCalls).toHaveLength(0);
   });
 
+  it('records AVM facts on immutable observations instead of patching PropertyRecord.avm', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+    const bridge = makeNumericBridgeService(402_500);
+
+    const svc = new PropertyEnrichmentService(
+      cosmos as any,
+      propSvc as any,
+      provider,
+      makeNoopGeocoder() as any,
+      bridge as any,
+    );
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    const avmWrite = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.avm !== undefined,
+    );
+    expect(avmWrite).toBeUndefined();
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        observationType: 'avm-update',
+        normalizedFacts: expect.objectContaining({
+          avm: expect.objectContaining({
+            value: 402_500,
+            source: 'bridge-zestimate',
+          }),
+        }),
+      }),
+    );
+  });
+
   it('persists an enrichment record to Cosmos', async () => {
     const provider = makeProvider(makeFullDataResult());
     const propSvc = makePropertyRecordService(false);
@@ -344,6 +426,66 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
         tenantId: TENANT,
         propertyId: PROPERTY_ID,
         status: 'enriched',
+      }),
+    );
+  });
+
+  it('persists an immutable property observation when provider returns data', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, {
+      engagementId: 'eng-1',
+      sourceArtifactId: 'artifact-1',
+    });
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        tenantId: TENANT,
+        observationType: 'provider-enrichment',
+        sourceSystem: 'property-enrichment-service',
+        orderId: ORDER_ID,
+        engagementId: 'eng-1',
+        sourceProvider: 'Bridge Interactive',
+        normalizedFacts: expect.objectContaining({
+          buildingPatch: expect.objectContaining({ gla: 2150, bedrooms: 3 }),
+          propertyPatch: expect.objectContaining({ apn: '00-1234-0056-789' }),
+        }),
+      }),
+    );
+  });
+
+  it('persists a tenant-scoped public-record import observation when public-record data is materialized', async () => {
+    const dataResult = makeFullDataResult();
+    dataResult.source = 'ATTOM Data Solutions (Cosmos cache)';
+
+    const provider = makeProvider(dataResult);
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, {
+      sourceArtifactId: 'artifact-1',
+    });
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        tenantId: TENANT,
+        observationType: 'public-record-import',
+        sourceSystem: 'attom-cache',
+        sourceProvider: 'ATTOM Data Solutions (Cosmos cache)',
+        sourceArtifactRef: expect.objectContaining({
+          kind: 'other',
+          id: 'artifact-1',
+        }),
       }),
     );
   });

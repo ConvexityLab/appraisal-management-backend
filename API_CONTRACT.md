@@ -659,7 +659,9 @@ POST /api/orders
 Authorization: Bearer {token}
 Content-Type: application/json
 
+// Supply either canonical propertyId or the legacy embedded propertyAddress object.
 {
+  "propertyId": "prop-xxx (optional when propertyAddress is provided)",
   "clientInformation": {
     "clientId": "string",
     "clientName": "string",

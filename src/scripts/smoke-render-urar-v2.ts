@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Smoke-test script: end-to-end render of the URAR v2 (Vision VMC / UAD 3.6) template.
  *
  * Bypasses Cosmos DB entirely — the ReportTemplate is constructed in-memory.
@@ -30,7 +30,7 @@ import type {
   CanonicalAddress,
   CanonicalAdjustments,
   ValueType,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import type { ReportGenerationContext } from '../services/report-engine/strategies/report-strategy.interface.js';
 
 // ── Template (in-memory, matches seeded document) ──────────────────────────

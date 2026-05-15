@@ -114,6 +114,73 @@ export const createGroupRoleMappingRouter = (dbService: CosmosDbService): Router
     }
   });
 
+  // ── PUT /:id ──────────────────────────────────────────────────────────────
+  /**
+   * Replace an existing Entra group → role mapping.
+   *
+   * Body: { groupObjectId: string, role: Role, priority?: number, description?: string }
+   */
+  router.put('/:id', async (req: AuthorizedRequest, res: Response): Promise<any> => {
+    try {
+      const tenantId = req.userProfile?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ error: 'Mapping id is required', code: 'MISSING_ID' });
+      }
+
+      const { groupObjectId, role, priority = 100, description } = req.body as {
+        groupObjectId: string;
+        role: Role;
+        priority?: number;
+        description?: string;
+      };
+
+      if (!groupObjectId) {
+        return res.status(400).json({ error: 'groupObjectId is required', code: 'MISSING_GROUP_OID' });
+      }
+      if (!role) {
+        return res.status(400).json({ error: 'role is required', code: 'MISSING_ROLE' });
+      }
+
+      const container = dbService.getContainer(CONTAINER);
+      const { resource: existing } = await container.item(id, tenantId).read<EntraGroupRoleMapping>();
+
+      if (!existing || existing.type !== 'entra-group-role-mapping') {
+        return res.status(404).json({ error: 'Mapping not found', code: 'MAPPING_NOT_FOUND' });
+      }
+      if (existing.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Cross-tenant access denied', code: 'FORBIDDEN' });
+      }
+
+      const updated: EntraGroupRoleMapping = {
+        ...existing,
+        groupObjectId,
+        role,
+        priority,
+        ...(description !== undefined ? { description } : {}),
+      };
+
+      await container.items.upsert(updated);
+
+      logger.info('Entra group-role mapping updated', {
+        actorId: req.userProfile?.id,
+        mappingId: id,
+        groupObjectId,
+        role,
+        tenantId,
+      });
+
+      return res.json({ success: true, data: updated });
+    } catch (error) {
+      logger.error('Failed to update group-role mapping', { error });
+      return res.status(500).json({ error: 'Failed to update group-role mapping', code: 'INTERNAL_ERROR' });
+    }
+  });
+
   // ── DELETE /:id ───────────────────────────────────────────────────────────
   /**
    * Delete a group → role mapping by id.

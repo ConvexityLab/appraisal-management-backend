@@ -27,9 +27,9 @@ export class ReviewWorkflowService {
   private logger: Logger;
   private dbService: CosmosDbService;
 
-  constructor() {
+  constructor(dbService: CosmosDbService) {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService;
   }
 
   /**

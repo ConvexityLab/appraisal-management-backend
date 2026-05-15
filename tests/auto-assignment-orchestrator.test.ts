@@ -40,7 +40,14 @@ vi.mock('../src/services/service-bus-subscriber.js', () => ({
 vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
   VendorMatchingEngine: vi.fn().mockImplementation(() => ({
     findMatchingVendors: vi.fn(),
+    findMatchingVendorsAndDenied: vi.fn(),
   })),
+  // Production code now imports `inferNoMatchReason` from this module
+  // (added alongside the per-vendor product-weight overlay feature in
+  // commit 34b28db). Stub returns a generic reason so the orchestrator's
+  // import resolves at runtime; escalation-path tests only need the
+  // function to exist, not a specific return value.
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 const mockAnalyzeVendorBid = vi.fn();
@@ -227,8 +234,11 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
 
-    // Default: matching engine returns 3 ranked vendors
-    getMatchingEngine().findMatchingVendors.mockResolvedValue(makeVendorResults());
+    // Default: matching engine returns 3 ranked vendors (T6: also denied=[])
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: makeVendorResults(),
+      denied: [],
+    });
   });
 
   // ── 1. Happy path: order created → bid sent to top vendor ──────────────────
@@ -612,7 +622,7 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
   // ── 6. Immediate escalation when no vendors found ─────────────────────────
 
   it('immediately escalates when matching engine returns no vendors', async () => {
-    getMatchingEngine().findMatchingVendors.mockResolvedValue([]);
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({ matches: [], denied: [] });
 
     const order = makeOrder();
     db._orders.set(order.id, order);
@@ -634,6 +644,153 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
     expect(publishedEventTypes(publisher)).toContain('vendor.assignment.exhausted');
     expect(db.createItem).not.toHaveBeenCalledWith('vendor-bids', expect.anything());
   });
+
+  // ── T8: MatchExplanation + denied vendors persisted on FSM (F9 audit) ────
+
+  it('persists per-vendor MatchExplanation onto rankedVendors entries', async () => {
+    const matches = [
+      {
+        vendorId: 'v1',
+        vendor: { name: 'Vendor One' },
+        matchScore: 91,
+        explanation: {
+          vendorId: 'v1',
+          scoreComponents: { performance: 92, availability: 85, proximity: 90, experience: 80, cost: 70 },
+          ruleResult: { appliedRuleIds: ['boost-rule-1'], denyReasons: [], scoreAdjustment: 5 },
+          baseScore: 86,
+          finalScore: 91,
+          weightsVersion: 'v1-30/25/20/15/10',
+        },
+      },
+    ];
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({ matches, denied: [] });
+
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-explain-1',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    expect(db.updateItem).toHaveBeenCalledWith(
+      'orders',
+      order.id,
+      expect.objectContaining({
+        autoVendorAssignment: expect.objectContaining({
+          rankedVendors: expect.arrayContaining([
+            expect.objectContaining({
+              vendorId: 'v1',
+              explanation: expect.objectContaining({
+                finalScore: 91,
+                baseScore: 86,
+                weightsVersion: 'v1-30/25/20/15/10',
+                ruleResult: expect.objectContaining({
+                  appliedRuleIds: ['boost-rule-1'],
+                  scoreAdjustment: 5,
+                }),
+              }),
+            }),
+          ]),
+        }),
+      }),
+      TENANT_ID,
+    );
+  });
+
+  it('persists deniedVendors onto autoVendorAssignment when rules drop candidates', async () => {
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: makeVendorResults(),
+      denied: [
+        {
+          vendorId: 'denied-1',
+          vendorName: 'Blocked Vendor',
+          denyReasons: ['Vendor is blacklisted by rule "AMC restricted list"'],
+          appliedRuleIds: ['rule-blacklist-amc'],
+        },
+        {
+          vendorId: 'denied-2',
+          vendorName: 'Underperformer',
+          denyReasons: ['Performance score 65 below minimum 75 (rule: "Min perf 75")'],
+          appliedRuleIds: ['rule-min-perf'],
+        },
+      ],
+    });
+
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-denied-1',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    expect(db.updateItem).toHaveBeenCalledWith(
+      'orders',
+      order.id,
+      expect.objectContaining({
+        autoVendorAssignment: expect.objectContaining({
+          deniedVendors: expect.arrayContaining([
+            expect.objectContaining({
+              vendorId: 'denied-1',
+              vendorName: 'Blocked Vendor',
+              denyReasons: ['Vendor is blacklisted by rule "AMC restricted list"'],
+              appliedRuleIds: ['rule-blacklist-amc'],
+            }),
+            expect.objectContaining({
+              vendorId: 'denied-2',
+              denyReasons: expect.arrayContaining([expect.stringContaining('below minimum')]),
+            }),
+          ]),
+        }),
+      }),
+      TENANT_ID,
+    );
+  });
+
+  it('omits deniedVendors field when no vendors were denied', async () => {
+    // Already the default mock setup: empty denied[]. Verify the field is absent.
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-no-denied',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    const updateCall = (db.updateItem as any).mock.calls.find(
+      (c: any[]) => c[0] === 'orders' && c[1] === order.id
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall[2].autoVendorAssignment.deniedVendors).toBeUndefined();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -649,7 +806,10 @@ describe('AutoAssignmentOrchestratorService — Internal Staff Assignment', () =
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
     // Default: matching engine returns 3 ranked vendors (external by default)
-    getMatchingEngine().findMatchingVendors.mockResolvedValue(makeVendorResults());
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: makeVendorResults(),
+      denied: [],
+    });
   });
 
   // ── 1. Happy path: top vendor is internal → direct assignment ─────────────
@@ -1037,10 +1197,13 @@ describe('AutoAssignmentOrchestratorService — Full End-to-End Flow', () => {
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
 
-    getMatchingEngine().findMatchingVendors.mockResolvedValue([
-      { vendorId: 'v1', vendor: { name: 'Vendor One' }, matchScore: 95 },
-      { vendorId: 'v2', vendor: { name: 'Vendor Two' }, matchScore: 80 },
-    ]);
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: [
+        { vendorId: 'v1', vendor: { name: 'Vendor One' }, matchScore: 95 },
+        { vendorId: 'v2', vendor: { name: 'Vendor Two' }, matchScore: 80 },
+      ],
+      denied: [],
+    });
     getQcQueue().addToQueue.mockResolvedValue({ id: 'qcr-e2e' });
     getQcQueue().assignReview.mockResolvedValue(undefined);
     getQcQueue().getAllAnalystWorkloads.mockResolvedValue([

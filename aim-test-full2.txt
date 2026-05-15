@@ -1,0 +1,1392 @@
+﻿
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/source/appraisal-management-backend[39m
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:01:58.918Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:01:58.920Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:02.342Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:15.036Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:15.039Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:15.041Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:15.042Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:15.044Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:15.045Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:15.047Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:15.913Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:16.056Z INFO [DeadLetterQueueMonitorService] DLQ monitor using Managed Identity {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:17.709Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:17.709Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:17.878Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:17.878Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:17.879Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:18.051Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.053Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.054Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:18.279Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.280Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-05-12T02:02:18.280Z INFO [App] Initializing ACS with API key authentication
+2026-05-12T02:02:18.280Z INFO [App] ACS Identity Service initialized with API key
+2026-05-12T02:02:18.280Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.282Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:18.306Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-05-12T02:02:18.306Z INFO [App] Initializing ACS with API key authentication
+2026-05-12T02:02:18.307Z INFO [App] ACS Identity Service initialized with API key
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:18.369Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.370Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:18.590Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-05-12T02:02:18.590Z INFO [App] Initializing ACS with API key authentication
+2026-05-12T02:02:18.591Z INFO [App] ACS Identity Service initialized with API key
+2026-05-12T02:02:18.591Z INFO [App] ACS Chat Service initialized successfully
+2026-05-12T02:02:18.591Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-05-12T02:02:18.591Z INFO [App] Initializing ACS with API key authentication
+2026-05-12T02:02:18.591Z INFO [App] ACS Identity Service initialized with API key
+2026-05-12T02:02:18.591Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:18.592Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:19.993Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:19.993Z INFO [App] AzureCommunicationService: using API key credential
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m2026-05-12T02:02:20.839Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:20.839Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:20.840Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m≡ƒº¬ Setting up test environment...
+Γ£à Test environment ready
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:28.862Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:28.863Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:28.863Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:28.863Z INFO [App] Creating NEW Azure Entra auth instance with JWKS cache
+2026-05-12T02:02:28.864Z INFO [App] Azure Entra ID authentication initialized {"tenantId":"885097ba-35ea-48db-be7a-a0aa7ff451bd","clientId":"dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a"}
+2026-05-12T02:02:28.864Z INFO [App] Reusing existing Azure Entra auth instance (JWKS cache preserved)
+2026-05-12T02:02:28.909Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:28.917Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:28.927Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:28.927Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:28.929Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-05-12T02:02:28.929Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-05-12T02:02:28.929Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+
+node.exe : [90mstderr[2m | 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port 
+inbound ΓÇö full integration pipeline
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([90mstderr[2m...ration pipeline 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[22m[39m2026-05-12T02:02:28.864Z WARN [App] ΓÜá∩╕Å  Test tokens are ENABLED 
+- DO NOT USE IN PRODUCTION
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.811Z INFO [App] Γ£à Authorization health check passed: users container is reachable
+2026-05-12T02:02:30.812Z INFO [App] Γ£à Authorization ENFORCEMENT ENABLED ΓÇö Casbin policies will be enforced
+2026-05-12T02:02:30.813Z INFO [App] Initializing authorization service
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.812Z WARN [App] ΓÜá∩╕Å  
+AUTO_PROVISION_USERS=true ΓÇö first-time users will be auto-provisioned with 
+role="admin"
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.926Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.926Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.926Z INFO [App] Authorization middleware initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.926Z INFO [App] Authorization middleware initialized
+2026-05-12T02:02:30.928Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:30.929Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:30.929Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.929Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:30.929Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:30.939Z INFO [App] QC controllers initialized after database/env readiness
+2026-05-12T02:02:30.939Z INFO [App] QC Results routes registered
+2026-05-12T02:02:30.940Z INFO [App] Registering authorization routes...
+2026-05-12T02:02:30.942Z INFO [App] Initializing authorization service
+2026-05-12T02:02:30.943Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-05-12T02:02:30.944Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-05-12T02:02:30.944Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+2026-05-12T02:02:30.945Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:30.945Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:30.945Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.946Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:30.950Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:30.953Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:30.953Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:30.954Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:30.954Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.955Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.955Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.957Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:30.964Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:30.964Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:30.964Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:30.972Z INFO [App] Initializing authorization service
+2026-05-12T02:02:30.990Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:30.996Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:30.996Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:30.997Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:31.000Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.001Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.002Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.002Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.002Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.002Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.003Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:31.003Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:31.003Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.003Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.004Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.004Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.004Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.004Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.005Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.005Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.006Z INFO [App] Teams service initialized with Managed Identity
+2026-05-12T02:02:31.006Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.006Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.006Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.006Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:31.006Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.006Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.006Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.006Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.007Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.016Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.016Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.019Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.019Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.019Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.021Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.021Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.021Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.022Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.022Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:31.022Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.022Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.022Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.022Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.022Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.022Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:31.022Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.029Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.029Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.030Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.031Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.032Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.032Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.032Z INFO [AiAutopilotPublisher] AiAutopilotPublisher running in mock mode {"queue":"autopilot-tasks"}
+2026-05-12T02:02:31.032Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.032Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.032Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.033Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.033Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:31.033Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.033Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.033Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.033Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.033Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.033Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:31.033Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.034Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.034Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.034Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.035Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.035Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.035Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.036Z INFO [AiAutopilotPublisher] AiAutopilotPublisher running in mock mode {"queue":"autopilot-tasks"}
+2026-05-12T02:02:31.038Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.038Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.038Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.042Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:31.042Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.045Z INFO [App] AzureCommunicationService: using API key credential
+≡ƒº¬ Payment provider: Mock (no payment credentials configured)
+2026-05-12T02:02:31.046Z INFO [App] Payment provider initialised: Mock (simulated)
+2026-05-12T02:02:31.063Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:31.064Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.064Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.064Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:31.067Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:31.067Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.067Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.077Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.078Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.078Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:31.079Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:31.079Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.079Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.091Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:31.097Z INFO [App] Γ£à Authorization routes registered successfully
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:30.991Z WARN [App] Azure Service Bus connection 
+string not provided, using mock implementation
+2026-05-12T02:02:30.997Z WARN [App] Azure Service Bus connection string not 
+provided, using mock implementation
+2026-05-12T02:02:31.003Z WARN [App] Azure Service Bus connection string not 
+provided, using mock implementation
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.136Z INFO [App] Incoming request {"correlationId":"0948a51b-8e61-4a03-9bdd-bf9c065a8124","method":"POST","url":"/api/vendor-integrations/connections","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.166Z INFO [App] Getting user profile {"userId":"inttest-admin","tenantId":"aim-port-inttest-1778551348839"}
+2026-05-12T02:02:31.166Z INFO [App] Executing query on users {"query":"SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId","parameters":[{"name":"@id","value":"inttest-admin"},{"name":"@tenantId","value":"aim-port-inttest-1778551348839"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.228Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.228Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.309Z INFO [App] Query returned 0 results
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.309Z WARN [App] User not found in database 
+{"userId":"inttest-admin","tenantId":"aim-port-inttest-1778551348839"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.309Z WARN [App] AUTO-PROVISIONING user profile 
+(AUTO_PROVISION_USERS=true) {"userId":"inttest-admin","email":"inttest-admin@ap
+praisal.com","tenantId":"aim-port-inttest-1778551348839","role":"admin"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.687Z INFO [App] Executing query on vendor-connections {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.vendorType = @vendorType AND c.inboundIdentifier = @inboundIdentifier AND c.active = true","parameters":[{"name":"@tenantId","value":"aim-port-inttest-1778551348839"},{"name":"@vendorType","value":"aim-port"},{"name":"@inboundIdentifier","value":"aim-port-inttest-client-1778551348839"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.756Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.913Z INFO [VendorConnectionAdminService] Vendor connection created {"connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","tenantId":"aim-port-inttest-1778551348839","vendorType":"aim-port","inboundIdentifier":"aim-port-inttest-client-1778551348839","active":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:31.913Z INFO [App] Request completed {"correlationId":"0948a51b-8e61-4a03-9bdd-bf9c065a8124","method":"POST","url":"/api/vendor-integrations/connections","statusCode":201,"duration":"778ms"}
+2026-05-12T02:02:31.914Z INFO [App] Request completed {"correlationId":"0948a51b-8e61-4a03-9bdd-bf9c065a8124","method":"POST","url":"/api/vendor-integrations/connections","statusCode":201,"duration":"779ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:02:31 +0000] "POST /api/vendor-integrations/connections HTTP/1.1" 201 895 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39mΓ£à Vendor connection created: 7f64484c-0099-419e-91db-cb6c2d0f031d
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:32.507Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:32.507Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39mΓ£à Matching vendor seeded: vendor-inttest-1778551351922
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:32.620Z INFO [App] Incoming request {"correlationId":"175b98b1-b0b8-45c2-bf23-5e432b5f2cc9","method":"POST","url":"/api/v1/integrations/aim-port/inbound","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:32.677Z INFO [VendorConnectionService] Initializing Key Vault client for vendor integrations {"keyVaultUrl":"https://kvapprmstastanktl4a.vault.azure.net/"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.341Z INFO [App] Executing query on property-records {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.address.zip = @zip AND c.address.state = @state","parameters":[{"name":"@tenantId","value":"aim-port-inttest-1778551348839"},{"name":"@zip","value":"78702"},{"name":"@state","value":"TX"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.400Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.541Z INFO [PropertyRecordService] resolveOrCreate: created new PropertyRecord {"propertyId":"prop-1778551355401-ocxl8bu","street":"789 Integration Blvd","tenantId":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.673Z INFO [EngagementService] Engagement created {"id":"ENG-2026-1ZK0WMS6","engagementNumber":"ENG-2026-1ZK0WMS6","engagementType":"SINGLE","loanCount":1}
+2026-05-12T02:02:35.674Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichEngagement: starting {"engagementId":"ENG-2026-1ZK0WMS6","loanId":"LOAN-2026-1ZK0WMVV","tenantId":"aim-port-inttest-1778551348839","address":"789 Integration Blvd, Austin, TX 78702"}
+2026-05-12T02:02:35.674Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichOrder: starting {"orderId":"LOAN-2026-1ZK0WMVV","tenantId":"aim-port-inttest-1778551348839","address":"789 Integration Blvd, Austin, TX 78702"}
+2026-05-12T02:02:35.674Z INFO [App] Executing query on property-records {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.address.zip = @zip AND c.address.state = @state","parameters":[{"name":"@tenantId","value":"aim-port-inttest-1778551348839"},{"name":"@zip","value":"78702"},{"name":"@state","value":"TX"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.721Z INFO [App] Query returned 1 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.721Z INFO [PropertyRecordService] resolveOrCreate: resolved by normalized address {"address":"789 Integration Blvd","propertyId":"prop-1778551355401-ocxl8bu","tenantId":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.721Z INFO [PropertyEnrichmentService] PropertyEnrichmentService: PropertyRecord resolved {"orderId":"LOAN-2026-1ZK0WMVV","propertyId":"prop-1778551355401-ocxl8bu","isNew":false,"method":"ADDRESS_NORM"}
+2026-05-12T02:02:35.722Z INFO [App] Reading document from property-records {"documentId":"prop-1778551355401-ocxl8bu","partitionKey":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.781Z INFO [App] Document read result {"documentId":"prop-1778551355401-ocxl8bu","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.781Z INFO [App] Executing query on property-observations {"query":"SELECT * FROM c\nWHERE c.type = @type\n  AND c.tenantId = @tenantId\n  AND c.propertyId = @propertyId\nORDER BY c.observedAt DESC","parameters":[{"name":"@type","value":"property-observation"},{"name":"@tenantId","value":"aim-port-inttest-1778551348839"},{"name":"@propertyId","value":"prop-1778551355401-ocxl8bu"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.841Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.976Z INFO [App] Order created successfully {"orderId":"VO-1ZK14T7J"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:35.976Z INFO [VendorOrderService] VendorOrder created {"id":"VO-1ZK14T7J","clientOrderId":"CO-1ZK0WMM1","vendorWorkType":"FULL_APPRAISAL","tenantId":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.027Z INFO [ClientOrderService] Placed ClientOrder {"clientOrderId":"CO-1ZK0WMM1","tenantId":"aim-port-inttest-1778551348839","productType":"FULL_APPRAISAL","vendorOrderCount":1}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 
+200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.028Z WARN [VendorOrderReferenceService] 
+Auto-assignment orchestrator not available ΓÇö vendor matching not triggered 
+for inbound order 
+{"vendorOrderId":"AP-INTTEST-1778551348839","vendorOrderCount":1}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.028Z INFO [VendorOrderReferenceService] Created engagement + vendor order reference for inbound vendor order {"connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","vendorType":"aim-port","vendorOrderId":"AP-INTTEST-1778551348839","engagementId":"ENG-2026-1ZK0WMS6","engagementPropertyId":"LOAN-2026-1ZK0WMVV","clientOrderId":"CO-1ZK0WMM1","vendorOrderCount":1,"vendorOrderDbIds":["VO-1ZK14T7J"]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.029Z INFO [VendorIntegrationService] Normalized inbound vendor events {"vendorType":"aim-port","connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","lenderId":"lender-inttest","tenantId":"aim-port-inttest-1778551348839","eventCount":1,"eventTypes":["vendor.order.received"]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.032Z INFO [ServiceBusEventPublisher] Published event (mock bus): client-order.created {"eventId":"cocreated-CO-1ZK0WMM1-1778551356027"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.126Z INFO [App] Reading document from property-records {"documentId":"prop-1778551355401-ocxl8bu","partitionKey":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.171Z INFO [App] Document read result {"documentId":"prop-1778551355401-ocxl8bu","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.197Z INFO [VendorEventOutboxService] Persisted inbound vendor events to durable outbox {"connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","vendorType":"aim-port","eventCount":1,"outboxIds":["vendor-outbox:e877f8a4-b0fe-4db4-8fd4-c40efe0e7159"],"skippedReplayCount":0,"skippedReplayKeys":[]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39m2026-05-12T02:02:36.197Z INFO [App] Request completed {"correlationId":"175b98b1-b0b8-45c2-bf23-5e432b5f2cc9","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"3577ms"}
+2026-05-12T02:02:36.197Z INFO [App] Request completed {"correlationId":"175b98b1-b0b8-45c2-bf23-5e432b5f2cc9","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"3577ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:02:36 +0000] "POST /api/v1/integrations/aim-port/inbound HTTP/1.1" 200 105 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 200 ACK with internal VendorOrder id stamped as order_id
+[22m[39mAIM-Port inbound response: {
+  "client_id": "aim-port-inttest-client-1778551348839",
+  "success": "true",
+  "order_id": "VO-1ZK14T7J",
+  "fee": 750
+}
+Γ£à VendorOrder created: VO-1ZK14T7J
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mVendorOrder in Cosmos has full engagement ancestry
+[22m[39m2026-05-12T02:02:36.221Z INFO [PropertyRecordService] PropertyRecord version created {"id":"prop-1778551355401-ocxl8bu","tenantId":"aim-port-inttest-1778551348839","newVersion":2,"reason":"Geocoded subject coordinates at enrichment time","source":"PUBLIC_RECORDS_API","changedBy":"SYSTEM:property-enrichment"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mVendorOrder in Cosmos has full engagement ancestry
+[22m[39m2026-05-12T02:02:36.222Z INFO [LocalAttomPropertyDataProvider] LocalAttomPropertyDataProvider.lookupByAddress {"address":"789 Integration Blvd, Austin, TX 78702","hasApn":false}
+2026-05-12T02:02:36.222Z INFO [App] Executing query on attom-data {"query":"SELECT * FROM c WHERE c.type = 'attom-data' AND c.address.state = @state AND c.address.zip = @zip","parameters":[{"name":"@state","value":"TX"},{"name":"@zip","value":"78702"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mVendorOrder in Cosmos has full engagement ancestry
+[22m[39mVendorOrder from Cosmos: {
+  "clientOrderId": "CO-1ZK0WMM1",
+  "tenantId": "aim-port-inttest-1778551348839",
+  "createdBy": "vendor:aim-port",
+  "engagementId": "ENG-2026-1ZK0WMS6",
+  "engagementPropertyId": "LOAN-2026-1ZK0WMVV",
+  "clientId": "lender-inttest",
+  "productType": "FULL_APPRAISAL",
+  "propertyId": "prop-1778551355401-ocxl8bu",
+  "propertyAddress": {
+    "street": "789 Integration Blvd",
+    "streetAddress": "789 Integration Blvd",
+    "city": "Austin",
+    "state": "TX",
+    "zipCode": "78702",
+    "county": "Travis"
+  },
+  "borrowerInfo": {
+    "name": "Integration Test Borrower",
+    "email": "borrower@inttest.com",
+    "phone": "512-555-9999"
+  },
+  "loanInformation": {
+    "loanNumber": "LN-INTTEST-1778551352616",
+    "loanAmount": 525000,
+    "loanType": "conventional",
+    "occupancyType": "owner_occupied",
+    "purpose": "purchase"
+  },
+  "rushOrder": false,
+  "dueDate": "2026-07-01T00:00:00.000Z",
+  "metadata": {
+    "vendorIntegration": {
+      "connectionId": "7f64484c-0099-419e-91db-cb6c2d0f031d",
+      "inboundIdentifier": "aim-port-inttest-client-1778551348839",
+      "lenderId": "lender-inttest",
+      "vendorType": "aim-port",
+      "vendorOrderId": "AP-INTTEST-1778551348839",
+      "receivedAt": "2026-05-12T02:02:35.110Z",
+      "productIds": [
+        49079
+      ]
+    }
+  },
+  "status": "NEW",
+  "engagementClientOrderId": "CO-1ZK0WMM1",
+  "vendorWorkType": "FULL_APPRAISAL",
+  "accessControl": {
+    "ownerId": "vendor:aim-port",
+    "assignedUserIds": [],
+    "clientId": "lender-inttest",
+    "visibilityScope": "TEAM",
+    "tenantId": "aim-port-inttest-1778551348839"
+  },
+  "id": "VO-1ZK14T7J",
+  "type": "vendor-order",
+  "createdAt": "2026-05-12T02:02:35.837Z",
+  "updatedAt": "2026-05-12T02:02:35.837Z",
+  "_rid": "zG8jAMxly9TzBwAAAAAAAA==",
+  "_self": "dbs/zG8jAA==/colls/zG8jAMxly9Q=/docs/zG8jAMxly9TzBwAAAAAAAA==/",
+  "_etag": "\"110051ee-0000-0100-0000-6a028a3c0000\"",
+  "_attachments": "attachments/",
+  "_ts": 1778551356
+}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mEngagement in Cosmos has property as anchor with loan in loanReferences
+[22m[39mEngagement from Cosmos: {
+  "id": "ENG-2026-1ZK0WMS6",
+  "engagementNumber": "ENG-2026-1ZK0WMS6",
+  "tenantId": "aim-port-inttest-1778551348839",
+  "engagementType": "SINGLE",
+  "loansStoredExternally": false,
+  "client": {
+    "clientId": "lender-inttest",
+    "clientName": "Integration Test Lender"
+  },
+  "properties": [
+    {
+      "id": "LOAN-2026-1ZK0WMVV",
+      "propertyId": "prop-1778551355401-ocxl8bu",
+      "loanNumber": "LN-INTTEST-1778551352616",
+      "borrowerName": "Integration Test Borrower",
+      "borrowerEmail": "borrower@inttest.com",
+      "loanType": "conventional",
+      "loanReferences": [
+        {
+          "loanNumber": "LN-INTTEST-1778551352616",
+          "loanAmount": 525000,
+          "loanType": "conventional",
+          "loanPurpose": "purchase"
+        }
+      ],
+      "property": {
+        "address": "789 Integration Blvd",
+        "city": "Austin",
+        "state": "TX",
+        "zipCode": "78702",
+        "county": "Travis",
+        "propertyType": "sfr"
+      },
+      "status": "PENDING",
+      "clientOrders": [
+        {
+          "id": "CO-1ZK0WMM1",
+          "productType": "FULL_APPRAISAL",
+          "status": "PENDING",
+          "fee": 750,
+          "dueDate": "2026-07-01T00:00:00.000Z",
+          "vendorOrderIds": []
+        }
+      ]
+    }
+  ],
+  "status": "RECEIVED",
+  "priority": "ROUTINE",
+  "receivedAt": "2026-05-12T02:02:35.542Z",
+  "clientDueDate": "2026-07-01T00:00:00.000Z",
+  "createdAt": "2026-05-12T02:02:35.542Z",
+  "createdBy": "vendor:aim-port",
+  "updatedAt": "2026-05-12T02:02:35.542Z",
+  "_rid": "zG8jAMRZfOQeAgAAAAAAAA==",
+  "_self": "dbs/zG8jAA==/colls/zG8jAMRZfOQ=/docs/zG8jAMRZfOQeAgAAAAAAAA==/",
+  "_etag": "\"0400ac47-0000-0100-0000-6a028a3c0000\"",
+  "_attachments": "attachments/",
+  "_ts": 1778551356
+}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.296Z INFO [App] Incoming request {"correlationId":"aebd2d6d-c313-4f97-a72a-29542cb9cd29","method":"POST","url":"/api/v1/integrations/aim-port/inbound","ip":"::ffff:127.0.0.1"}
+
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mreturns 200 ACK with internal VendorOrder id stamped as order_id[33m 3588[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mVendorOrder in Cosmos has full engagement ancestry[32m 47[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mEngagement in Cosmos has property as anchor with loan in loanReferences[32m 43[2mms[22m[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.306Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.306Z INFO [LocalAttomPropertyDataProvider] LocalAttomPropertyDataProvider: no candidates for state/zip {"state":"TX","zip":"78702"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.307Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: provider[0] (LocalAttomPropertyDataProvider) returned null ΓÇö trying next {"address":"789 Integration Blvd, Austin, TX 78702"}
+2026-05-12T02:02:36.307Z INFO [BridgePropertyDataProvider] BridgePropertyDataProvider.lookupByAddress {"address":"789 Integration Blvd, Austin, TX 78702"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.500Z INFO [VendorIntegrationService] Normalized inbound vendor events {"vendorType":"aim-port","connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","lenderId":"lender-inttest","tenantId":"aim-port-inttest-1778551348839","eventCount":1,"eventTypes":["vendor.order.received"]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.539Z INFO [BridgePropertyDataProvider] BridgePropertyDataProvider: no match found {"address":"789 Integration Blvd, Austin, TX 78702"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.540Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: provider[1] (BridgePropertyDataProvider) returned null ΓÇö trying next {"address":"789 Integration Blvd, Austin, TX 78702"}
+2026-05-12T02:02:36.540Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: all providers exhausted ΓÇö no data found {"address":"789 Integration Blvd, Austin, TX 78702","providerCount":2}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.540Z INFO [PropertyEnrichmentService] PropertyEnrichmentService: provider returned no record {"orderId":"LOAN-2026-1ZK0WMVV","address":{"street":"789 Integration Blvd","city":"Austin","state":"TX","zipCode":"78702"}}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.587Z INFO [VendorEventOutboxService] Persisted inbound vendor events to durable outbox {"connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","vendorType":"aim-port","eventCount":1,"outboxIds":["vendor-outbox:d0e36c44-3c50-47d7-a487-5f8e7610224f"],"skippedReplayCount":0,"skippedReplayKeys":[]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39m2026-05-12T02:02:36.588Z INFO [App] Request completed {"correlationId":"aebd2d6d-c313-4f97-a72a-29542cb9cd29","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"293ms"}
+2026-05-12T02:02:36.588Z INFO [App] Request completed {"correlationId":"aebd2d6d-c313-4f97-a72a-29542cb9cd29","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"293ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:02:36 +0000] "POST /api/v1/integrations/aim-port/inbound HTTP/1.1" 200 105 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id
+[22m[39mΓ£à Idempotency confirmed ΓÇö same order_id returned: VO-1ZK14T7J
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 503 when vendor connection does not exist for an unknown client_id
+[22m[39m2026-05-12T02:02:36.593Z INFO [App] Incoming request {"correlationId":"c51ef262-c1b7-4bb8-b071-9d5d9fd8f85a","method":"POST","url":"/api/v1/integrations/aim-port/inbound","ip":"::ffff:127.0.0.1"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 
+503 when vendor connection does not exist for an unknown client_id
+[22m[39m2026-05-12T02:02:36.650Z ERROR [VendorIntegrationController] Inbound 
+vendor integration failed {"error":"No active vendor connection is configured 
+for vendorType=aim-port inboundIdentifier=unknown-client-xyz. Create or 
+activate a vendor connection before enabling this inbound integration.","vendor
+Type":"aim-port","headers":{"host":"127.0.0.1:55014","accept-encoding":"gzip, d
+eflate","content-type":"application/json","content-length":"329","connection":"
+close"}}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 503 when vendor connection does not exist for an unknown client_id
+[22m[39m2026-05-12T02:02:36.650Z INFO [App] Request completed {"correlationId":"c51ef262-c1b7-4bb8-b071-9d5d9fd8f85a","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":503,"duration":"57ms"}
+2026-05-12T02:02:36.650Z INFO [App] Request completed {"correlationId":"c51ef262-c1b7-4bb8-b071-9d5d9fd8f85a","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":503,"duration":"57ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:02:36 +0000] "POST /api/v1/integrations/aim-port/inbound HTTP/1.1" 503 272 "-" "-"
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mreturns 
+503 when vendor connection does not exist for an unknown client_id
+[22m[39m2026-05-12T02:02:36.651Z WARN [App] Request completed with error {"co
+rrelationId":"c51ef262-c1b7-4bb8-b071-9d5d9fd8f85a","method":"POST","url":"/api
+/v1/integrations/aim-port/inbound","statusCode":503,"duration":"58ms"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mautoVendorAssignment FSM reaches PENDING_BID when a matching vendor is seeded
+[22m[39m2026-05-12T02:02:36.691Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichOrder: complete {"orderId":"LOAN-2026-1ZK0WMVV","propertyId":"prop-1778551355401-ocxl8bu","status":"provider_miss","provider":"none"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > 
+[22m[2mautoVendorAssignment FSM reaches PENDING_BID when a matching vendor 
+is seeded
+[22m[39m2026-05-12T02:02:37.637Z WARN [PropertyEnrichmentService] 
+PropertyEnrichmentService: Zestimate returned no numeric value 
+{"orderId":"LOAN-2026-1ZK0WMVV","propertyId":"prop-1778551355401-ocxl8bu"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > 
+[22m[2mautoVendorAssignment FSM reaches PENDING_BID when a matching vendor 
+is seeded
+[22m[39m2026-05-12T02:02:37.856Z WARN [EngagementService] Failed to place 
+ClientOrder for engagement (non-fatal) {"engagementId":"ENG-2026-1ZK0WMS6","loa
+nId":"LOAN-2026-1ZK0WMVV","clientOrderId":"CO-1ZK0WMM1","productType":"FULL_APP
+RAISAL","error":"Entity with the specified id already exists in the system., 
+{\"Summary\":{\"DirectCalls\":{\"(409, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-05-12T02:02:38.471Z\",\"duration in 
+milliseconds\":16.9481,\"data\":{\"Client Side Request Stats\":{\"Id\":\"Aggreg
+atedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\":1,\"Uri\":\
+"rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14187/apps/aad844ef-e993
+-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c02ec3/partition
+s/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/134224164194418966p/\"},{\"Coun
+t\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14098/app
+s/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c
+02ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/1342241641944189
+65s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267.documents.azur
+e.com:14120/apps/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-40
+2f-b580-591638c02ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/1
+34224164194418967s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267
+.documents.azure.com:14148/apps/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c
+1d9b6bd-906a-402f-b580-591638c02ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c
+7f79/replicas/134224164144731169s/\"}],\"RegionsContacted\":[],\"FailedReplicas
+\":[],\"AddressResolutionStatistics\":[],\"StoreResponseStatistics\":[{\"Respon
+seTimeUTC\":\"2026-05-12T02:02:38.4880854Z\",\"DurationInMs\":16.8424,\"Resourc
+eType\":\"Document\",\"OperationType\":\"Create\",\"LocationEndpoint\":\"https:
+//appraisal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":
+{\"ActivityId\":\"6c3fdd0d-2022-4071-871a-aa1cb602f43a\",\"StatusCode\":\"Confl
+ict\",\"SubStatusCode\":\"Unknown\",\"LSN\":984,\"PartitionKeyRangeId\":\"0\",\
+"GlobalCommittedLSN\":984,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"QuorumAckedL
+SN\":984,\"SessionToken\":\"-1#984\",\"CurrentWriteQuorum\":3,\"CurrentReplicaS
+etSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":true,\"StorePhysicalAddress\":
+\"rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14187/apps/aad844ef-e99
+3-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c02ec3/partitio
+ns/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/134224164194418966p/\",\"Reque
+stCharge\":4.4,\"RetryAfterInMs\":null,\"BELatencyInMs\":\"1.257\",\"ReplicaHea
+lthStatuses\":[\"(port: 14187 | status: Unknown | lkt: 5/11/2026 8:52:00 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-05-12T02:02:38.4712631Z\", 
+\"durationInMs\": 0.0018},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-05-12T02:02:38.4712649Z\", \"durationInMs\": 
+13.7118},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-05-12T02:02:38.4849767Z\", \"durationInMs\": 0.0657},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-05-12T02:02:38.4850424Z\", 
+\"durationInMs\": 3.022},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-05-12T02:02:38.4880644Z\", \"durationInMs\": 0.0146},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-05-12T02:02:38.4880790Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\"openCo
+nnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"True\",\"callsP
+endingReceive\":0,\"lastSendAttempt\":\"2026-05-12T02:02:38.4815263Z\",\"lastSe
+nd\":\"2026-05-12T02:02:38.4815391Z\",\"lastReceive\":\"2026-05-12T02:02:38.484
+6847Z\"},\"requestSizeInBytes\":3273,\"requestBodySizeInBytes\":676,\"responseM
+etadataSizeInBytes\":225,\"responseBodySizeInBytes\":49},\"TransportException\"
+:null}}]}}}, Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline[2m > [22m[2mautoVendorAssignment FSM reaches PENDING_BID when a matching vendor is seeded
+[22m[39mautoVendorAssignment state after bid sent: [90mundefined[39m
+
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22midempotent ΓÇö second identical OrderRequest returns the same VendorOrder id[32m 298[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mreturns 503 when vendor connection does not exist for an unknown client_id[32m 63[2mms[22m[39m
+ [31m├ù[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mautoVendorAssignment FSM reaches PENDING_BID when a matching vendor is seeded[33m 10512[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be defined[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.698Z INFO [App] Incoming request {"correlationId":"712d3c96-ff38-4b00-83d2-54c9a5f5fe4c","method":"DELETE","url":"/api/vendor-integrations/connections/7f64484c-0099-419e-91db-cb6c2d0f031d","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.704Z INFO [App] Getting user profile {"userId":"inttest-admin","tenantId":"aim-port-inttest-1778551348839"}
+2026-05-12T02:02:57.704Z INFO [App] Executing query on users {"query":"SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId","parameters":[{"name":"@id","value":"inttest-admin"},{"name":"@tenantId","value":"aim-port-inttest-1778551348839"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.785Z INFO [App] Query returned 1 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.786Z INFO [App] User profile found {"userId":"inttest-admin","email":"inttest-admin@appraisal.com"}
+
+ [31m├ù[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö full integration pipeline[2m > [22mautoVendorAssignment FSM reaches ACCEPTED after operator calls vendor/accept[33m 10523[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be 'PENDING_BID' // Object.is equality[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.869Z INFO [App] Reading document from vendor-connections {"documentId":"7f64484c-0099-419e-91db-cb6c2d0f031d","partitionKey":"aim-port-inttest-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.911Z INFO [App] Document read result {"documentId":"7f64484c-0099-419e-91db-cb6c2d0f031d","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.951Z INFO [VendorConnectionAdminService] Vendor connection deactivated {"connectionId":"7f64484c-0099-419e-91db-cb6c2d0f031d","tenantId":"aim-port-inttest-1778551348839","vendorType":"aim-port","inboundIdentifier":"aim-port-inttest-client-1778551348839"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö full integration pipeline
+[22m[39m2026-05-12T02:02:57.952Z INFO [App] Request completed {"correlationId":"712d3c96-ff38-4b00-83d2-54c9a5f5fe4c","method":"DELETE","url":"/api/vendor-integrations/connections/7f64484c-0099-419e-91db-cb6c2d0f031d","statusCode":200,"duration":"254ms"}
+2026-05-12T02:02:57.952Z INFO [App] Request completed {"correlationId":"712d3c96-ff38-4b00-83d2-54c9a5f5fe4c","method":"DELETE","url":"/api/vendor-integrations/connections/7f64484c-0099-419e-91db-cb6c2d0f031d","statusCode":200,"duration":"254ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:02:57 +0000] "DELETE /api/vendor-integrations/connections/7f64484c-0099-419e-91db-cb6c2d0f031d HTTP/1.1" 200 896 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:58.017Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:58.017Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:58.018Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:58.018Z INFO [App] Reusing existing Azure Entra auth instance (JWKS cache preserved)
+2026-05-12T02:02:58.018Z INFO [App] Reusing existing Azure Entra auth instance (JWKS cache preserved)
+2026-05-12T02:02:58.078Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:58.092Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:58.111Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:58.111Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:58.112Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-05-12T02:02:58.113Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-05-12T02:02:58.114Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:58.018Z WARN [App] ΓÜá∩╕Å  Test tokens are ENABLED 
+- DO NOT USE IN PRODUCTION
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.536Z INFO [App] Γ£à Authorization health check passed: users container is reachable
+2026-05-12T02:02:59.536Z INFO [App] Γ£à Authorization ENFORCEMENT ENABLED ΓÇö Casbin policies will be enforced
+2026-05-12T02:02:59.536Z INFO [App] Initializing authorization service
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.536Z WARN [App] ΓÜá∩╕Å  
+AUTO_PROVISION_USERS=true ΓÇö first-time users will be auto-provisioned with 
+role="admin"
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.615Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.615Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.615Z INFO [App] Authorization middleware initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.615Z INFO [App] Authorization middleware initialized
+2026-05-12T02:02:59.620Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:59.621Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:59.621Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.621Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.621Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.637Z INFO [App] QC controllers initialized after database/env readiness
+2026-05-12T02:02:59.637Z INFO [App] QC Results routes registered
+2026-05-12T02:02:59.638Z INFO [App] Registering authorization routes...
+2026-05-12T02:02:59.638Z INFO [App] Initializing authorization service
+2026-05-12T02:02:59.639Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-05-12T02:02:59.639Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-05-12T02:02:59.640Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+2026-05-12T02:02:59.640Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini","SambaNova","Certo AI"]}
+2026-05-12T02:02:59.640Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-05-12T02:02:59.640Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.641Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:59.649Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:59.651Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:59.651Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:59.651Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:59.651Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.651Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.651Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.655Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.664Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.664Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.664Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.672Z INFO [App] Initializing authorization service
+2026-05-12T02:02:59.706Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.712Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.713Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.715Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+2026-05-12T02:02:59.723Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.723Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.724Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.724Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.724Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.724Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.724Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:59.724Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:59.725Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.725Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.725Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.726Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.726Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.726Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.727Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.728Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.730Z INFO [App] Teams service initialized with Managed Identity
+2026-05-12T02:02:59.730Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.730Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.730Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.731Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:59.731Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.731Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.731Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.731Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.731Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.741Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.741Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.742Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.742Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.743Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.743Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.743Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.743Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.743Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.743Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.743Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.744Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.744Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.744Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.744Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.744Z INFO [AiAutopilotPublisher] AiAutopilotPublisher running in mock mode {"queue":"autopilot-tasks"}
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.745Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.745Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.745Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.745Z INFO [ReviewDocumentExtractionService] ReviewDocumentExtractionService configured for real Axiom extraction {"baseUrl":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"}
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.745Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.745Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.746Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.746Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.747Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.747Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.747Z INFO [AiAutopilotPublisher] AiAutopilotPublisher running in mock mode {"queue":"autopilot-tasks"}
+2026-05-12T02:02:59.748Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.748Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.748Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.749Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-05-12T02:02:59.749Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.752Z INFO [App] AzureCommunicationService: using API key credential
+≡ƒº¬ Payment provider: Mock (no payment credentials configured)
+2026-05-12T02:02:59.753Z INFO [App] Payment provider initialised: Mock (simulated)
+2026-05-12T02:02:59.778Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.778Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:59.779Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.779Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.779Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.780Z INFO [App] AzureCommunicationService: using API key credential
+2026-05-12T02:02:59.780Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.781Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:59.781Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:59.781Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.781Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.781Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.781Z INFO [ServiceBusEventSubscriber] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.781Z INFO [VendorMatchingRulesProviderFactory] Vendor matching rules provider: homegrown
+2026-05-12T02:02:59.782Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.782Z INFO [AxiomService] Axiom live mode {"baseURL":"https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io","authenticated":false,"authMode":"none"}
+2026-05-12T02:02:59.782Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-05-12T02:02:59.782Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.782Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.788Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.788Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.788Z INFO [App] Address provider configuration loaded {"googleKeyConfigured":true,"mapboxTokenConfigured":false}
+2026-05-12T02:02:59.788Z INFO [PropertyDataProviderFactory] Property data provider chain: LocalAttom (Cosmos) ΓåÆ Bridge Interactive
+2026-05-12T02:02:59.788Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.788Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.812Z INFO [ServiceBusEventPublisher] USE_MOCK_SERVICE_BUS=true ΓÇö using in-memory mock Service Bus
+2026-05-12T02:02:59.821Z INFO [App] Γ£à Authorization routes registered successfully
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.708Z WARN [App] Azure Service Bus connection 
+string not provided, using mock implementation
+2026-05-12T02:02:59.714Z WARN [App] Azure Service Bus connection string not 
+provided, using mock implementation
+2026-05-12T02:02:59.724Z WARN [App] Azure Service Bus connection string not 
+provided, using mock implementation
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.924Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:02:59.925Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.037Z INFO [App] Casbin enforcer initialized from Cosmos capability materialization {"rulesLoaded":100,"policyCount":344,"tenantId":"platform-capabilities"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.039Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39mΓ£à Broadcast client config seeded: client-config-aim-port-broadcast-client-1778551348843
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.121Z INFO [App] Incoming request {"correlationId":"c00f45e5-1a61-4785-8706-c716fcfd1664","method":"POST","url":"/api/vendor-integrations/connections","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.140Z INFO [App] Getting user profile {"userId":"broadcast-inttest-admin","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+2026-05-12T02:03:01.140Z INFO [App] Executing query on users {"query":"SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId","parameters":[{"name":"@id","value":"broadcast-inttest-admin"},{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.205Z INFO [App] Query returned 0 results
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.206Z WARN [App] User not found in database {"user
+Id":"broadcast-inttest-admin","tenantId":"aim-port-broadcast-inttest-1778551348
+843"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.206Z WARN [App] AUTO-PROVISIONING user profile 
+(AUTO_PROVISION_USERS=true) {"userId":"broadcast-inttest-admin","email":"broadc
+ast-admin@appraisal.com","tenantId":"aim-port-broadcast-inttest-1778551348843",
+"role":"admin"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.600Z INFO [App] Executing query on vendor-connections {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.vendorType = @vendorType AND c.inboundIdentifier = @inboundIdentifier AND c.active = true","parameters":[{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"},{"name":"@vendorType","value":"aim-port"},{"name":"@inboundIdentifier","value":"aim-port-broadcast-client-1778551348843"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.662Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.820Z INFO [VendorConnectionAdminService] Vendor connection created {"connectionId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","tenantId":"aim-port-broadcast-inttest-1778551348843","vendorType":"aim-port","inboundIdentifier":"aim-port-broadcast-client-1778551348843","active":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:01.820Z INFO [App] Request completed {"correlationId":"c00f45e5-1a61-4785-8706-c716fcfd1664","method":"POST","url":"/api/vendor-integrations/connections","statusCode":201,"duration":"700ms"}
+2026-05-12T02:03:01.820Z INFO [App] Request completed {"correlationId":"c00f45e5-1a61-4785-8706-c716fcfd1664","method":"POST","url":"/api/vendor-integrations/connections","statusCode":201,"duration":"700ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:03:01 +0000] "POST /api/vendor-integrations/connections HTTP/1.1" 201 949 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39mΓ£à Vendor connection created: 60c99c23-d4e0-49cb-9c93-191ae0975bda
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39mΓ£à Broadcast vendors seeded: vendor-broadcast-inttest-1778551348843-1 vendor-broadcast-inttest-1778551348843-2
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:01.995Z INFO [App] Incoming request {"correlationId":"cadbba83-a343-43a8-afcc-2857ddcabb05","method":"POST","url":"/api/v1/integrations/aim-port/inbound","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:02.066Z INFO [VendorConnectionService] Initializing Key Vault client for vendor integrations {"keyVaultUrl":"https://kvapprmstastanktl4a.vault.azure.net/"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.323Z INFO [App] Executing query on property-records {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.address.zip = @zip AND c.address.state = @state","parameters":[{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"},{"name":"@zip","value":"78701"},{"name":"@state","value":"TX"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.367Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.454Z INFO [PropertyRecordService] resolveOrCreate: created new PropertyRecord {"propertyId":"prop-1778551384368-52i77e7","street":"456 Broadcast Ave","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.546Z INFO [EngagementService] Engagement created {"id":"ENG-2026-1ZKN7RL4","engagementNumber":"ENG-2026-1ZKN7RL4","engagementType":"SINGLE","loanCount":1}
+2026-05-12T02:03:04.546Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichEngagement: starting {"engagementId":"ENG-2026-1ZKN7RL4","loanId":"LOAN-2026-1ZKN7QD0","tenantId":"aim-port-broadcast-inttest-1778551348843","address":"456 Broadcast Ave, Austin, TX 78701"}
+2026-05-12T02:03:04.546Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichOrder: starting {"orderId":"LOAN-2026-1ZKN7QD0","tenantId":"aim-port-broadcast-inttest-1778551348843","address":"456 Broadcast Ave, Austin, TX 78701"}
+2026-05-12T02:03:04.547Z INFO [App] Executing query on property-records {"query":"SELECT * FROM c WHERE c.tenantId = @tenantId AND c.address.zip = @zip AND c.address.state = @state","parameters":[{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"},{"name":"@zip","value":"78701"},{"name":"@state","value":"TX"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.624Z INFO [App] Query returned 1 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.625Z INFO [PropertyRecordService] resolveOrCreate: resolved by normalized address {"address":"456 Broadcast Ave","propertyId":"prop-1778551384368-52i77e7","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.625Z INFO [PropertyEnrichmentService] PropertyEnrichmentService: PropertyRecord resolved {"orderId":"LOAN-2026-1ZKN7QD0","propertyId":"prop-1778551384368-52i77e7","isNew":false,"method":"ADDRESS_NORM"}
+2026-05-12T02:03:04.626Z INFO [App] Reading document from property-records {"documentId":"prop-1778551384368-52i77e7","partitionKey":"aim-port-broadcast-inttest-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.689Z INFO [App] Document read result {"documentId":"prop-1778551384368-52i77e7","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.689Z INFO [App] Executing query on property-observations {"query":"SELECT * FROM c\nWHERE c.type = @type\n  AND c.tenantId = @tenantId\n  AND c.propertyId = @propertyId\nORDER BY c.observedAt DESC","parameters":[{"name":"@type","value":"property-observation"},{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"},{"name":"@propertyId","value":"prop-1778551384368-52i77e7"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.754Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.840Z INFO [App] Order created successfully {"orderId":"VO-1ZKNEJ38"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.840Z INFO [VendorOrderService] VendorOrder created {"id":"VO-1ZKNEJ38","clientOrderId":"CO-1ZKN7R3I","vendorWorkType":"FULL_APPRAISAL","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.888Z INFO [ClientOrderService] Placed ClientOrder {"clientOrderId":"CO-1ZKN7R3I","tenantId":"aim-port-broadcast-inttest-1778551348843","productType":"FULL_APPRAISAL","vendorOrderCount":1}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > 
+[22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.888Z WARN [VendorOrderReferenceService] 
+Auto-assignment orchestrator not available ΓÇö vendor matching not triggered 
+for inbound order 
+{"vendorOrderId":"AP-BROADCAST-1778551348843","vendorOrderCount":1}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.888Z INFO [VendorOrderReferenceService] Created engagement + vendor order reference for inbound vendor order {"connectionId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","vendorType":"aim-port","vendorOrderId":"AP-BROADCAST-1778551348843","engagementId":"ENG-2026-1ZKN7RL4","engagementPropertyId":"LOAN-2026-1ZKN7QD0","clientOrderId":"CO-1ZKN7R3I","vendorOrderCount":1,"vendorOrderDbIds":["VO-1ZKNEJ38"]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.889Z INFO [VendorIntegrationService] Normalized inbound vendor events {"vendorType":"aim-port","connectionId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","lenderId":"lender-broadcast-inttest","tenantId":"aim-port-broadcast-inttest-1778551348843","eventCount":1,"eventTypes":["vendor.order.received"]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:04.891Z INFO [ServiceBusEventPublisher] Published event (mock bus): client-order.created {"eventId":"cocreated-CO-1ZKN7R3I-1778551384888"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.026Z INFO [App] Reading document from property-records {"documentId":"prop-1778551384368-52i77e7","partitionKey":"aim-port-broadcast-inttest-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.075Z INFO [App] Document read result {"documentId":"prop-1778551384368-52i77e7","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.124Z INFO [PropertyRecordService] PropertyRecord version created {"id":"prop-1778551384368-52i77e7","tenantId":"aim-port-broadcast-inttest-1778551348843","newVersion":2,"reason":"Geocoded subject coordinates at enrichment time","source":"PUBLIC_RECORDS_API","changedBy":"SYSTEM:property-enrichment"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.125Z INFO [LocalAttomPropertyDataProvider] LocalAttomPropertyDataProvider.lookupByAddress {"address":"456 Broadcast Ave, Austin, TX 78701","hasApn":false}
+2026-05-12T02:03:05.125Z INFO [App] Executing query on attom-data {"query":"SELECT * FROM c WHERE c.type = 'attom-data' AND c.address.state = @state AND c.address.zip = @zip","parameters":[{"name":"@state","value":"TX"},{"name":"@zip","value":"78701"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.128Z INFO [VendorEventOutboxService] Persisted inbound vendor events to durable outbox {"connectionId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","vendorType":"aim-port","eventCount":1,"outboxIds":["vendor-outbox:6359048e-10c4-468b-a886-4673cb9e44f6"],"skippedReplayCount":0,"skippedReplayKeys":[]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39m2026-05-12T02:03:05.129Z INFO [App] Request completed {"correlationId":"cadbba83-a343-43a8-afcc-2857ddcabb05","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"3133ms"}
+2026-05-12T02:03:05.129Z INFO [App] Request completed {"correlationId":"cadbba83-a343-43a8-afcc-2857ddcabb05","method":"POST","url":"/api/v1/integrations/aim-port/inbound","statusCode":200,"duration":"3134ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:03:05 +0000] "POST /api/v1/integrations/aim-port/inbound HTTP/1.1" 200 107 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mreturns 200 ACK from AIM-Port inbound with broadcast client
+[22m[39mBroadcast AIM-Port inbound response: {
+  "client_id": "aim-port-broadcast-client-1778551348843",
+  "success": "true",
+  "order_id": "VO-1ZKNEJ38",
+  "fee": 600
+}
+Γ£à Broadcast order created: VO-1ZKNEJ38
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.202Z INFO [App] Query returned 0 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.203Z INFO [LocalAttomPropertyDataProvider] LocalAttomPropertyDataProvider: no candidates for state/zip {"state":"TX","zip":"78701"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.203Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: provider[0] (LocalAttomPropertyDataProvider) returned null ΓÇö trying next {"address":"456 Broadcast Ave, Austin, TX 78701"}
+2026-05-12T02:03:05.203Z INFO [BridgePropertyDataProvider] BridgePropertyDataProvider.lookupByAddress {"address":"456 Broadcast Ave, Austin, TX 78701"}
+
+ [32mΓ£ô[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22mreturns 200 ACK from AIM-Port inbound with broadcast client[33m 3145[2mms[22m[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.404Z INFO [BridgePropertyDataProvider] BridgePropertyDataProvider: no match found {"address":"456 Broadcast Ave, Austin, TX 78701"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.405Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: provider[1] (BridgePropertyDataProvider) returned null ΓÇö trying next {"address":"456 Broadcast Ave, Austin, TX 78701"}
+2026-05-12T02:03:05.405Z INFO [ChainedPropertyDataProvider] ChainedPropertyDataProvider: all providers exhausted ΓÇö no data found {"address":"456 Broadcast Ave, Austin, TX 78701","providerCount":2}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.405Z INFO [PropertyEnrichmentService] PropertyEnrichmentService: provider returned no record {"orderId":"LOAN-2026-1ZKN7QD0","address":{"street":"456 Broadcast Ave","city":"Austin","state":"TX","zipCode":"78701"}}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39m2026-05-12T02:03:05.497Z INFO [PropertyEnrichmentService] PropertyEnrichmentService.enrichOrder: complete {"orderId":"LOAN-2026-1ZKN7QD0","propertyId":"prop-1778551384368-52i77e7","status":"provider_miss","provider":"none"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > 
+[22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds 
+populated
+[22m[39m2026-05-12T02:03:05.618Z WARN [PropertyEnrichmentService] 
+PropertyEnrichmentService: Zestimate returned no numeric value 
+{"orderId":"LOAN-2026-1ZKN7QD0","propertyId":"prop-1778551384368-52i77e7"}
+
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > 
+[22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds 
+populated
+[22m[39m2026-05-12T02:03:05.824Z WARN [EngagementService] Failed to place 
+ClientOrder for engagement (non-fatal) {"engagementId":"ENG-2026-1ZKN7RL4","loa
+nId":"LOAN-2026-1ZKN7QD0","clientOrderId":"CO-1ZKN7R3I","productType":"FULL_APP
+RAISAL","error":"Entity with the specified id already exists in the system., 
+{\"Summary\":{\"DirectCalls\":{\"(409, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-05-12T02:03:06.459Z\",\"duration in 
+milliseconds\":2.8422,\"data\":{\"Client Side Request Stats\":{\"Id\":\"Aggrega
+tedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\":1,\"Uri\":\"
+rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14187/apps/aad844ef-e993-
+447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c02ec3/partitions
+/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/134224164194418966p/\"},{\"Count
+\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14098/apps
+/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c0
+2ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/13422416419441896
+5s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267.documents.azure
+.com:14120/apps/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402
+f-b580-591638c02ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/13
+4224164194418967s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be267.
+documents.azure.com:14148/apps/aad844ef-e993-447f-a58b-1eb1ce6c3158/services/c1
+d9b6bd-906a-402f-b580-591638c02ec3/partitions/981aa24e-b9a5-45da-bce8-babfea9c7
+f79/replicas/134224164144731169s/\"}],\"RegionsContacted\":[],\"FailedReplicas\
+":[],\"AddressResolutionStatistics\":[],\"StoreResponseStatistics\":[{\"Respons
+eTimeUTC\":\"2026-05-12T02:03:06.4625452Z\",\"DurationInMs\":2.7327,\"ResourceT
+ype\":\"Document\",\"OperationType\":\"Create\",\"LocationEndpoint\":\"https://
+appraisal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\
+"ActivityId\":\"9d9216ee-8cd2-4d93-a462-e73b43f7630d\",\"StatusCode\":\"Conflic
+t\",\"SubStatusCode\":\"Unknown\",\"LSN\":986,\"PartitionKeyRangeId\":\"0\",\"G
+lobalCommittedLSN\":986,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"QuorumAckedLSN
+\":986,\"SessionToken\":\"-1#986\",\"CurrentWriteQuorum\":3,\"CurrentReplicaSet
+Size\":4,\"NumberOfReadRegions\":0,\"IsValid\":true,\"StorePhysicalAddress\":\"
+rntbd://cdb-ms-prod-eastus1-be267.documents.azure.com:14187/apps/aad844ef-e993-
+447f-a58b-1eb1ce6c3158/services/c1d9b6bd-906a-402f-b580-591638c02ec3/partitions
+/981aa24e-b9a5-45da-bce8-babfea9c7f79/replicas/134224164194418966p/\",\"Request
+Charge\":4.4,\"RetryAfterInMs\":null,\"BELatencyInMs\":\"1.239\",\"ReplicaHealt
+hStatuses\":[\"(port: 14187 | status: Unknown | lkt: 5/11/2026 11:39:29 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-05-12T02:03:06.4598322Z\", 
+\"durationInMs\": 0.0073},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-05-12T02:03:06.4598395Z\", \"durationInMs\": 
+0.0099},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-05-12T02:03:06.4598494Z\", \"durationInMs\": 0.067},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-05-12T02:03:06.4599164Z\", 
+\"durationInMs\": 2.5775},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-05-12T02:03:06.4624939Z\", \"durationInMs\": 0.0401},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-05-12T02:03:06.4625340Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\"openCo
+nnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"False\",\"calls
+PendingReceive\":0,\"lastSendAttempt\":\"2026-05-12T02:02:36.6455220Z\",\"lastS
+end\":\"2026-05-12T02:02:36.6455687Z\",\"lastReceive\":\"2026-05-12T02:02:36.66
+88500Z\"},\"requestSizeInBytes\":3300,\"requestBodySizeInBytes\":693,\"response
+MetadataSizeInBytes\":225,\"responseBodySizeInBytes\":49},\"TransportException\
+":null}}]}}}, Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated
+[22m[39mautoVendorAssignment broadcast state: [90mundefined[39m
+
+ [31m├ù[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22mautoVendorAssignment enters broadcast mode ΓÇö broadcastBidIds populated[33m 15790[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be defined[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:31.426Z INFO [App] Incoming request {"correlationId":"f8e0e1d0-00f8-4401-b47e-68c4d3097313","method":"POST","url":"/api/auto-assignment/orders/VO-1ZKNEJ38/vendor/accept","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:31.430Z INFO [App] Getting user profile {"userId":"broadcast-inttest-admin","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+2026-05-12T02:03:31.430Z INFO [App] Executing query on users {"query":"SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId","parameters":[{"name":"@id","value":"broadcast-inttest-admin"},{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:31.495Z INFO [App] Query returned 1 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:31.496Z INFO [App] User profile found {"userId":"broadcast-inttest-admin","email":"broadcast-admin@appraisal.com"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:31.505Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-05-12T02:03:31.506Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-05-12T02:03:31.507Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:33.335Z INFO [App] Request completed {"correlationId":"f8e0e1d0-00f8-4401-b47e-68c4d3097313","method":"POST","url":"/api/auto-assignment/orders/VO-1ZKNEJ38/vendor/accept","statusCode":409,"duration":"1910ms"}
+2026-05-12T02:03:33.335Z INFO [App] Request completed {"correlationId":"f8e0e1d0-00f8-4401-b47e-68c4d3097313","method":"POST","url":"/api/auto-assignment/orders/VO-1ZKNEJ38/vendor/accept","statusCode":409,"duration":"1910ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:03:33 +0000] "POST /api/auto-assignment/orders/VO-1ZKNEJ38/vendor/accept HTTP/1.1" 409 88 "-" "-"
+[90mstderr[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > 
+[22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > 
+[22m[2mPOST /vendor/accept delegates to orchestrator in broadcast mode
+[22m[39m2026-05-12T02:03:33.336Z WARN [App] Request completed with error {"co
+rrelationId":"f8e0e1d0-00f8-4401-b47e-68c4d3097313","method":"POST","url":"/api
+/auto-assignment/orders/VO-1ZKNEJ38/vendor/accept","statusCode":409,"duration":
+"1911ms"}
+
+ [31m├ù[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22mPOST /vendor/accept delegates to orchestrator in broadcast mode[33m 12418[2mms[22m[39m
+[31m   ΓåÆ expected 200 "OK", got 409 "Conflict"[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22m[2mautoVendorAssignment reaches ACCEPTED after broadcast accept (requires live Service Bus)
+[22m[39mBroadcast autoVendorAssignment final state: [90mundefined[39m
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.368Z INFO [App] Incoming request {"correlationId":"285c7799-2e57-478f-a31d-32fe0ea9447a","method":"DELETE","url":"/api/vendor-integrations/connections/60c99c23-d4e0-49cb-9c93-191ae0975bda","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.370Z INFO [App] Getting user profile {"userId":"broadcast-inttest-admin","tenantId":"aim-port-broadcast-inttest-1778551348843"}
+2026-05-12T02:03:54.370Z INFO [App] Executing query on users {"query":"SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId","parameters":[{"name":"@id","value":"broadcast-inttest-admin"},{"name":"@tenantId","value":"aim-port-broadcast-inttest-1778551348843"}]}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.412Z INFO [App] Query returned 1 results
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.413Z INFO [App] User profile found {"userId":"broadcast-inttest-admin","email":"broadcast-admin@appraisal.com"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.458Z INFO [App] Reading document from vendor-connections {"documentId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","partitionKey":"aim-port-broadcast-inttest-1778551348843"}
+
+ [31m├ù[39m tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port inbound ΓÇö broadcast-mode auto-assignment[2m > [22mautoVendorAssignment reaches ACCEPTED after broadcast accept (requires live Service Bus)[33m 21023[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be 'ACCEPTED' // Object.is equality[39m
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.502Z INFO [App] Document read result {"documentId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","hasResource":true}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.560Z INFO [VendorConnectionAdminService] Vendor connection deactivated {"connectionId":"60c99c23-d4e0-49cb-9c93-191ae0975bda","tenantId":"aim-port-broadcast-inttest-1778551348843","vendorType":"aim-port","inboundIdentifier":"aim-port-broadcast-client-1778551348843"}
+
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts[2m > [22m[2mAIM-Port inbound ΓÇö broadcast-mode auto-assignment
+[22m[39m2026-05-12T02:03:54.561Z INFO [App] Request completed {"correlationId":"285c7799-2e57-478f-a31d-32fe0ea9447a","method":"DELETE","url":"/api/vendor-integrations/connections/60c99c23-d4e0-49cb-9c93-191ae0975bda","statusCode":200,"duration":"194ms"}
+2026-05-12T02:03:54.561Z INFO [App] Request completed {"correlationId":"285c7799-2e57-478f-a31d-32fe0ea9447a","method":"DELETE","url":"/api/vendor-integrations/connections/60c99c23-d4e0-49cb-9c93-191ae0975bda","statusCode":200,"duration":"194ms"}
+
+::ffff:127.0.0.1 - - [12/May/2026:02:03:54 +0000] "DELETE /api/vendor-integrations/connections/60c99c23-d4e0-49cb-9c93-191ae0975bda HTTP/1.1" 200 950 "-" "-"
+[90mstdout[2m | tests/integration/aim-port-inbound.integration.test.ts
+[22m[39m≡ƒº╣ Cleaning up test environment...
+Γ£à Test cleanup complete
+
+
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m[1m[41m Failed Tests 5 
+[49m[22m[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port 
+inbound ΓÇö full integration pipeline[2m > [22mautoVendorAssignment FSM 
+reaches PENDING_BID when a matching vendor is seeded
+[31m[1mAssertionError[22m: expected undefined to be defined[39m
+[36m [2mΓ¥»[22m 
+tests/integration/aim-port-inbound.integration.test.ts:[2m335:24[22m[39m
+    [90m333| [39m    console.log('autoVendorAssignment state after bid 
+sent:', JSON.strΓÇª
+    [90m334| [39m
+    [90m335| [39m    
+[34mexpect[39m(assignment)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m   | [39m                       [31m^[39m
+    [90m336| [39m    [34mexpect[39m([[32m'PENDING_BID'[39m[33m,[39m [3
+2m'ACCEPTED'[39m])[33m.[39m[34mtoContain[39m(assignment[33m?.[39mstatus)
+[33m;[39m
+    [90m337| [39m    [90m// The ranked vendor list must include the seeded 
+vendor.[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[1/5]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port 
+inbound ΓÇö full integration pipeline[2m > [22mautoVendorAssignment FSM 
+reaches ACCEPTED after operator calls vendor/accept
+[31m[1mAssertionError[22m: expected undefined to be 'PENDING_BID' // 
+Object.is equality[39m
+
+[32m- Expected:[39m 
+"PENDING_BID"
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2mΓ¥»[22m 
+tests/integration/aim-port-inbound.integration.test.ts:[2m358:39[22m[39m
+    [90m356| [39m    // Skip accept call if the FSM already reached ACCEPTED 
+via the orΓÇª
+    [90m357| [39m    [35mif[39m (priorAssignment[33m?.[39mstatus 
+[33m!==[39m [32m'ACCEPTED'[39m) {
+    [90m358| [39m      [34mexpect[39m(priorAssignment[33m?.[39mstatus)[3
+3m.[39m[34mtoBe[39m([32m'PENDING_BID'[39m)[33m;[39m
+    [90m   | [39m                                      [31m^[39m
+    [90m359| [39m
+    [90m360| [39m      [35mconst[39m acceptRes [33m=[39m [35mawait[39m 
+[34mrequest[39m(app)
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[2/5]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port 
+inbound ΓÇö broadcast-mode auto-assignment[2m > [22mautoVendorAssignment 
+enters broadcast mode ΓÇö broadcastBidIds populated
+[31m[1mAssertionError[22m: expected undefined to be defined[39m
+[36m [2mΓ¥»[22m 
+tests/integration/aim-port-inbound.integration.test.ts:[2m617:24[22m[39m
+    [90m615| [39m    console.log('autoVendorAssignment broadcast state:', 
+JSON.stringifΓÇª
+    [90m616| [39m
+    [90m617| [39m    
+[34mexpect[39m(assignment)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m   | [39m                       [31m^[39m
+    [90m618| [39m    [34mexpect[39m(assignment[33m?.[39mbroadcastMode)[3
+3m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m619| [39m    const broadcastBidIds = (assignment?.broadcastBidIds as 
+unknown[])ΓÇª
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[3/5]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port 
+inbound ΓÇö broadcast-mode auto-assignment[2m > [22mPOST /vendor/accept 
+delegates to orchestrator in broadcast mode
+[31m[1mError[22m: expected 200 "OK", got 409 "Conflict"[39m
+[36m [2mΓ¥»[22m 
+tests/integration/aim-port-inbound.integration.test.ts:[2m646:8[22m[39m
+    [90m644| [39m      
+.post(`/api/auto-assignment/orders/${createdOrderId}/vendor/acceΓÇª
+    [90m645| [39m      
+[33m.[39m[35mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+[39m[36m${[39madminToken[36m}[39m[32m`[39m)
+    [90m646| [39m      [33m.[39m[34mexpect[39m([34m200[39m)[33m;[39m
+    [90m   | [39m       [31m^[39m
+    [90m647| [39m
+    [90m648| [39m    console.log('Broadcast accept response:', 
+JSON.stringify(acceptResΓÇª
+[90m [2mΓ¥»[22m Test._assertStatus node_modules/.pnpm/supertest@6.3.4/node_m
+odules/supertest/lib/test.js:[2m252:14[22m[39m
+[90m [2mΓ¥»[22m node_modules/.pnpm/supertest@6.3.4/node_modules/supertest/li
+b/test.js:[2m308:13[22m[39m
+[90m [2mΓ¥»[22m Test._assertFunction node_modules/.pnpm/supertest@6.3.4/node
+_modules/supertest/lib/test.js:[2m285:13[22m[39m
+[90m [2mΓ¥»[22m Test.assert node_modules/.pnpm/supertest@6.3.4/node_modules/
+supertest/lib/test.js:[2m164:23[22m[39m
+[90m [2mΓ¥»[22m Server.localAssert node_modules/.pnpm/supertest@6.3.4/node_m
+odules/supertest/lib/test.js:[2m120:14[22m[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[4/5]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m > [22mAIM-Port 
+inbound ΓÇö broadcast-mode auto-assignment[2m > [22mautoVendorAssignment 
+reaches ACCEPTED after broadcast accept (requires live Service Bus)
+[31m[1mAssertionError[22m: expected undefined to be 'ACCEPTED' // Object.is 
+equality[39m
+
+[32m- Expected:[39m 
+"ACCEPTED"
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2mΓ¥»[22m 
+tests/integration/aim-port-inbound.integration.test.ts:[2m675:37[22m[39m
+    [90m673| [39m    console.log('Broadcast autoVendorAssignment final 
+state:', JSON.stΓÇª
+    [90m674| [39m
+    [90m675| [39m    [34mexpect[39m(finalAssignment[33m?.[39mstatus)[33m
+.[39m[34mtoBe[39m([32m'ACCEPTED'[39m)[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m676| [39m    [34mexpect[39m(finalAssignment[33m?.[39mbroadcastMod
+e)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m677| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[5/5]ΓÄ»[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m6 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 22:01:48
+[2m   Duration [22m 126.29s[2m (transform 11.37s, setup 96ms, collect 38.66s, tests 85.84s, environment 0ms, prepare 322ms)[22m
+
+JSON report written to C:/source/appraisal-management-backend/coverage/test-results.json
+[1m[7m[35m HTML [39m[27m[22m [35mReport is generated[39m
+[2m       You can run [22m[1mnpx vite preview --outDir coverage[22m[2m to see the test results.[22m
+[globalTeardown] AZURE_COSMOS_ENDPOINT unset ΓÇö skipping test-tenant cleanup

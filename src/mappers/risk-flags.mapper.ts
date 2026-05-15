@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Risk-flags → Canonical mapper
  *
  * Aggregates boolean / categorical risk indicators from multiple sources
@@ -17,7 +17,7 @@
  */
 
 import type { RiskTapeItem } from '../types/review-tape.types.js';
-import type { CanonicalRiskFlags } from '../types/canonical-schema.js';
+import type { CanonicalRiskFlags } from '@l1/shared-types';
 
 function s(v: unknown): string | null {
     if (v == null) return null;

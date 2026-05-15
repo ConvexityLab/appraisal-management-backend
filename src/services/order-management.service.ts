@@ -6,9 +6,19 @@ import { VendorManagementService } from './vendor-management.service.js';
 import { NotificationService } from './notification.service.js';
 import { AuditService } from './audit.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
+
+type AddressLike = {
+  streetAddress?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  zip?: string;
+};
 
 // Simple event emitter implementation
 class SimpleEventEmitter {
@@ -40,12 +50,32 @@ function generateUUID(): string {
   });
 }
 
+function formatAddressText(address?: AddressLike): string | undefined {
+  if (!address) {
+    return undefined;
+  }
+
+  const street = address.streetAddress ?? address.street ?? '';
+  const locality = [address.city, address.state].filter(Boolean).join(', ');
+  const zipCode = address.zipCode ?? address.zip ?? '';
+  const trailing = [locality, zipCode].filter(Boolean).join(' ');
+  const formatted = [street, trailing].filter(Boolean).join(', ').trim();
+
+  return formatted.length > 0 ? formatted : undefined;
+}
+
+function hasEmbeddedPropertyAddress(order: Order): boolean {
+  return typeof order.propertyAddress?.streetAddress === 'string'
+    && order.propertyAddress.streetAddress.trim().length > 0;
+}
+
 export class OrderManagementService extends SimpleEventEmitter {
   private db: DatabaseService;
   private vendorService: VendorManagementService;
   private notificationService: NotificationService;
   private auditService: AuditService;
   private publisher: ServiceBusEventPublisher;
+  private tenantConfigService: TenantAutomationConfigService;
   private logger: Logger;
   // private workflowAgent: WorkflowAgent;
   // private routingAgent: RoutingAgent;
@@ -63,6 +93,7 @@ export class OrderManagementService extends SimpleEventEmitter {
     this.notificationService = notificationService;
     this.auditService = auditService;
     this.publisher = new ServiceBusEventPublisher();
+    this.tenantConfigService = new TenantAutomationConfigService();
     this.logger = logger;
   }
 
@@ -87,6 +118,30 @@ export class OrderManagementService extends SimpleEventEmitter {
     }
   }
 
+  private async resolveCanonicalPropertyAddress(order: Order): Promise<string | undefined> {
+    const propertyId = typeof order.propertyId === 'string' && order.propertyId.trim().length > 0
+      ? order.propertyId
+      : undefined;
+
+    if (propertyId) {
+      try {
+        const property = await this.db.properties.findById(propertyId);
+        const canonicalAddress = formatAddressText(property?.address);
+        if (canonicalAddress) {
+          return canonicalAddress;
+        }
+      } catch (error) {
+        this.logger.warn('OrderManagementService could not resolve canonical property address; using embedded order copy', {
+          orderId: order.id,
+          propertyId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return formatAddressText(order.propertyAddress as AddressLike | undefined);
+  }
+
   /**
    * Create a new appraisal order
    */
@@ -102,6 +157,30 @@ export class OrderManagementService extends SimpleEventEmitter {
         createdAt: now,
         updatedAt: now
       };
+
+      // Inherit Axiom program defaults from the per-tenant automation config
+      // when the order didn't already carry them. Without these fields the
+      // FE's QCReviewContent skips `useGetLatestResultsQuery` entirely —
+      // verdicts never reach the UI even though Axiom evaluated them.
+      // Best-effort: if the lookup throws or the config has no axiomProgramId,
+      // leave the order's value as-is rather than blocking creation.
+      if (!(order as any).axiomProgramId && order.clientId) {
+        try {
+          // Order has no subClientId today, so this resolves to client-level
+          // platform defaults inside tenantConfigService (its fallback path
+          // when subClientId is undefined).
+          const cfg = await this.tenantConfigService.getConfig(order.clientId);
+          if (cfg.axiomProgramId) {
+            (order as any).axiomProgramId = cfg.axiomProgramId;
+            (order as any).axiomProgramVersion = cfg.axiomProgramVersion ?? '1.0.0';
+          }
+        } catch (cfgErr) {
+          this.logger.warn('createOrder: tenant axiom-program lookup failed; leaving order without program defaults', {
+            orderId, clientId: order.clientId,
+            error: cfgErr instanceof Error ? cfgErr.message : String(cfgErr),
+          });
+        }
+      }
 
       // Validate order data
       await this.validateOrderData(order);
@@ -128,9 +207,7 @@ export class OrderManagementService extends SimpleEventEmitter {
         tenantId: order.tenantId,
         clientId: order.clientId,
         productType: order.productType,
-        propertyAddress: order.propertyAddress
-          ? `${(order.propertyAddress as any).streetAddress ?? ''}, ${(order.propertyAddress as any).city ?? ''} ${(order.propertyAddress as any).state ?? ''}`.trim()
-          : undefined,
+        propertyAddress: await this.resolveCanonicalPropertyAddress(order),
         createdBy: order.createdBy,
       });
 
@@ -539,10 +616,22 @@ export class OrderManagementService extends SimpleEventEmitter {
     // Validate required fields. propertyAddress / orderType / dueDate are now
     // optional on VendorOrder (Phase 2 of the Order-relocation refactor) —
     // they're populated only on legacy /api/orders POSTs that supplied a
-    // full lender intake. The legacy create path is the one that calls this
-    // validator, so it's reasonable to enforce them here.
+    // full lender intake. The create flow can now also run with canonical
+    // `propertyId` only; in that case we require the canonical PropertyRecord
+    // to exist instead of forcing a duplicated embedded property address.
     if (!order.clientId) throw new Error('Client ID is required');
-    if (!order.propertyAddress?.streetAddress) throw new Error('Property address is required');
+    const propertyId = typeof order.propertyId === 'string' && order.propertyId.trim().length > 0
+      ? order.propertyId
+      : undefined;
+    if (!hasEmbeddedPropertyAddress(order) && !propertyId) {
+      throw new Error('Property address or propertyId is required');
+    }
+    if (propertyId) {
+      const property = await this.db.properties.findById(propertyId);
+      if (!property) {
+        throw new Error(`Canonical property '${propertyId}' was not found`);
+      }
+    }
     if (!order.orderType) throw new Error('Order type is required');
     if (!order.productType) throw new Error('Product type is required');
     if (!order.dueDate) throw new Error('Due date is required');

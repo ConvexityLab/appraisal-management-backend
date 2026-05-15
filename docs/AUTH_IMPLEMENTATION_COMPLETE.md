@@ -122,8 +122,8 @@ curl -H "Authorization: Bearer $TEST_JWT_TOKEN" http://localhost:3000/api/orders
 export TEST_JWT_TOKEN=$TEST_JWT_MANAGER
 curl -H "Authorization: Bearer $TEST_JWT_TOKEN" http://localhost:3000/api/orders
 
-# Test as QC Analyst (assigned items only)
-export TEST_JWT_TOKEN=$TEST_JWT_QC_ANALYST
+# Test as Analyst (assigned items only)
+export TEST_JWT_TOKEN=$TEST_JWT_ANALYST
 curl -H "Authorization: Bearer $TEST_JWT_TOKEN" http://localhost:3000/api/qc/validate/order-123
 
 # Test as Appraiser (owned items only)
@@ -187,13 +187,13 @@ describe('Authorization Tests', () => {
 }
 ```
 
-### QC Analyst Token
+### Analyst Token
 ```json
 {
-  "email": "qc.analyst@test.local",
-  "role": "qc_analyst",
+  "email": "analyst@test.local",
+  "role": "analyst",
   "permissions": [
-    "qc_validate", "qc_execute", "order_view"
+    "qc_review:read", "qc_review:execute", "order:read"
   ],
   "accessScope": {
     "teamIds": ["team-qc"],
@@ -285,7 +285,7 @@ ALLOW_TEST_TOKENS=false # ✅ SAFE (or not set at all)
 - [ ] Test GET /api/orders with appraiser token (should be filtered)
 - [ ] Test POST /api/orders with admin token (should work)
 - [ ] Test POST /api/orders with appraiser token (should fail 403)
-- [ ] Test /api/qc/validate with qc_analyst token (should work)
+- [ ] Test /api/qc/validate with analyst token (should work)
 - [ ] Test /api/qc/validate with appraiser token (should fail 403)
 - [ ] Test swapping TEST_JWT_TOKEN environment variable
 - [ ] Verify token expiration after 24 hours

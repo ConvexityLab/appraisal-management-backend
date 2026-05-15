@@ -14,7 +14,7 @@
  *
  * Required environment variables:
  *   COSMOS_ENDPOINT       — Cosmos DB account endpoint
- *   COSMOS_DATABASE_ID    — Cosmos DB database name
+ *   COSMOS_DATABASE_ID or COSMOS_DATABASE_NAME — Cosmos DB database name
  *   SEED_TENANT_ID        — Target tenant; defaults to 'default'
  *
  * Authentication:
@@ -26,6 +26,10 @@ import { DefaultAzureCredential } from '@azure/identity';
 import crypto from 'crypto';
 import * as dotenv from 'dotenv';
 import { buildDefaultPolicies } from '../src/data/default-policy-rules.js';
+import {
+  materializeAuthorizationCapabilityDocuments,
+  AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+} from '../src/data/platform-capability-matrix.js';
 import type { PolicyRule } from '../src/types/policy.types.js';
 
 dotenv.config();
@@ -38,16 +42,16 @@ const CONTAINER = 'authorization-policies';
  */
 function deterministicId(tenantId: string, r: PolicyRule): string {
   const key = `${tenantId}|${r.role}|${r.resourceType}|${r.description}`;
-  return crypto.createHash('sha1').update(key).digest('hex');
+  return `seed-policy-${crypto.createHash('sha1').update(key).digest('hex')}`;
 }
 
 async function main(): Promise<void> {
   const endpoint = process.env['COSMOS_ENDPOINT'];
-  const databaseId = process.env['COSMOS_DATABASE_ID'];
+  const databaseId = process.env['COSMOS_DATABASE_ID'] ?? process.env['COSMOS_DATABASE_NAME'];
   const tenantId = process.env['SEED_TENANT_ID'] ?? 'default';
 
   if (!endpoint) throw new Error('COSMOS_ENDPOINT is required');
-  if (!databaseId) throw new Error('COSMOS_DATABASE_ID is required');
+  if (!databaseId) throw new Error('COSMOS_DATABASE_ID or COSMOS_DATABASE_NAME is required');
 
   const client = new CosmosClient({
     endpoint,
@@ -61,7 +65,15 @@ async function main(): Promise<void> {
     id: deterministicId(tenantId, r),
   }));
 
-  console.log(`Seeding ${rules.length} default policy rules for tenantId="${tenantId}" …`);
+  const capabilityDocs = materializeAuthorizationCapabilityDocuments(
+    AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+    'system:seed',
+  );
+
+  console.log(
+    `Seeding ${rules.length} default policy rules for tenantId="${tenantId}" and ` +
+    `${capabilityDocs.length} Casbin capability docs for tenantId="${AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID}" …`,
+  );
 
   let upserted = 0;
   let failed = 0;
@@ -72,6 +84,16 @@ async function main(): Promise<void> {
       upserted++;
     } catch (err) {
       console.error(`  ✗ Failed to upsert rule "${rule.description}":`, err);
+      failed++;
+    }
+  }
+
+  for (const capability of capabilityDocs) {
+    try {
+      await container.items.upsert(capability);
+      upserted++;
+    } catch (err) {
+      console.error(`  ✗ Failed to upsert capability "${capability.description}":`, err);
       failed++;
     }
   }

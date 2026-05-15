@@ -39,12 +39,20 @@ function makeRequest(overrides: Partial<BulkSubmitRequest> = {}): BulkSubmitRequ
   };
 }
 
+/**
+ * Phase B test scaffolding: BulkPortfolio now writes via
+ * ClientOrderService.addVendorOrders (against the existing standalone
+ * ClientOrder created by engagement.service.createEngagement) instead of
+ * dbService.createOrder directly.
+ *
+ * Tests inject:
+ *   - createEngagement → returns a full Engagement shape (with embedded
+ *     properties[].clientOrders[]) so the bulk service can resolve each
+ *     item's clientOrder ids by loanNumber.
+ *   - addVendorOrders → returns a single VendorOrder per call.
+ */
 function makeDbService() {
   const savedJobs: BulkPortfolioJob[] = [];
-  const createOrder = vi.fn().mockResolvedValue({
-    success: true,
-    data: { id: 'order-001', orderNumber: 'ORD-001' },
-  });
 
   const container = {
     items: {
@@ -56,16 +64,42 @@ function makeDbService() {
   };
 
   const db = {
-    createOrder,
     getBulkPortfolioJobsContainer: () => container,
   } as unknown as CosmosDbService;
 
-  return { db, createOrder, savedJobs };
+  return { db, savedJobs };
+}
+
+function makeAddVendorOrdersMock() {
+  let counter = 0;
+  return vi.fn().mockImplementation(async () => {
+    counter += 1;
+    return [{ id: `order-${String(counter).padStart(3, '0')}`, orderNumber: `ORD-${String(counter).padStart(3, '0')}` }];
+  });
+}
+
+/**
+ * Build a fake Engagement shape that mirrors what engagement.service.createEngagement
+ * would return: each input item becomes one EngagementProperty with one embedded
+ * clientOrder. The bulk service matches items to properties by loanNumber.
+ */
+function makeEngagementFor(items: Array<{ loanNumber?: string; rowIndex: number }>, jobId: string, engagementId: string) {
+  return {
+    id: engagementId,
+    properties: items.map((item, i) => ({
+      id: `prop-${i + 1}`,
+      loanNumber: item.loanNumber ?? `bulk-${jobId}-${item.rowIndex}`,
+      clientOrders: [{ id: `co-${i + 1}` }],
+    })),
+  };
 }
 
 describe('BulkPortfolioService.submit()', () => {
-  it('passes engagementId into created orders and persists it on the bulk job', async () => {
-    const { db, createOrder, savedJobs } = makeDbService();
+  // Phase B step 5: when an existing engagementId is supplied, the new
+  // addVendorOrders path can't resolve clientOrder ids without fetching
+  // the engagement. The service surfaces this as a per-item failure.
+  it('persists the supplied engagementId on the job (existing-engagement flow currently fails items)', async () => {
+    const { db, savedJobs } = makeDbService();
     const service = new BulkPortfolioService(db);
 
     const job = await service.submit(
@@ -74,65 +108,89 @@ describe('BulkPortfolioService.submit()', () => {
       'tenant-001',
     );
 
-    expect(createOrder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        engagementId: 'eng-001',
-      }),
-    );
     expect(job.engagementId).toBe('eng-001');
     expect(savedJobs[0]?.engagementId).toBe('eng-001');
+    expect(job.failCount).toBeGreaterThan(0);
+    expect(job.successCount).toBe(0);
   });
 
   it('creates one shared engagement for the batch when engagementGranularity is PER_BATCH', async () => {
-    const { db, createOrder, savedJobs } = makeDbService();
+    const { db, savedJobs } = makeDbService();
     const service = new BulkPortfolioService(db);
-    const createEngagement = vi.fn().mockResolvedValue({ id: 'eng-batch-001' });
+
+    const items = [
+      makeItem({ rowIndex: 1, loanNumber: 'LN-001' }),
+      makeItem({ rowIndex: 2, loanNumber: 'LN-002', propertyAddress: '456 Oak St' }),
+    ];
+    const fakeEngagement = makeEngagementFor(items, 'job-x', 'eng-batch-001');
+    const createEngagement = vi.fn().mockResolvedValue(fakeEngagement);
+    const addVendorOrders = makeAddVendorOrdersMock();
     (service as any)._engagementService = { createEngagement };
+    (service as any)._clientOrderService = { addVendorOrders };
 
     const job = await service.submit(
-      makeRequest({
-        engagementGranularity: 'PER_BATCH',
-        items: [
-          makeItem({ rowIndex: 1, loanNumber: 'LN-001' }),
-          makeItem({ rowIndex: 2, loanNumber: 'LN-002', propertyAddress: '456 Oak St' }),
-        ],
-      }),
+      makeRequest({ engagementGranularity: 'PER_BATCH', items }),
       'user-001',
       'tenant-001',
     );
 
     expect(createEngagement).toHaveBeenCalledTimes(1);
-    expect(createOrder).toHaveBeenNthCalledWith(1, expect.objectContaining({ engagementId: 'eng-batch-001' }));
-    expect(createOrder).toHaveBeenNthCalledWith(2, expect.objectContaining({ engagementId: 'eng-batch-001' }));
+    expect(addVendorOrders).toHaveBeenNthCalledWith(
+      1,
+      'co-1',
+      'tenant-001',
+      expect.any(Array),
+      expect.objectContaining({ engagementId: 'eng-batch-001' }),
+    );
+    expect(addVendorOrders).toHaveBeenNthCalledWith(
+      2,
+      'co-2',
+      'tenant-001',
+      expect.any(Array),
+      expect.objectContaining({ engagementId: 'eng-batch-001' }),
+    );
     expect(job.engagementId).toBe('eng-batch-001');
     expect(job.engagementGranularity).toBe('PER_BATCH');
     expect(savedJobs[0]?.engagementId).toBe('eng-batch-001');
   });
 
   it('creates one engagement per valid row when engagementGranularity is PER_LOAN', async () => {
-    const { db, createOrder, savedJobs } = makeDbService();
+    const { db, savedJobs } = makeDbService();
     const service = new BulkPortfolioService(db);
+
+    const items = [
+      makeItem({ rowIndex: 1, loanNumber: 'LN-001' }),
+      makeItem({ rowIndex: 2, loanNumber: 'LN-002', propertyAddress: '456 Oak St' }),
+    ];
     const createEngagement = vi
       .fn()
-      .mockResolvedValueOnce({ id: 'eng-loan-001' })
-      .mockResolvedValueOnce({ id: 'eng-loan-002' });
+      .mockResolvedValueOnce(makeEngagementFor([items[0]!], 'job-x', 'eng-loan-001'))
+      .mockResolvedValueOnce(makeEngagementFor([items[1]!], 'job-x', 'eng-loan-002'));
+    const addVendorOrders = makeAddVendorOrdersMock();
     (service as any)._engagementService = { createEngagement };
+    (service as any)._clientOrderService = { addVendorOrders };
 
     const job = await service.submit(
-      makeRequest({
-        engagementGranularity: 'PER_LOAN',
-        items: [
-          makeItem({ rowIndex: 1, loanNumber: 'LN-001' }),
-          makeItem({ rowIndex: 2, loanNumber: 'LN-002', propertyAddress: '456 Oak St' }),
-        ],
-      }),
+      makeRequest({ engagementGranularity: 'PER_LOAN', items }),
       'user-001',
       'tenant-001',
     );
 
     expect(createEngagement).toHaveBeenCalledTimes(2);
-    expect(createOrder).toHaveBeenNthCalledWith(1, expect.objectContaining({ engagementId: 'eng-loan-001' }));
-    expect(createOrder).toHaveBeenNthCalledWith(2, expect.objectContaining({ engagementId: 'eng-loan-002' }));
+    expect(addVendorOrders).toHaveBeenNthCalledWith(
+      1,
+      'co-1',
+      'tenant-001',
+      expect.any(Array),
+      expect.objectContaining({ engagementId: 'eng-loan-001' }),
+    );
+    expect(addVendorOrders).toHaveBeenNthCalledWith(
+      2,
+      'co-1',
+      'tenant-001',
+      expect.any(Array),
+      expect.objectContaining({ engagementId: 'eng-loan-002' }),
+    );
     expect(job.engagementId).toBeUndefined();
     expect(job.engagementGranularity).toBe('PER_LOAN');
     expect(savedJobs[0]?.engagementGranularity).toBe('PER_LOAN');

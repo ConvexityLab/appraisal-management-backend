@@ -87,10 +87,14 @@ describe('DocumentController list route', () => {
       .get('/api/documents?entityType=order-intake-draft&entityId=draft-123');
 
     expect(response.status).toBe(200);
-    expect(mockListDocuments).toHaveBeenCalledWith('tenant-1', {
-      entityType: 'order-intake-draft',
-      entityId: 'draft-123',
-    });
+    // listDocuments(tenantId, query, authorizationFilter?) — controller passes
+    // req.authorizationFilter through. The test app doesn't wire authorization
+    // middleware, so the 3rd arg arrives as undefined.
+    expect(mockListDocuments).toHaveBeenCalledWith(
+      'tenant-1',
+      { entityType: 'order-intake-draft', entityId: 'draft-123' },
+      undefined,
+    );
     expect(response.body.documents).toEqual([
       expect.objectContaining({
         id: 'doc-1',
@@ -143,9 +147,11 @@ describe('DocumentController list route', () => {
     const response = await request(app).get('/api/documents?orderId=order-789');
 
     expect(response.status).toBe(200);
-    expect(mockListDocuments).toHaveBeenCalledWith('tenant-1', {
-      orderId: 'order-789',
-    });
+    expect(mockListDocuments).toHaveBeenCalledWith(
+      'tenant-1',
+      { orderId: 'order-789' },
+      undefined,
+    );
     expect(response.body.documents).toEqual([
       expect.objectContaining({
         id: 'doc-1',

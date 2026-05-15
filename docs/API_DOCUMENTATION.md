@@ -3,9 +3,10 @@
 ## Table of Contents
 - [Overview](#overview)
 - [Authentication](#authentication)
-- [Two-Level Property Architecture](#two-level-property-architecture)
+- [Canonical Property Read Model](#canonical-property-read-model)
 - [Property Summary API](#property-summary-api)
 - [Property Details API](#property-details-api)
+- [Canonical Property Record API](#canonical-property-record-api)
 - [Order Management API](#order-management-api)
 - [Vendor Management API](#vendor-management-api)
 - [Advanced Search API](#advanced-search-api)
@@ -16,7 +17,7 @@
 
 ## Overview
 
-The Enterprise Appraisal Management System provides a comprehensive REST API for managing property appraisals, vendors, and orders. The system implements a **Two-Level Property Architecture** optimized for performance and scalability.
+The Enterprise Appraisal Management System provides a comprehensive REST API for managing property appraisals, vendors, and orders. The property domain now uses a canonical `PropertyRecord` read model backed by immutable observations and frozen canonical snapshots.
 
 ### Base URL
 - **Production**: `https://api.appraisalmanagement.com/v1`
@@ -67,34 +68,35 @@ Content-Type: application/json
 }
 ```
 
-## Two-Level Property Architecture
+## Canonical Property Read Model
 
-Our system implements a **Two-Level Property Architecture** for optimal performance:
+The active property API surface is built on three concepts:
 
-### Level 1: PropertySummary (Lightweight)
-- **Purpose**: Fast listings, searches, mobile apps
-- **Data Size**: ~1-2KB per property
-- **Fields**: ~15 essential fields
-- **Use Cases**: Property listings, search results, quick operations
+- `PropertyRecord` — the canonical parcel identity anchor plus current materialized read model
+- `property-observations` — immutable provenance/fact log
+- `canonical-snapshots` — frozen order-scoped reproducibility records
 
-### Level 2: PropertyDetails (Comprehensive)
-- **Purpose**: Detailed analysis, appraisals, reports
-- **Data Size**: ~15-30KB per property  
-- **Fields**: 50+ comprehensive fields
-- **Use Cases**: Property detail pages, market analysis, appraisals
+### Active property routes
 
-### Performance Comparison
-| Operation | PropertySummary | PropertyDetails | Performance Gain |
-|-----------|----------------|-----------------|------------------|
-| Listing 100 properties | ~200KB | ~3MB | **15x faster** |
-| Search response time | <100ms | <500ms | **5x faster** |
-| Mobile bandwidth | Minimal | High | **90% reduction** |
+- Back-compat summary view: `GET /api/properties/summary` and `GET /api/properties/summary/{propertyId}`
+- Back-compat detailed view: `GET /api/properties/detailed` and `GET /api/properties/detailed/{propertyId}`
+- Canonical record view: `GET /api/v1/property-records` and `GET /api/v1/property-records/{propertyId}`
+- Provenance/event views: `GET /api/v1/property-records/{propertyId}/observations` and `GET /api/v1/property-records/{propertyId}/events`
+- Canonical update path: `PATCH /api/v1/property-records/{propertyId}`
+
+### Important deprecations
+
+- The old `property-summaries` compatibility infrastructure has been retired.
+- Legacy property create/update/batch-summary/enrich/market-analysis endpoints documented in older drafts are no longer authoritative.
+- New integrations should target canonical `PropertyRecord` endpoints and use observation refs for provenance-sensitive workflows.
 
 ## Property Summary API
 
+> Status: active as a back-compat read view, implemented on top of canonical `PropertyRecord` data.
+
 ### Get Property Summary
 ```http
-GET /api/v1/properties/summary/{id}
+GET /api/properties/summary/{propertyId}
 ```
 
 **Response:**
@@ -149,25 +151,20 @@ GET /api/v1/properties/summary/{id}
 
 ### Search Property Summaries
 ```http
-GET /api/v1/properties/summary
+GET /api/properties/summary
 ```
 
 **Query Parameters:**
-- `propertyType[]`: Array of property types
+- `propertyType`: Property type filter
 - `state`: State abbreviation
 - `city`: City name
-- `minPrice`: Minimum estimated value
-- `maxPrice`: Maximum estimated value
-- `minYear`: Minimum year built
-- `maxYear`: Maximum year built
-- `minSqft`: Minimum square footage
-- `maxSqft`: Maximum square footage
-- `limit`: Results per page (default: 50, max: 100)
+- `q`: Free-text match against parcel identity/address fields
+- `limit`: Results per page
 - `offset`: Pagination offset
 
 **Example:**
 ```http
-GET /api/v1/properties/summary?propertyType[]=single_family_residential&propertyType[]=condominium&state=CA&minPrice=500000&maxPrice=2000000&limit=25
+GET /api/properties/summary?propertyType=single_family_residential&state=CA&city=San%20Francisco&limit=25
 ```
 
 **Response:**
@@ -182,28 +179,9 @@ GET /api/v1/properties/summary?propertyType[]=single_family_residential&property
       }
     ],
     "total": 1247,
-    "aggregations": {
-      "byPropertyType": {
-        "single_family_residential": 845,
-        "condominium": 234,
-        "townhome": 125,
-        "multi_family": 43
-      },
-      "byPriceRange": {
-        "under_500k": 156,
-        "500k_1m": 423,
-        "1m_2m": 512,
-        "over_2m": 156
-      },
-      "byCondition": {
-        "excellent": 224,
-        "good": 623,
-        "average": 312,
-        "fair": 67,
-        "poor": 21
-      }
-    }
+    "requestedLevel": "summary"
   },
+  "dataLevel": "summary",
   "metadata": {
     "total": 1247,
     "offset": 0,
@@ -213,62 +191,15 @@ GET /api/v1/properties/summary?propertyType[]=single_family_residential&property
 }
 ```
 
-### Create Property Summary
-```http
-POST /api/v1/properties/summary
-Content-Type: application/json
-
-{
-  "address": {
-    "street": "456 Oak Avenue",
-    "city": "Los Angeles",
-    "state": "CA",
-    "zip": "90210",
-    "county": "Los Angeles"
-  },
-  "propertyType": "condominium",
-  "condition": "excellent",
-  "building": {
-    "yearBuilt": 2010,
-    "livingAreaSquareFeet": 1800,
-    "bedroomCount": 2,
-    "bathroomCount": 2
-  },
-  "valuation": {
-    "estimatedValue": 850000
-  }
-}
-```
-
-### Update Property Summary
-```http
-PUT /api/v1/properties/summary/{id}
-Content-Type: application/json
-
-{
-  "condition": "excellent",
-  "valuation": {
-    "estimatedValue": 1300000,
-    "confidenceScore": 92
-  }
-}
-```
-
-### Batch Get Property Summaries
-```http
-POST /api/v1/properties/summary/batch
-Content-Type: application/json
-
-{
-  "ids": ["prop-123", "prop-456", "prop-789"]
-}
-```
+Legacy create/update/batch summary endpoints have been retired. Use canonical record creation/resolution flows through the property domain services rather than direct summary writes.
 
 ## Property Details API
 
+> Status: active as a back-compat read view, implemented on top of canonical `PropertyRecord` plus observation refs.
+
 ### Get Property Details
 ```http
-GET /api/v1/properties/detailed/{id}
+GET /api/properties/detailed/{propertyId}
 ```
 
 **Response:**
@@ -390,95 +321,42 @@ GET /api/v1/properties/detailed/{id}
 
 ### Search Property Details
 ```http
-GET /api/v1/properties/detailed
+GET /api/properties/detailed
 ```
 
-**Query Parameters:** Same as Property Summary search, plus:
-- `minAssessedValue`: Minimum assessed value
-- `maxAssessedValue`: Maximum assessed value
-- `zoning`: Zoning classification
-- `ownerOccupied`: Owner occupancy filter
+**Query Parameters:** Same core filters as the summary view (`q`, `city`, `state`, `propertyType`, `limit`, `offset`).
 
-### Enrich Property with External Data
+Legacy enrich, market-analysis, and batch valuation endpoints documented in older drafts are retired from the active canonical property surface.
+
+## Canonical Property Record API
+
+### List canonical property records
 ```http
-POST /api/v1/properties/{id}/enrich
+GET /api/v1/property-records
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    // Complete PropertyDetails with enriched external data
-  },
-  "metadata": {
-    "enrichmentSources": ["PropertyData Inc", "Census Bureau", "MLS"],
-    "enrichmentDate": "2024-12-27T10:00:00Z",
-    "dataFreshness": "current"
-  }
-}
-```
-
-### Property Market Analysis
+### Get canonical property record
 ```http
-GET /api/v1/properties/{id}/market-analysis?radius=1.0
+GET /api/v1/property-records/{propertyId}
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "subject": {
-      // PropertyDetails of subject property
-    },
-    "comparables": [
-      {
-        // PropertySummary objects of comparable properties
-      }
-    ],
-    "marketTrends": {
-      "averagePrice": 1150000,
-      "pricePerSqFt": 485,
-      "priceAppreciation": 0.057,
-      "marketVelocity": 28,
-      "inventoryLevel": "balanced"
-    },
-    "analysis": {
-      "pricePerSqFt": 480,
-      "marketPosition": "at_market",
-      "recommendations": [
-        "Strong market appreciation expected",
-        "Consider market timing for optimal valuation"
-      ]
-    }
-  }
-}
-```
-
-### Batch Update Property Valuations
+### Get immutable observation refs
 ```http
-POST /api/v1/properties/batch/valuations
+GET /api/v1/property-records/{propertyId}/observations
+```
+
+### Get property event history
+```http
+GET /api/v1/property-records/{propertyId}/events
+```
+
+### Patch canonical property record
+```http
+PATCH /api/v1/property-records/{propertyId}
 Content-Type: application/json
-
-{
-  "propertyIds": ["prop-123", "prop-456", "prop-789"]
-}
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "updated": 2,
-    "failed": 1,
-    "errors": [
-      "prop-789: Property not found"
-    ]
-  }
-}
-```
+This path emits a `manual-correction` observation and keeps provenance attached to the canonical parcel record.
 
 ## Order Management API
 

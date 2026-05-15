@@ -1,12 +1,8 @@
-// Service Exports
-export { ConsolidatedCosmosDbService } from './consolidated-cosmos.service.js';
-
 // Core services (actively maintained)
 export { CosmosDbService } from './cosmos-db.service.js';
 export { DatabaseService } from './database.service.js';
 export { OrderManagementService } from './order-management.service.js';
 export { VendorManagementService } from './vendor-management.service.js';
-export { PropertyManagementService } from './property-management.service.js';
 export { NotificationService } from './notification.service.js';
 export { AuditService } from './audit.service.js';
 export { QualityControlEngine } from './quality-control-engine.service.js';
@@ -27,13 +23,14 @@ export { DuplicateOrderDetectionService, normalizeAddress, normalizeName } from 
 export { WaiverScreeningService } from './waiver-screening.service.js';
 export { ClientConfigurationService } from './client-configuration.service.js';
 export { PostDeliveryService } from './post-delivery.service.js';
-// export { EnhancedPropertyService } from './enhanced-property.service.js';
-// export { EnhancedPropertyService as EnhancedPropertyCosmosService } from './enhanced-property-cosmos.service.js';
-// export { ProductionDatabaseService } from './production-database.service.js';
 // export { PerligoProductionService } from './perligo-production.service.js';
 
 // Phase R1 — Property Aggregate Root services
 export { PropertyRecordService, normalizeStreetForMatch, PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
+export { PropertyObservationService, buildObservationFingerprint, PROPERTY_OBSERVATIONS_CONTAINER } from './property-observation.service.js';
+export { PropertyEventOutboxService, buildPropertyEventOutboxFingerprint, PROPERTY_EVENT_OUTBOX_CONTAINER } from './property-event-outbox.service';
+export { PropertyOutboxWorkerService } from './property-outbox-worker.service.js';
+export { PropertyProjectorService } from './property-projector.service.js';
 export { ComparableSaleService, haversineDistanceMiles, COMPARABLE_SALES_CONTAINER } from './comparable-sale.service.js';
 export { BulkIngestionAdapterConfigService } from './bulk-ingestion-adapter-config.service.js';
 export { BulkAdapterDefinitionService } from './bulk-adapter-definition.service.js';

@@ -17,9 +17,18 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { CreateClientRequest, UpdateClientRequest } from '../types/index.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 
 const logger = new Logger('ClientController');
+
+type TenantScopedRequest = {
+  user?: {
+    id?: string;
+    tenantId?: string;
+    azureAdObjectId?: string;
+  };
+  headers: Record<string, unknown>;
+};
 
 export class ClientController {
   public router: Router;
@@ -30,12 +39,30 @@ export class ClientController {
   }
 
   private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
-    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'read')]   : [];
+    const readQuery = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeQuery('client', 'read')]
+      : [];
     const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'create')] : [];
-    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'update')] : [];
-    const del    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'delete')] : [];
+    const readResource = authzMiddleware
+      ? [
+          authzMiddleware.loadUserProfile(),
+          authzMiddleware.authorizeResource('client', 'read', { resourceIdParam: 'clientId' }),
+        ]
+      : [];
+    const updateResource = authzMiddleware
+      ? [
+          authzMiddleware.loadUserProfile(),
+          authzMiddleware.authorizeResource('client', 'update', { resourceIdParam: 'clientId' }),
+        ]
+      : [];
+    const deleteResource = authzMiddleware
+      ? [
+          authzMiddleware.loadUserProfile(),
+          authzMiddleware.authorizeResource('client', 'delete', { resourceIdParam: 'clientId' }),
+        ]
+      : [];
 
-    this.router.get('/', ...read, this.listClients.bind(this));
+    this.router.get('/', ...readQuery, this.listClients.bind(this));
 
     this.router.post(
       '/',
@@ -53,14 +80,14 @@ export class ClientController {
 
     this.router.get(
       '/:clientId',
-      ...read,
+      ...readResource,
       [param('clientId').notEmpty()],
       this.getClient.bind(this)
     );
 
     this.router.put(
       '/:clientId',
-      ...update,
+      ...updateResource,
       [
         param('clientId').notEmpty(),
         body('contactEmail').optional().isEmail().withMessage('contactEmail must be a valid email'),
@@ -78,7 +105,7 @@ export class ClientController {
 
     this.router.delete(
       '/:clientId',
-      ...del,
+      ...deleteResource,
       [param('clientId').notEmpty()],
       this.deleteClient.bind(this)
     );
@@ -86,12 +113,12 @@ export class ClientController {
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
 
-  public async listClients(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async listClients(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       const tenantId = this.resolveTenantId(req);
       const status = typeof req.query['status'] === 'string' ? req.query['status'] : undefined;
 
-      const result = await this.dbService.findClients(tenantId, status);
+      const result = await this.dbService.findClients(tenantId, status, req.authorizationFilter);
       if (!result.success) {
         res.status(500).json({ error: 'Failed to retrieve clients', details: result.error });
         return;
@@ -210,7 +237,7 @@ export class ClientController {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  private resolveTenantId(req: UnifiedAuthRequest): string {
+  private resolveTenantId(req: TenantScopedRequest): string {
     const tid =
       req.user?.tenantId ??
       (req.headers['x-tenant-id'] as string | undefined);

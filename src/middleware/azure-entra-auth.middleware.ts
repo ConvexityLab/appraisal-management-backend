@@ -9,6 +9,11 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { Logger } from '../utils/logger.js';
+import type { Role } from '../types/authorization.types.js';
+import {
+  CANONICAL_ROLE_PERMISSION_BUNDLES,
+  normalizeRoleAlias,
+} from '../utils/auth-normalization.js';
 
 const logger = new Logger();
 
@@ -25,7 +30,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: Role;
   permissions?: string[];
   groups?: string[];
   appRoles?: string[];
@@ -44,7 +49,7 @@ export interface AuthenticatedRequest extends Request {
 export class AzureEntraAuthMiddleware {
   private jwksClient: jwksClient.JwksClient;
   private config: EntraAuthConfig;
-  private roleMapping: Map<string, { role: string; permissions: string[] }>;
+  private roleMapping: Map<string, Role>;
 
   constructor(config: EntraAuthConfig) {
     this.config = {
@@ -69,10 +74,13 @@ export class AzureEntraAuthMiddleware {
     // registration (these appear in the JWT 'roles' claim).  Groups are also
     // checked as a fallback — same keys work for both because App Roles take priority.
     this.roleMapping = new Map([
-      ['Admin',     { role: 'admin',     permissions: ['*'] }],
-      ['Manager',   { role: 'manager',   permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics'] }],
-      ['QCAnalyst', { role: 'qc_analyst', permissions: ['qc_validate', 'qc_execute', 'qc_metrics'] }],
-      ['Appraiser', { role: 'appraiser', permissions: ['order_view', 'order_update'] }]
+      ['Admin', 'admin'],
+      ['Manager', 'manager'],
+      ['Supervisor', 'supervisor'],
+      ['Analyst', 'analyst'],
+      ['QCAnalyst', 'analyst'],
+      ['Appraiser', 'appraiser'],
+      ['Reviewer', 'reviewer'],
     ]);
 
     logger.info('Azure Entra ID authentication initialized', {
@@ -185,21 +193,27 @@ export class AzureEntraAuthMiddleware {
   /**
    * Map Azure AD groups/roles to application role
    */
-  private mapUserRole(groups: string[] = [], appRoles: string[] = []): { role: string; permissions: string[] } {
+  private mapUserRole(groups: string[] = [], appRoles: string[] = []): { role: Role; permissions: string[] } {
     // Check app roles first
     for (const appRole of appRoles) {
-      const mapping = this.roleMapping.get(appRole);
-      if (mapping) return mapping;
+      const role = this.roleMapping.get(appRole);
+      if (role) {
+        return { role, permissions: CANONICAL_ROLE_PERMISSION_BUNDLES[role] };
+      }
     }
 
     // Check groups
     for (const group of groups) {
-      const mapping = this.roleMapping.get(group);
-      if (mapping) return mapping;
+      const role = this.roleMapping.get(group);
+      if (role) {
+        return { role, permissions: CANONICAL_ROLE_PERMISSION_BUNDLES[role] };
+      }
     }
 
-    // Default role if no mapping found
-    return { role: 'appraiser', permissions: ['order_view'] };
+    throw new Error(
+      `No supported Entra role/group mapping found. Received appRoles=[${appRoles.join(', ')}] groups=[${groups.join(', ')}]. ` +
+      `Configure one of: ${Array.from(this.roleMapping.keys()).join(', ')}`,
+    );
   }
 
   /**
@@ -366,11 +380,13 @@ export class AzureEntraAuthMiddleware {
         return;
       }
 
-      if (!roles.includes(req.user.role)) {
+      const normalizedRoles = roles.map((role) => normalizeRoleAlias(role)).filter((role): role is Role => role !== null);
+
+      if (!normalizedRoles.includes(req.user.role)) {
         res.status(403).json({
           error: 'Insufficient role',
           code: 'ROLE_DENIED',
-          requiredRoles: roles,
+          requiredRoles: normalizedRoles,
           userRole: req.user.role
         });
         return;

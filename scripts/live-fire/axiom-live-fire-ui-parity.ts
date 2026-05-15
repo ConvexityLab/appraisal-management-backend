@@ -13,7 +13,7 @@ import {
   sleep,
 } from './_axiom-live-fire-common.js';
 
-type Mode = 'extraction' | 'criteria' | 'full';
+type Mode = 'extraction' | 'criteria';
 type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 interface RunLedgerRecord {
@@ -66,38 +66,6 @@ interface StepInputEnvelope {
   };
 }
 
-interface AnalyzeEnvelope {
-  success: boolean;
-  data?: { evaluationId: string; pipelineJobId?: string };
-  error?: { message?: string; code?: string };
-}
-
-interface OrderEvaluationsEnvelope {
-  success: boolean;
-  data?: Array<{ evaluationId: string; status?: string }>;
-}
-
-interface EvaluationCriterion {
-  criterionId?: string;
-  criterionName?: string;
-  evaluation?: string;
-  reasoning?: string;
-  documentReferences?: unknown[];
-}
-
-interface EvaluationEnvelope {
-  success: boolean;
-  data?: {
-    evaluationId: string;
-    status?: string;
-    overallRiskScore?: number;
-    criteria?: EvaluationCriterion[];
-    extractedData?: Record<string, unknown>;
-    axiomExtractionResult?: unknown;
-    axiomCriteriaResult?: unknown;
-  };
-}
-
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value || !value.trim()) {
@@ -118,10 +86,10 @@ function parseModeFromArgsOrEnv(): Mode {
   const raw = (argMode ?? envMode)?.trim().toLowerCase();
 
   if (!raw) {
-    throw new Error('Missing mode. Set --mode <extraction|criteria|full> or AXIOM_LIVE_PARITY_MODE.');
+    throw new Error('Missing mode. Set --mode <extraction|criteria> or AXIOM_LIVE_PARITY_MODE.');
   }
-  if (raw !== 'extraction' && raw !== 'criteria' && raw !== 'full') {
-    throw new Error(`Invalid mode '${raw}'. Expected one of: extraction, criteria, full.`);
+  if (raw !== 'extraction' && raw !== 'criteria') {
+    throw new Error(`Invalid mode '${raw}'. Expected one of: extraction, criteria.`);
   }
   return raw;
 }
@@ -218,39 +186,6 @@ function assertSubstantiveStepInput(stepInput: StepInputEnvelope['data']): void 
   console.log(`✓ evidenceRefCount=${evidenceRefCount}`);
 }
 
-function assertSubstantiveEvaluation(evaluation: EvaluationEnvelope['data']): void {
-  if (!evaluation) {
-    throw new Error('Evaluation payload was empty.');
-  }
-
-  if (evaluation.status !== 'completed') {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' did not complete successfully. Status='${evaluation.status ?? 'unknown'}'.`);
-  }
-
-  if (typeof evaluation.overallRiskScore !== 'number' || !Number.isFinite(evaluation.overallRiskScore)) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' is missing a numeric overallRiskScore.`);
-  }
-
-  const informativeCriteria = (evaluation.criteria ?? []).filter((criterion) => {
-    const hasIdentity = Boolean(criterion.criterionId || criterion.criterionName);
-    const hasReasoning = typeof criterion.reasoning === 'string' && criterion.reasoning.trim().length > 0;
-    const hasDecision = typeof criterion.evaluation === 'string' && criterion.evaluation.trim().length > 0;
-    const hasRefs = Array.isArray(criterion.documentReferences) && criterion.documentReferences.length > 0;
-    return hasIdentity && (hasReasoning || hasDecision || hasRefs);
-  }).length;
-  const hasExtraction = hasMeaningfulContent(evaluation.extractedData) || hasMeaningfulContent(evaluation.axiomExtractionResult);
-  const hasCriteriaAggregate = hasMeaningfulContent(evaluation.axiomCriteriaResult);
-
-  if (informativeCriteria === 0 && !hasExtraction && !hasCriteriaAggregate) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' completed without substantive extraction or criteria results.`);
-  }
-
-  console.log(`✓ overallRiskScore=${evaluation.overallRiskScore}`);
-  console.log(`✓ informativeCriteriaCount=${informativeCriteria}`);
-  console.log(`✓ hasExtractionOutput=${hasExtraction}`);
-  console.log(`✓ hasCriteriaAggregate=${hasCriteriaAggregate}`);
-}
-
 async function pollRunToTerminal(
   baseUrl: string,
   authHeader: Record<string, string>,
@@ -295,9 +230,13 @@ async function runExtractionMode(
   intervalMs: number,
 ): Promise<RunLedgerRecord> {
   const documentId = requiredEnv('AXIOM_LIVE_DOCUMENT_ID');
-  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? requiredEnv('AXIOM_LIVE_CLIENT_ID');
-  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'default-sub-client';
-  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? optionalEnv('AXIOM_LIVE_DOCUMENT_TYPE') ?? 'APPRAISAL';
+  // Defaults match Axiom's `document-types` registry seed
+  // (axiom/seed-data/document-types/*-registry.json all use test-client /
+  // test-tenant + kebab-case documentType slugs). Platform clientId does
+  // NOT work as a default — Axiom's registry keys on its own seeded ids.
+  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? 'test-client';
+  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'test-tenant';
+  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? optionalEnv('AXIOM_LIVE_DOCUMENT_TYPE') ?? 'uniform-residential-appraisal-report';
   const schemaVersion = optionalEnv('AXIOM_LIVE_SCHEMA_VERSION') ?? '1.0.0';
   const runReason = optionalEnv('AXIOM_LIVE_RUN_REASON') ?? 'LIVE_FIRE_EXTRACTION_ONLY';
   const engagementId = optionalEnv('AXIOM_LIVE_ENGAGEMENT_ID');
@@ -457,75 +396,11 @@ async function runCriteriaMode(
   }
 }
 
-async function runFullMode(
-  baseUrl: string,
-  authHeader: Record<string, string>,
-  attempts: number,
-  intervalMs: number,
-): Promise<void> {
-  const documentId = requiredEnv('AXIOM_LIVE_DOCUMENT_ID');
-  const orderId = requiredEnv('AXIOM_LIVE_ORDER_ID');
-  const documentType = optionalEnv('AXIOM_LIVE_DOCUMENT_TYPE') ?? 'appraisal';
-
-  logSection('Mode: full (POST /api/axiom/analyze, UI parity)');
-  const analyzeRes = await postJson<AnalyzeEnvelope>(
-    `${baseUrl}/api/axiom/analyze`,
-    {
-      documentId,
-      orderId,
-      documentType,
-      forceResubmit: true,
-    },
-    authHeader,
-  );
-  assertStatus(analyzeRes.status, [202], 'analyze document', analyzeRes.data);
-  if (!analyzeRes.data?.success || !analyzeRes.data?.data?.evaluationId) {
-    throw new Error(`Analyze response missing evaluationId: ${JSON.stringify(analyzeRes.data)}`);
-  }
-
-  const evaluationId = analyzeRes.data.data.evaluationId;
-  console.log(`✓ evaluationId=${evaluationId}`);
-
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const orderEvalRes = await getJson<OrderEvaluationsEnvelope>(
-      `${baseUrl}/api/axiom/evaluations/order/${encodeURIComponent(orderId)}`,
-      authHeader,
-    );
-
-    if (orderEvalRes.status === 200 && orderEvalRes.data?.success && Array.isArray(orderEvalRes.data?.data)) {
-      const match = orderEvalRes.data.data.find((item) => item.evaluationId === evaluationId);
-      if (match) {
-        console.log(`✓ evaluation surfaced for order on attempt ${attempt} (status=${match.status ?? 'unknown'})`);
-        break;
-      }
-    } else if (orderEvalRes.status !== 404) {
-      throw new Error(`Unexpected order evaluations status ${orderEvalRes.status}: ${JSON.stringify(orderEvalRes.data)}`);
-    }
-
-    console.log(`… evaluation not yet visible for order (attempt ${attempt}/${attempts})`);
-    await sleep(intervalMs);
-  }
-
-  logSection('Mode: full (GET /api/axiom/evaluations/:evaluationId)');
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const evaluationRes = await getJson<EvaluationEnvelope>(
-      `${baseUrl}/api/axiom/evaluations/${encodeURIComponent(evaluationId)}?bypassCache=true`,
-      authHeader,
-    );
-
-    assertStatus(evaluationRes.status, [200, 404], 'get evaluation by id', evaluationRes.data);
-    if (evaluationRes.status === 404) {
-      console.log(`… evaluation payload pending (attempt ${attempt}/${attempts})`);
-      await sleep(intervalMs);
-      continue;
-    }
-
-    assertSubstantiveEvaluation(evaluationRes.data?.data);
-    return;
-  }
-
-  throw new Error(`Evaluation '${evaluationId}' did not produce a substantive completed payload within the poll window.`);
-}
+// `full` mode (POST /api/axiom/analyze + GET /api/axiom/evaluations/:id +
+// GET /api/axiom/evaluations/order/:orderId) was retired in the 2026-05-07
+// v2 migration. The full UI submission flow is now covered by
+// `axiom-live-fire-canonical-suite.ts` against `/api/analysis/submissions`
+// + the v2 `/scopes/...` surfaces.
 
 async function main(): Promise<void> {
   const context = await loadLiveFireContext();
@@ -544,10 +419,8 @@ async function main(): Promise<void> {
 
   if (mode === 'extraction') {
     await runExtractionMode(context.baseUrl, context.authHeader, poll.attempts, poll.intervalMs);
-  } else if (mode === 'criteria') {
-    await runCriteriaMode(context.baseUrl, context.authHeader, poll.attempts, poll.intervalMs);
   } else {
-    await runFullMode(context.baseUrl, context.authHeader, poll.attempts, poll.intervalMs);
+    await runCriteriaMode(context.baseUrl, context.authHeader, poll.attempts, poll.intervalMs);
   }
 
   console.log(`\n✅ UI parity harness passed (mode=${mode}).`);

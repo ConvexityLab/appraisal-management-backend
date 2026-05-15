@@ -412,6 +412,21 @@ export interface ReviewTapeResult extends RiskTapeItem {
   orderId?: string;
   /** Human-readable order number (e.g. ORD-2026-00123) */
   orderNumber?: string;
+
+  // ── Phase K — Decision Engine trigger source ─────────────────────────────
+  /**
+   * Which platform path produced this evaluation. Lets the Decision Engine
+   * decisions page filter by trigger and lets ops differentiate bulk
+   * uploads from per-order runs without joining against the parent job.
+   * Defaults to 'bulk-portfolio' for backward compat (every existing row
+   * predates Phase K).
+   */
+  triggerSource?: 'order-created' | 'bulk-portfolio' | 'document-uploaded' | 'axiom-completed' | 'manual';
+
+  /** Tenant id — populated by the order-created path so a single SQL filter
+   *  on the review-results container (without joining bulk-portfolio-jobs)
+   *  can scope by tenant. Existing bulk-portfolio rows have it via the job. */
+  tenantId?: string;
 }
 
 // ─── Batch Evaluation Summary ─────────────────────────────────────────────────

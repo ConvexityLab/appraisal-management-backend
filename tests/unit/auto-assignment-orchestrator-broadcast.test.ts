@@ -36,9 +36,24 @@ vi.mock('../../src/services/service-bus-subscriber.js', () => ({
 }));
 
 vi.mock('../../src/services/vendor-matching-engine.service.js', () => ({
-  VendorMatchingEngine: vi.fn().mockImplementation(() => ({
-    findMatchingVendors: vi.fn(),
-  })),
+  VendorMatchingEngine: vi.fn().mockImplementation(() => {
+    const instance: any = {
+      findMatchingVendors: vi.fn(),
+    };
+    // Production now calls findMatchingVendorsAndDenied; adapt to the legacy
+    // findMatchingVendors mock so existing test setups keep working.
+    instance.findMatchingVendorsAndDenied = vi.fn(async (req: any, max: number) => {
+      const matches = await instance.findMatchingVendors(req, max);
+      return { matches: matches ?? [], denied: [] };
+    });
+    return instance;
+  }),
+  // Production code now imports `inferNoMatchReason` from this module
+  // (added alongside the per-vendor product-weight overlay feature).
+  // Re-export a no-op stub so the orchestrator can resolve the import.
+  // Returning a generic reason keeps escalation-path tests happy without
+  // forcing each test to set up its own stub.
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 const mockAnalyzeVendorBid = vi.fn();

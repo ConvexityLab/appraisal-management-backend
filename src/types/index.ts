@@ -4,7 +4,7 @@
 // PropertyRecord: canonical physical asset â€” the root of all work entities
 // PropertyComparableSale: persisted market transaction events (our comp database)
 // Phase R0 â€” see PROPERTY_DATA_REFACTOR_PLAN.md
-export * from './property-record.types.js';
+export * from '@l1/shared-types';
 export * from './comparable-sale.types.js';
 
 // â”€â”€â”€ Engagement domain (aggregate root for lender-side work) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -121,10 +121,18 @@ export interface Order {
   // â”€â”€ Engagement FK fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the parent Engagement document */
   engagementId?: string;
-  /** FK to the specific EngagementLoan within the engagement */
-  engagementLoanId?: string;
+  /** FK to the specific EngagementProperty within the engagement */
+  engagementPropertyId?: string;
   /** FK to the specific EngagementClientOrder within the loan */
   engagementClientOrderId?: string;
+  /**
+   * Phase N4 — id of the DecompositionRule that produced this order's
+   * `vendorWorkType` (via `composeFromRule`). Stamped at creation time
+   * by `ClientOrderService.createVendorOrders`. Decision Engine
+   * analytics for the `order-decomposition` category aggregates by
+   * this field to compute fire counts + impact per rule.
+   */
+  decompositionRuleId?: string;
   // â”€â”€ Report linkage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the report document in the reporting container, written back on upsert. */
   reportId?: string;
@@ -149,6 +157,18 @@ export interface Order {
    * authorization middleware enforces presence at the boundaries it gates.
    */
   accessControl?: import('./authorization.types.js').AccessControl;
+  // ── Assignment scorecard (per-vendor-order, append-only) ─────────────────
+  /**
+   * Reviewer scorecards for this vendor order. Append-only — the latest
+   * non-superseded entry is the active rating; older entries are kept via
+   * the supersedes / supersededBy chain. Optional; only populated once a
+   * reviewer scores the assignment (DELIVERED state or later).
+   *
+   * Shape: VendorOrderScorecardEntry[] from vendor-order.types.ts. Cross-file
+   * `import('./vendor-order.types.js')` keeps the dep one-way (this file is
+   * the lower-level Order shape).
+   */
+  scorecards?: import('./vendor-order.types.js').VendorOrderScorecardEntry[];
 }
 
 export interface PropertyAddress {
@@ -213,10 +233,88 @@ export interface ContactInfo {
   availabilityNotes?: string;
 }
 
+// ── Appraiser license (formerly in appraiser.types.ts) ───────────────────────
+export interface VendorLicense {
+  id: string;
+  type: 'state_license' | 'certified_residential' | 'certified_general' | 'trainee';
+  state: string;
+  licenseNumber: string;
+  issuedDate: string;
+  expirationDate: string;
+  status: 'active' | 'expired' | 'suspended' | 'revoked';
+  verificationUrl?: string;
+  documentUrl?: string;
+}
+
+/** Conflict-of-interest property (formerly in appraiser.types.ts) */
+export interface ConflictProperty {
+  address: string;
+  reason: 'ownership' | 'family' | 'financial_interest' | 'prior_appraisal';
+  radiusMiles: number;
+  notes?: string;
+  addedAt: string;
+}
+
+/** Assignment workflow record stored in the orders container (formerly in appraiser.types.ts) */
+export interface AppraiserAssignment {
+  id: string;
+  type: 'appraiser_assignment';
+  tenantId: string;
+  orderId: string;
+  orderNumber: string;
+  appraiserId: string;
+  assignedAt: string;
+  assignedBy: string;
+  acceptedAt?: string;
+  declinedAt?: string;
+  declineReason?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'completed' | 'cancelled';
+  propertyAddress: string;
+  propertyLat?: number;
+  propertyLng?: number;
+  proposedFee?: number;
+  agreedFee?: number;
+  counterOfferFee?: number;
+  counterOfferNotes?: string;
+  negotiationId?: string;
+  slaDeadline?: string;
+  slaStartedAt?: string;
+  estimatedCompletionDate?: string;
+  actualCompletionDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Result of a conflict-of-interest check (formerly in appraiser.types.ts) */
+export interface ConflictCheckResult {
+  hasConflict: boolean;
+  conflicts: Array<{
+    type: 'distance' | 'property_conflict';
+    reason: string;
+    distance?: number;
+    conflictProperty?: ConflictProperty;
+  }>;
+}
+
 export interface Vendor {
   id: string;
   tenantId: string;
+  /** Legal/business display name. For individual appraisers use firstName + lastName; name may be derived or absent. */
   name: string;
+  /** First name — set for individual vendors (appraisers, inspectors). */
+  firstName?: string;
+  /** Last name — set for individual vendors (appraisers, inspectors). */
+  lastName?: string;
+  /**
+   * Discriminator for vendor sub-type.
+   * 'appraiser' | 'amc' | 'inspector' | 'notary'
+   * Absent = appraiser (backward compat with pre-migration documents).
+   */
+  vendorType?: 'appraiser' | 'amc' | 'inspector' | 'notary';
+  /** State licenses — required for appraisers. */
+  licenses?: VendorLicense[];
+  /** Conflict-of-interest properties for this vendor. */
+  conflictProperties?: ConflictProperty[];
   email: string;
   phone: string;
   licenseNumber: string;
@@ -280,6 +378,12 @@ export interface Vendor {
    */
   capabilities?: VendorCapability[];
   /**
+   * Free-form capability tags declared by the operator. Matched against
+   * VendorMatchRequest.requiredCapabilities (string[]) at assignment time.
+   * Complements the structured VendorCapability enum for custom product requirements.
+   */
+  capabilityTags?: string[];
+  /**
    * Explicit list of Product catalog IDs this vendor / staff member can be
    * assigned to.  The matching engine uses this as a hard gate.
    */
@@ -288,6 +392,43 @@ export interface Vendor {
    * Per-product proficiency grades certified by a supervisor.
    */
   productGrades?: ProductGrade[];
+
+  /**
+   * Per-vendor per-product score weights (David/Doug meeting: "each vendor
+   * can be weighted by each product"). The matcher multiplies the base
+   * match score by this factor when scoring the vendor against an order of
+   * the given productType. Missing entry → 1.0 (no adjustment).
+   *
+   * Use sparingly — this is the lever operators reach for when one vendor
+   * is dramatically stronger or weaker on a specific product than their
+   * overall grade suggests. Values clamped to [0.0, 2.0] in the matcher.
+   */
+  productWeights?: Array<{ productType: ProductType; weight: number }>;
+
+  // ── Confidential fields (David/Doug meeting — Phase C) ────────────────────
+  //
+  // STRIPPED FROM API RESPONSES for users without the `confidential:read`
+  // scope. Doug's "Hiro star" for difficult-assignment vendors, plus a
+  // free-form classification tag set for senior-staff-only notes. NEVER
+  // exposed to auto-matching — the trustedVendor flag is for human
+  // operator override, not algorithmic boost, per Doug's meeting note
+  // ("I want to see it before I make the final decision").
+  trustedVendor?: boolean;
+  confidentialClassifications?: string[];
+
+  // ── Appraiser workload tracking ───────────────────────────────────────────
+  /** Current number of active assignments (mirrors activeOrderCount for individual appraisers). */
+  currentWorkload?: number;
+  /** Maximum concurrent order capacity for individual appraisers. */
+  maxCapacity?: number;
+  /** Fine-grained availability status for individual appraisers. */
+  availability?: 'available' | 'busy' | 'on_leave';
+  /** ISO timestamp — set on creation. */
+  createdAt?: string;
+  /** ISO timestamp — updated on every write. */
+  updatedAt?: string;
+  /** ISO timestamp — last time an assignment was created for this vendor. */
+  lastAssignmentAt?: string;
 }
 
 export interface VendorPerformance {
@@ -534,13 +675,31 @@ export type VendorCapability =
   | 'desktop_qualified'
   | 'hybrid_qualified';
 
-/** Proficiency level for a specific product type, certified by a supervisor. */
-export type ProductGradeLevel = 'trainee' | 'proficient' | 'expert' | 'lead';
+/**
+ * A single grade level defined on a Product document.
+ * Products carry their own set of levels so valid keys / bonuses are data-driven,
+ * not hard-coded in the matching engine or validation layer.
+ */
+export interface GradeLevel {
+  /** Machine key used in ProductGrade.grade (e.g. 'trainee', 'proficient'). */
+  key: string;
+  /** Human-readable label rendered in the UI. */
+  label: string;
+  /** Score bonus applied by the matching engine for vendors at this level. */
+  scoreBonus: number;
+}
+
+/** Proficiency level for a specific product type, certified by a supervisor.
+ * @deprecated Use GradeLevel.key instead — grade values are now data-driven from Product.gradeLevels.
+ * Widened to string so any key from the product document is valid.
+ */
+export type ProductGradeLevel = string;
 
 export interface ProductGrade {
   /** ID from the Product catalog. */
   productId: string;
-  grade: ProductGradeLevel;
+  /** Grade key — must match one of the product's GradeLevel.key values (data-driven). Typed as string because valid keys are data-driven. */
+  grade: string;
   /** userId of the supervisor who certified this grade. */
   certifiedBy: string;
   /** ISO 8601 timestamp. */
@@ -1053,6 +1212,18 @@ export interface Product {
   matchingCriteriaSets?: string[];
   /** When true the first bid accepted on an RFB is auto-awarded without coordinator review. */
   autoAwardFirstBid?: boolean;
+  /**
+   * Capability keys that a vendor MUST have to be eligible for orders of this product type.
+   * Feeds VendorMatchRequest.requiredCapabilities when auto-assigning.
+   * Example: ['can_sign_reports', 'uad36_compliant']
+   */
+  requiredCapabilities?: string[];
+  /**
+   * Per-product proficiency grade level definitions.
+   * Drives the vendor matching engine's score bonus and the UI grade selector.
+   * When absent, the matching engine skips the grade bonus for this product.
+   */
+  gradeLevels?: GradeLevel[];
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -1076,6 +1247,8 @@ export interface CreateProductRequest {
   rushTurnTimeDays?: number;
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
+  requiredCapabilities?: string[];
+  gradeLevels?: GradeLevel[];
 }
 
 export interface UpdateProductRequest {
@@ -1091,9 +1264,6 @@ export interface UpdateProductRequest {
   status?: ProductStatus;
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
+  gradeLevels?: GradeLevel[];
 }
-export * from './ai-parser.types';
-
-
-
 export * from './ai-parser.types';

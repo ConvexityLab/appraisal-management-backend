@@ -66,9 +66,21 @@ vi.mock('../src/services/service-bus-subscriber.js', () => ({
 }));
 
 vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
-  VendorMatchingEngine: vi.fn().mockImplementation(() => ({
-    findMatchingVendors: vi.fn(),
-  })),
+  VendorMatchingEngine: vi.fn().mockImplementation(() => {
+    const instance: any = {
+      findMatchingVendors: vi.fn(),
+    };
+    // Production now calls findMatchingVendorsAndDenied; adapt to the legacy
+    // findMatchingVendors mock so existing test setups keep working.
+    instance.findMatchingVendorsAndDenied = vi.fn(async (req: any, max: number) => {
+      const matches = await instance.findMatchingVendors(req, max);
+      return { matches: matches ?? [], denied: [] };
+    });
+    return instance;
+  }),
+  // See sibling mock fixes (e.g. tests/auto-assignment-orchestrator.test.ts):
+  // production imports `inferNoMatchReason` from this module.
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 vi.mock('../src/services/qc-review-queue.service.js', () => ({

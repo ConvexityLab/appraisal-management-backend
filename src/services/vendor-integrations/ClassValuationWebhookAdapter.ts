@@ -215,6 +215,16 @@ export class ClassValuationWebhookAdapter implements VendorAdapter {
           },
         },
       };
+    } else if (event.eventType === 'vendor.order.assigned') {
+      payload = {
+        accountId: connection.inboundIdentifier,
+        event: 'order.assigned',
+        occurredAt: event.occurredAt,
+        data: {
+          externalOrderId: event.vendorOrderId,
+          orderId: event.ourOrderId,
+        },
+      };
     }
 
     if (!payload) {

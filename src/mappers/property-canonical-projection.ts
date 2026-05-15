@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property-canonical projection
  *
  * Picks the property-scoped branches out of a built CanonicalReportDocument
@@ -29,8 +29,14 @@ import type {
     CanonicalTransactionHistory,
     CanonicalAvmCrossCheck,
     CanonicalRiskFlags,
-} from '../types/canonical-schema.js';
-import type { PropertyCurrentCanonicalView } from '../types/property-record.types.js';
+} from '@l1/shared-types';
+import type { PropertyCurrentCanonicalView } from '@l1/shared-types';
+
+export const PROPERTY_CANONICAL_PROJECTOR_VERSION = '2026-05-10.1';
+
+function asUnknownRecord<T>(value: T): Record<string, unknown> {
+    return value as unknown as Record<string, unknown>;
+}
 
 export function pickPropertyCanonical(
     canonical: Partial<CanonicalReportDocument> | null | undefined,
@@ -76,30 +82,16 @@ export function mergePropertyCanonical(
     if (!existing) return incoming;
 
     const out: PropertyCurrentCanonicalView = { ...existing };
+    const incomingIsNewerOrEqual = isIncomingNewerOrEqual(existing.lastSnapshotAt, incoming.lastSnapshotAt);
 
-    // Subject: field-by-field merge, address deep-merged with empty-string filtering.
+    // Subject: recursively merge objects, ignore empty-string/null sentinels, and
+    // only let stale snapshots backfill missing values instead of clobbering newer ones.
     if (incoming.subject) {
-        const existingSubject = (existing.subject ?? {}) as Record<string, unknown>;
-        const incomingSubject = incoming.subject as unknown as Record<string, unknown>;
-        const merged: Record<string, unknown> = { ...existingSubject };
-        for (const [k, v] of Object.entries(incomingSubject)) {
-            if (v == null) continue;
-            if (typeof v === 'string' && v.trim().length === 0) continue;
-            if (k === 'address' && existingSubject['address'] && typeof v === 'object' && !Array.isArray(v)) {
-                const existingAddr = existingSubject['address'] as Record<string, unknown>;
-                const incomingAddr = v as Record<string, unknown>;
-                const mergedAddr: Record<string, unknown> = { ...existingAddr };
-                for (const [ak, av] of Object.entries(incomingAddr)) {
-                    if (av == null) continue;
-                    if (typeof av === 'string' && av.trim().length === 0) continue;
-                    mergedAddr[ak] = av;
-                }
-                merged[k] = mergedAddr;
-                continue;
-            }
-            merged[k] = v;
-        }
-        out.subject = merged as unknown as CanonicalSubject;
+        out.subject = mergeCanonicalBranch(
+            existing.subject as Record<string, unknown> | undefined,
+            incoming.subject as unknown as Record<string, unknown>,
+            incomingIsNewerOrEqual,
+        ) as unknown as CanonicalSubject;
     }
 
     // transactionHistory: union of priorTransfers, dedup on (date, price).
@@ -123,21 +115,106 @@ export function mergePropertyCanonical(
                 if (!b.transactionDate) return -1;
                 return b.transactionDate.localeCompare(a.transactionDate);
             });
-            out.transactionHistory = {
-                ...existingHistory,
-                ...incoming.transactionHistory,
-                subjectPriorTransfers: merged,
-            };
+            out.transactionHistory = mergeCanonicalBranch(
+                asUnknownRecord(existingHistory),
+                asUnknownRecord(incoming.transactionHistory),
+                incomingIsNewerOrEqual,
+            ) as unknown as CanonicalTransactionHistory;
+            out.transactionHistory.subjectPriorTransfers = merged;
         }
     }
 
-    // avmCrossCheck: latest wins.
-    if (incoming.avmCrossCheck) out.avmCrossCheck = incoming.avmCrossCheck;
-    if (incoming.riskFlags) out.riskFlags = incoming.riskFlags;
+    // avmCrossCheck / riskFlags: newest snapshot wins; stale snapshots only backfill.
+    if (incoming.avmCrossCheck) {
+        out.avmCrossCheck = mergeCanonicalBranch(
+            existing.avmCrossCheck ? asUnknownRecord(existing.avmCrossCheck) : undefined,
+            asUnknownRecord(incoming.avmCrossCheck),
+            incomingIsNewerOrEqual,
+        ) as unknown as CanonicalAvmCrossCheck;
+    }
+    if (incoming.riskFlags) {
+        out.riskFlags = mergeCanonicalBranch(
+            existing.riskFlags ? asUnknownRecord(existing.riskFlags) : undefined,
+            asUnknownRecord(incoming.riskFlags),
+            incomingIsNewerOrEqual,
+        ) as unknown as CanonicalRiskFlags;
+    }
 
-    // Stamp metadata from the latest snapshot.
-    if (incoming.lastSnapshotId) out.lastSnapshotId = incoming.lastSnapshotId;
-    if (incoming.lastSnapshotAt) out.lastSnapshotAt = incoming.lastSnapshotAt;
+    // Stamp metadata only when this snapshot is at least as new as the current winner,
+    // or when there was no winning snapshot yet.
+    if (incomingIsNewerOrEqual || !existing.lastSnapshotAt) {
+        if (incoming.lastSnapshotId) out.lastSnapshotId = incoming.lastSnapshotId;
+        if (incoming.lastSnapshotAt) out.lastSnapshotAt = incoming.lastSnapshotAt;
+    }
 
     return out;
+}
+
+function isIncomingNewerOrEqual(
+    existingSnapshotAt: string | undefined,
+    incomingSnapshotAt: string | undefined,
+): boolean {
+    if (!existingSnapshotAt) return true;
+    if (!incomingSnapshotAt) return true;
+
+    return incomingSnapshotAt >= existingSnapshotAt;
+}
+
+function mergeCanonicalBranch(
+    existing: Record<string, unknown> | undefined,
+    incoming: Record<string, unknown>,
+    incomingIsNewerOrEqual: boolean,
+): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...(existing ?? {}) };
+
+    for (const [key, value] of Object.entries(incoming)) {
+        if (isMeaninglessValue(value)) {
+            continue;
+        }
+
+        const existingValue = merged[key];
+
+        if (Array.isArray(value)) {
+            if (value.length === 0) {
+                continue;
+            }
+
+            if (incomingIsNewerOrEqual || !hasMeaningfulValue(existingValue)) {
+                merged[key] = value;
+            }
+            continue;
+        }
+
+        if (isPlainObject(value)) {
+            merged[key] = mergeCanonicalBranch(
+                isPlainObject(existingValue) ? (existingValue as Record<string, unknown>) : undefined,
+                value,
+                incomingIsNewerOrEqual,
+            );
+            continue;
+        }
+
+        if (incomingIsNewerOrEqual || !hasMeaningfulValue(existingValue)) {
+            merged[key] = value;
+        }
+    }
+
+    return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isMeaninglessValue(value: unknown): boolean {
+    if (value == null) return true;
+    if (typeof value === 'string') return value.trim().length === 0;
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+    if (isMeaninglessValue(value)) return false;
+    if (isPlainObject(value)) return Object.keys(value).length > 0;
+    return true;
 }

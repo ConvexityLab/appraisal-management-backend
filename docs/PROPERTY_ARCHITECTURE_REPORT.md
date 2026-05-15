@@ -1,119 +1,97 @@
-# Two-Level Property Data Architecture - Implementation Report
+# Canonical Property Architecture - Implementation Report
 
 ## Executive Summary
 
-We have successfully implemented a **Two-Level Property Data Architecture** for the Enterprise Appraisal Management System. This architecture addresses the critical performance challenge of handling large property datasets efficiently by providing two distinct data access patterns:
+We have transitioned the property domain to a **canonical parcel architecture** for the Enterprise Appraisal Management System. The active implementation now centers on three durable concepts:
 
-1. **PropertySummary** (Lightweight): ~1-2KB per property, ~15 essential fields
-2. **PropertyDetails** (Comprehensive): ~15-30KB per property, 50+ detailed fields
+1. **`PropertyRecord`**: parcel identity anchor + current materialized read model
+2. **`property-observations`**: immutable provenance and fact log
+3. **`canonical-snapshots`**: frozen order-scoped reproducibility records
 
 ## Architecture Overview
 
 ### Problem Statement
-The external property schema files revealed extensive data structures that would be inefficient to transfer for common operations like property listings and search results. Passing complete property datasets for simple operations would:
-- Increase API response times
-- Consume excessive bandwidth
-- Impact mobile performance
-- Increase server memory usage
+Older property implementations mixed parcel identity, mutable summary/detail views, provider payloads, and workflow convenience copies across multiple controllers and services. That caused drift in both the codebase and the docs.
 
-### Solution: Two-Level Data Architecture
+### Solution: Canonical Parcel Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Property Data Architecture                  │
+│                   Canonical Property Architecture               │
 ├─────────────────────────────────────────────────────────────────┤
-│  Level 1: PropertySummary (Lightweight)                        │
-│  ├─ Use Cases: Listings, Search Results, Quick Operations      │
-│  ├─ Data Size: ~1-2KB per property                             │
-│  ├─ Fields: ~15 essential fields                               │
-│  └─ Performance: Optimized for speed                           │
+│  PropertyRecord                                                │
+│  ├─ Stable parcel identity                                     │
+│  ├─ Current materialized canonical view                        │
+│  ├─ Projection lineage metadata                                │
+│  └─ Backing read model for active property APIs                │
 ├─────────────────────────────────────────────────────────────────┤
-│  Level 2: PropertyDetails (Comprehensive)                      │
-│  ├─ Use Cases: Analysis, Appraisals, Detailed Reports          │
-│  ├─ Data Size: ~15-30KB per property                           │
-│  ├─ Fields: 50+ comprehensive fields                           │
-│  └─ Performance: Rich data with acceptable performance         │
+│  property-observations                                         │
+│  ├─ Immutable source facts                                     │
+│  ├─ Provenance and lineage                                     │
+│  ├─ Manual corrections and imports                             │
+│  └─ Replayable projector inputs                                │
+├─────────────────────────────────────────────────────────────────┤
+│  canonical-snapshots                                           │
+│  ├─ Frozen order-scoped view                                   │
+│  ├─ Reproducibility for downstream workflows                   │
+│  ├─ Explicit source refs                                       │
+│  └─ Separate from current parcel truth                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Implementation Details
 
-### 1. Type Definitions (`src/types/property-enhanced.ts`)
-- **500+ lines** of comprehensive type definitions
-- **PropertySummary Interface**: Essential fields for common operations
-- **PropertyDetails Interface**: Complete property data matching external schema
-- **Search and Filter Types**: Advanced search capabilities
-- **External Data Integration**: Types for assessment, deed history, demographics
+### 1. Canonical Types and Services
+- `src/types/property-record.types.ts`
+- `src/types/property-observation.types.ts`
+- `src/services/property-record.service.ts`
+- `src/services/property-projector.service.ts`
+- `src/services/property-observation.service.ts`
+- `src/services/canonical-snapshot.service.ts`
 
-### 2. Enhanced Property Service (`src/services/enhanced-property.service.ts`)
-- **700+ lines** of service implementation
-- **Two-Level Operations**: Separate methods for summary vs detailed operations
-- **Performance Optimization**: Selective field fetching
-- **External Data Enrichment**: Integration with external property APIs
-- **Market Analysis**: Comprehensive property analytics
+### 2. Active Property Controllers
+- `src/controllers/property-record.controller.ts`
+- canonical list/detail/event/observation routes
+- back-compat `/api/properties/summary` and `/api/properties/detailed` now resolved from canonical `PropertyRecord` data
 
-### 3. Enhanced Property Controller (`src/controllers/enhanced-property.controller.ts`)
-- **600+ lines** of REST API implementation
-- **Dual Endpoint Architecture**: `/summary` and `/detailed` endpoints
-- **Performance Monitoring**: Built-in performance tracking
-- **Batch Operations**: Efficient bulk property operations
-- **Schema Utilities**: Property data validation and transformation
-
-### 4. Comprehensive Test Suite (`src/tests/`)
-- **Property Architecture Demo**: Real-world usage examples
-- **Performance Comparison**: Benchmark testing
-- **Data Transformation Tests**: Summary ↔ Details conversion
-- **Use Case Validation**: Different operational patterns
+### 3. Supporting Infrastructure
+- `property-records` container
+- `property-observations` container
+- `canonical-snapshots` container
+- property-domain outbox and publisher path for non-authoritative integration notifications
 
 ## API Endpoint Structure
 
-### PropertySummary Endpoints (Lightweight)
+### Back-Compat Summary/Detail Endpoints
 ```
 GET    /api/properties/summary/:id           - Get property summary
 GET    /api/properties/summary               - Search property summaries
-POST   /api/properties/summary               - Create property summary
-PUT    /api/properties/summary/:id           - Update property summary
-GET    /api/properties/summary/batch         - Batch get summaries
-```
-
-### PropertyDetails Endpoints (Comprehensive)
-```
 GET    /api/properties/detailed/:id          - Get property details
 GET    /api/properties/detailed              - Search property details
-POST   /api/properties/:id/enrich            - Enrich with external data
-GET    /api/properties/:id/market-analysis   - Market analysis
-POST   /api/properties/batch/valuations      - Batch valuation updates
 ```
 
-## Performance Characteristics
+### Canonical PropertyRecord Endpoints
+```
+GET    /api/v1/property-records              - List canonical parcel records
+GET    /api/v1/property-records/:id          - Get canonical parcel record
+GET    /api/v1/property-records/:id/events   - Get parcel version/projection history
+GET    /api/v1/property-records/:id/observations - Get immutable observation refs
+PATCH  /api/v1/property-records/:id          - Apply manual correction with provenance
+```
 
-### PropertySummary Performance
-- **Response Time**: Optimized for < 100ms
-- **Data Transfer**: ~1-2KB per property
-- **Use Cases**: 
-  - Property listings (100+ properties)
-  - Search results display
-  - Map view markers
-  - Mobile applications
-  - Quick comparisons
+## Current Read-Path Characteristics
 
-### PropertyDetails Performance
-- **Response Time**: Acceptable < 500ms
-- **Data Transfer**: ~15-30KB per property
-- **Use Cases**:
-  - Property detail pages
-  - Appraisal forms
-  - Market analysis reports
-  - Investment analysis
-  - Due diligence reports
+- Active property list/detail responses come from `PropertyRecord`, not provider-specific summary/detail documents.
+- Provenance-sensitive consumers can resolve immutable refs via `/observations`.
+- Reproducibility-sensitive workflows use `canonical-snapshots`, not mutable current views.
 
 ## Business Value
 
-### Performance Benefits
-- **~10-15x faster** property listing operations
-- **~90% reduction** in bandwidth for common operations
-- **Improved mobile performance** with lightweight data
-- **Scalable architecture** supporting thousands of concurrent users
+### Architecture Benefits
+- One canonical parcel read model for UI and downstream services
+- Immutable provenance for every meaningful property fact write
+- Replayable projector boundary for deterministic current views
+- Explicit separation between current parcel truth and frozen order snapshots
 
 ### Cost Benefits
 - **Reduced server costs** through efficient data transfer
@@ -129,12 +107,12 @@ POST   /api/properties/batch/valuations      - Batch valuation updates
 
 ## Integration with Existing Systems
 
-The two-level architecture integrates seamlessly with:
-- **Advanced Search System** (800+ lines, previously implemented)
-- **Database Service Layer** with optimized queries
-- **External Property APIs** for data enrichment
-- **Authentication & Authorization** middleware
-- **Caching Strategies** for improved performance
+The canonical parcel architecture integrates with:
+- property enrichment/materialization flows
+- document extraction and snapshot materialization
+- ATTOM/public-record import boundaries
+- authentication and authorization middleware
+- property-domain outbox/event publisher path
 
 ## Development Quality
 
@@ -208,14 +186,11 @@ rateLimiter.details = { requests: 500, window: '1h' };
 
 ## Conclusion
 
-The Two-Level Property Data Architecture represents a significant advancement in our Enterprise Appraisal Management System. By providing appropriate data granularity for different use cases, we've created a scalable, performant, and cost-effective solution that will serve as the foundation for all future property-related operations.
-
-The architecture successfully addresses the core challenge of handling large property datasets while maintaining excellent performance characteristics. With over 1,800 lines of production-ready code, comprehensive testing, and clear integration paths, this implementation is ready for the next phase of development and eventual production deployment.
+The canonical `PropertyRecord` architecture is now the active property foundation for the platform. Earlier two-level summary/detail implementations have been retired from the live code path, with back-compat summary/detail endpoints preserved only as projections of canonical parcel data.
 
 ---
 
-**Implementation Date**: December 2024  
-**Code Volume**: 1,800+ lines  
-**Architecture Pattern**: Two-Level Data Architecture  
-**Performance Impact**: ~10-15x improvement for common operations  
-**Status**: Core implementation complete, ready for integration testing
+**Original implementation date**: December 2024  
+**Canonical architecture update**: May 2026  
+**Architecture Pattern**: Canonical parcel record + observations + snapshots  
+**Status**: Active canonical property implementation in production code paths

@@ -22,7 +22,8 @@ This document outlines all API routes available in the Appraisal Management Plat
 6. [Analytics & Reporting](#analytics--reporting)
 7. [AI Services](#ai-services)
 8. [Property Intelligence](#property-intelligence)
-9. [Dynamic Code Execution](#dynamic-code-execution)
+9. [Canonical Property Records](#canonical-property-records)
+10. [Dynamic Code Execution](#dynamic-code-execution)
 
 ---
 
@@ -64,7 +65,7 @@ This document outlines all API routes available in the Appraisal Management Plat
   - `password` (string, required): Strong password (min 8 chars, mixed case, numbers)
   - `firstName` (string, required): User's first name
   - `lastName` (string, required): User's last name
-  - `role` (enum, required): User role (`admin`, `manager`, `appraiser`, `qc_analyst`)
+  - `role` (enum, required): User role (`admin`, `manager`, `supervisor`, `analyst`, `appraiser`, `reviewer`; legacy `qc_analyst` is normalized to `analyst`)
 - **Response**: JWT token and created user profile
 - **Use Case**: New user onboarding, account creation
 
@@ -317,6 +318,41 @@ This document outlines all API routes available in the Appraisal Management Plat
   - `focusAreas` (array, optional): Specific areas to analyze
 - **Response**: Condition assessment with ratings and recommendations
 - **Use Case**: Condition reporting, maintenance assessment, safety evaluation
+
+---
+
+## Canonical Property Records
+
+### Property route note
+- The live property API surface is now the canonical `PropertyRecord` router.
+- Back-compat `summary` and `detailed` routes are still available, but they are read-only projections over canonical parcel data.
+- Older property CRUD / enrich / batch valuation route families are retired from the active backend path.
+
+### List property records
+- **Route**: `GET /api/v1/property-records`
+- **Authentication**: JWT token required
+- **Purpose**: Retrieve canonical parcel records with pagination and provenance summary
+
+### Get property record
+- **Route**: `GET /api/v1/property-records/:propertyId`
+- **Authentication**: JWT token required
+- **Purpose**: Retrieve full canonical parcel record plus observation refs
+
+### Get property observations
+- **Route**: `GET /api/v1/property-records/:propertyId/observations`
+- **Authentication**: JWT token required
+- **Purpose**: Retrieve immutable observation refs for provenance and audit workflows
+
+### Get property event history
+- **Route**: `GET /api/v1/property-records/:propertyId/events`
+- **Authentication**: JWT token required
+- **Purpose**: Retrieve parcel version/projection history with changed fields and actors
+
+### Patch property record
+- **Route**: `PATCH /api/v1/property-records/:propertyId`
+- **Authentication**: JWT token required
+- **Purpose**: Apply manual corrections to canonical parcel data
+- **Notes**: This path records a `manual-correction` observation and preserves provenance
 
 ### Text Embeddings Generation
 - **Route**: `POST /api/ai/embeddings`

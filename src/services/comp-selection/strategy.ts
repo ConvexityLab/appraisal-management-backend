@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comp-Selection Strategy Interface
  *
  * Defines the stable contract every comp-selection strategy must implement.
@@ -16,7 +16,7 @@
  * @see CompSelectionStrategyRegistry (./registry.ts)
  */
 
-import type { PropertyRecord } from '../../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type { CollectedCompCandidate } from '../../types/order-comparables.types.js';
 
 /**

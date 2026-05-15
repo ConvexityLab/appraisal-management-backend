@@ -223,4 +223,131 @@ describe('AimPortAdapter', () => {
       ),
     ).rejects.toThrow(/missing required scheduling fields/i);
   });
+
+  it('emits vendor.order.status_queried and returns ourOrderId in ACK for GetOrderRequest', async () => {
+    const adapter = new AimPortAdapter();
+    const result = await adapter.handleInbound(
+      {
+        GetOrderRequest: {
+          login: {
+            client_id: 'client-123',
+            api_key: 'secret',
+            order_id: 'AP-1001',
+          },
+        },
+      },
+      {},
+      { ...connection, inboundIdentifier: 'client-123' },
+      {
+        resolveSecret: async () => 'secret',
+        createOrGetOrderReference: async () => ({
+          orderId: 'order-999',
+          orderNumber: 'VND-20260423-XYZ',
+          existed: true,
+        }),
+      },
+    );
+
+    expect(result.domainEvents).toHaveLength(1);
+    expect(result.domainEvents[0]?.eventType).toBe('vendor.order.status_queried');
+    expect(result.domainEvents[0]?.payload).toMatchObject({ vendorOrderId: 'AP-1001' });
+    // ACK should carry our internal order ID for correlation.
+    // For GetOrderRequest the legacyOrderId is aim-port:<vendorOrderId>.
+    expect(result.ack.statusCode).toBe(200);
+    expect(result.ack.body).toMatchObject({
+      success: 'true',
+      order_id: 'aim-port:AP-1001',
+    });
+  });
+
+  it('normalizes OrderUpdateRequest into a vendor.order.updated event with changed fields', async () => {
+    const adapter = new AimPortAdapter();
+    const result = await adapter.handleInbound(
+      {
+        OrderUpdateRequest: {
+          login: {
+            client_id: 'client-123',
+            api_key: 'secret',
+            order_id: 'AP-1001',
+          },
+          order: {
+            aimport_order_id: 'AP-1001',
+            loan_number: 'LN-9999',
+            address: '456 Oak Ave',
+            city: 'Houston',
+            state: 'TX',
+            zip_code: '77001',
+            due_date: '2026-05-30',
+            purchase_price: '320000',
+          },
+        },
+      },
+      {},
+      { ...connection, inboundIdentifier: 'client-123' },
+      { resolveSecret: async () => 'secret' },
+    );
+
+    expect(result.domainEvents).toHaveLength(1);
+    expect(result.domainEvents[0]?.eventType).toBe('vendor.order.updated');
+    expect(result.domainEvents[0]?.vendorOrderId).toBe('AP-1001');
+    expect(result.domainEvents[0]?.payload).toMatchObject({
+      loanNumber: 'LN-9999',
+      address: '456 Oak Ave',
+      city: 'Houston',
+      state: 'TX',
+      zipCode: '77001',
+      dueDate: '2026-05-30',
+      purchasePrice: 320000,
+    });
+    expect(result.ack.statusCode).toBe(200);
+  });
+
+  it('identifyInboundConnection accepts login.client_id as an integer (AIM-Port real-world payloads)', () => {
+    const adapter = new AimPortAdapter();
+    // AIM-Port's production API sends client_id as a JSON number, not a string.
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'some-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '505 SW 44th St', city: 'OKC', state: 'OK', zip_code: '73160', property_type: 'sfr', borrower: { name: 'John Smith' }, reports: [{ id: 48952, name: 'SFR 1004/70' }] },
+      },
+    };
+    expect(adapter.identifyInboundConnection(body, {})).toBe('495735');
+  });
+
+  it('authenticateInbound accepts login.client_id as an integer and matches string inboundIdentifier', async () => {
+    const adapter = new AimPortAdapter();
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'secret-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '505 SW 44th St', city: 'OKC', state: 'OK', zip_code: '73160', property_type: 'sfr', borrower: { name: 'John Smith' }, reports: [{ id: 48952, name: 'SFR 1004/70' }] },
+      },
+    };
+    await expect(adapter.authenticateInbound(body, {}, {
+      ...connection,
+      inboundIdentifier: '495735',
+    }, {
+      resolveSecret: async () => 'secret-key',
+    })).resolves.toBeUndefined();
+  });
+
+  it('handleInbound resolves vendorOrderId from integer order.order_id (real AIM-Port production payload)', async () => {
+    const adapter = new AimPortAdapter();
+    // login has no order_id — AIM-Port production new-order payloads put the
+    // vendor's order number only in order.order_id (as an integer).
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'secret-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '741 Cattle Drive', city: 'Dallas', state: 'TX', zip_code: '75001', property_type: 'sfr', borrower: { name: 'Jim Bow' }, reports: [{ id: 49079, name: '1004' }] },
+      },
+    };
+    const result = await adapter.handleInbound(body, {}, {
+      ...connection,
+      inboundIdentifier: '495735',
+    }, {
+      resolveSecret: async () => 'secret-key',
+      createOrGetOrderReference: async () => ({ orderId: 'order-456', orderNumber: 'VND-123', existed: false }),
+    });
+    expect(result.domainEvents[0]?.vendorOrderId).toBe('1900811');
+    expect(result.ack.statusCode).toBe(200);
+  });
 });

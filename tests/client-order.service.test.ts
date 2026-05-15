@@ -35,7 +35,7 @@ function baseInput(overrides: Partial<PlaceClientOrderInput> = {}): PlaceClientO
     tenantId: 'tenant-a',
     createdBy: 'user-1',
     engagementId: 'eng-1',
-    engagementLoanId: 'loan-1',
+    engagementPropertyId: 'loan-1',
     clientId: 'client-1',
     productType: ProductType.FULL_APPRAISAL,
     propertyDetails: basePropertyDetails(),
@@ -108,10 +108,9 @@ describe('ClientOrderService.placeClientOrder', () => {
       'tenantId',
       'createdBy',
       'engagementId',
-      'engagementLoanId',
+      'engagementPropertyId',
       'clientId',
       'productType',
-      'propertyDetails',
     ] as const)('throws InvalidClientOrderInputError when %s is missing', async (field) => {
       const input = baseInput();
       delete (input as any)[field];
@@ -125,6 +124,34 @@ describe('ClientOrderService.placeClientOrder', () => {
         InvalidClientOrderInputError,
       );
     });
+
+    it('requires either propertyId or propertyDetails', async () => {
+      await expect(
+        svc.placeClientOrder(baseInput({ propertyDetails: undefined, propertyId: undefined })),
+      ).rejects.toMatchObject({ missing: ['propertyId|propertyDetails'] });
+    });
+  });
+
+  it('allows canonical propertyId-only placement without duplicating propertyDetails', async () => {
+    const result = await svc.placeClientOrder(
+      baseInput({ propertyId: 'prop-123', propertyDetails: undefined }),
+    );
+
+    expect(mock.created).toHaveLength(1);
+    expect(mock.created[0]).toMatchObject({ propertyId: 'prop-123' });
+    expect(mock.created[0]?.propertyDetails).toBeUndefined();
+    expect(result.clientOrder.propertyDetails).toBeUndefined();
+  });
+
+  it('drops duplicated propertyDetails on ClientOrder when canonical propertyId is present', async () => {
+    const result = await svc.placeClientOrder(
+      baseInput({ propertyId: 'prop-123', propertyDetails: basePropertyDetails() }),
+    );
+
+    expect(mock.created).toHaveLength(1);
+    expect(mock.created[0]).toMatchObject({ propertyId: 'prop-123' });
+    expect(mock.created[0]?.propertyDetails).toBeUndefined();
+    expect(result.clientOrder.propertyDetails).toBeUndefined();
   });
 
   describe('with no vendor-order specs (suggestion-less / day-one path)', () => {
@@ -368,6 +395,26 @@ describe('ClientOrderService.addVendorOrders', () => {
     expect(parent.vendorOrderIds).toEqual(['vo-1', 'vo-2']);
   });
 
+  it('does not forward duplicated propertyDetails onto VendorOrders when parent has canonical propertyId', async () => {
+    const placed = await svc.placeClientOrder(
+      baseInput({ propertyId: 'prop-123', propertyDetails: basePropertyDetails() }),
+    );
+
+    (mock.db.createOrder as any).mockClear();
+
+    await svc.addVendorOrders(
+      placed.clientOrder.id,
+      'tenant-a',
+      [{ vendorWorkType: ProductType.BPO_EXTERIOR }],
+      { propertyDetails: basePropertyDetails() } as any,
+    );
+
+    expect(mock.db.createOrder).toHaveBeenCalledTimes(1);
+    const voInput = (mock.db.createOrder as any).mock.calls[0][0];
+    expect(voInput.propertyId).toBe('prop-123');
+    expect(voInput.propertyDetails).toBeUndefined();
+  });
+
   it('returns [] without writes when specs is empty', async () => {
     const placed = await svc.placeClientOrder(baseInput());
     const before = (mock.db.createOrder as any).mock.calls.length;
@@ -487,7 +534,7 @@ describe('ClientOrderService.addVendorOrders — etag concurrency', () => {
       type: 'client-order',
       clientOrderNumber: 'CO-co-1',
       engagementId: 'eng-1',
-      engagementLoanId: 'loan-1',
+      engagementPropertyId: 'loan-1',
       clientId: 'client-1',
       productType: ProductType.FULL_APPRAISAL,
       propertyDetails: basePropertyDetails(),

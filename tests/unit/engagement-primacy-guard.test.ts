@@ -4,8 +4,8 @@
  * Asserts that every order-creation path enforces parent Engagement linkage.
  * Three layers of defence:
  *   1. dbService.createOrder rejects writes lacking engagementId.
- *   2. order.controller / production-order.controller reject orphan API
- *      requests with 400 before they reach the service layer.
+ *   2. order.controller rejects orphan API requests with 400 before they
+ *      reach the service layer.
  *   3. ai-action-dispatcher's CREATE_ORDER tool requires engagementId in
  *      its payload (handled via getString throwing on missing field).
  */
@@ -63,16 +63,49 @@ describe('CosmosDbService.createOrder — engagement-primacy guard', () => {
     expect(result.error.message).toMatch(/engagementId is required/i);
   });
 
-  it('proceeds to write when engagementId is supplied', async () => {
+  it('proceeds to write when full engagement linkage is supplied', async () => {
     const thiz = makeStubService();
     const result = await callGuarded(thiz, {
       tenantId: 'tenant-1',
       clientId: 'client-1',
       engagementId: 'eng-1',
+      engagementPropertyId: 'prop-1',
+      engagementClientOrderId: 'co-1',
       productType: 'FULL_APPRAISAL',
     });
     expect(result.success).toBe(true);
     expect(thiz.ordersContainer.items.create).toHaveBeenCalledTimes(1);
+  });
+
+  // Phase B step 10: strict mode rejects partial linkage.
+  it('rejects when engagementPropertyId is missing', async () => {
+    const thiz = makeStubService();
+    const result = await callGuarded(thiz, {
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      engagementId: 'eng-1',
+      // engagementPropertyId omitted
+      engagementClientOrderId: 'co-1',
+      productType: 'FULL_APPRAISAL',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.message).toMatch(/engagementPropertyId is required/i);
+    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when engagementClientOrderId is missing', async () => {
+    const thiz = makeStubService();
+    const result = await callGuarded(thiz, {
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      engagementId: 'eng-1',
+      engagementPropertyId: 'prop-1',
+      // engagementClientOrderId omitted
+      productType: 'FULL_APPRAISAL',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.message).toMatch(/engagementClientOrderId is required/i);
+    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
   });
 });
 
@@ -126,27 +159,3 @@ describe('OrderController.createOrder — engagement-primacy 400 reject', () => 
   });
 });
 
-// ─── Controller-level guard (production-order.controller) ────────────────────
-
-describe('ProductionOrderController.createOrder — engagement-primacy 400 reject', () => {
-  it('returns 400 when engagementId missing', async () => {
-    const { ProductionOrderController } = await import('../../src/controllers/production-order.controller.js');
-    const controller = new ProductionOrderController({ createOrder: vi.fn() } as any);
-
-    let statusCode = 0;
-    let body: any = undefined;
-    const res = {
-      status(code: number) { statusCode = code; return this; },
-      json(data: unknown) { body = data; return this; },
-    };
-
-    await controller.createOrder(
-      { body: { /* no engagementId */ }, user: { id: 'u1', tenantId: 't1' } } as any,
-      res as any,
-    );
-
-    expect(statusCode).toBe(400);
-    expect(body.success).toBe(false);
-    expect(body.error).toMatch(/engagementId is required/i);
-  });
-});

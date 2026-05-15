@@ -5,7 +5,7 @@
     "lib": ["ES2020", "DOM"],  
     "types": ["node"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -32,7 +32,9 @@
       "@/models/*": ["models/*"],
       "@/utils/*": ["utils/*"],
       "@/middleware/*": ["middleware/*"],
-      "@/config/*": ["config/*"]
+      "@/config/*": ["config/*"],
+      "@l1/shared-types": ["../packages/shared-types/src/index.ts"],
+      "@l1/shared-types/property-record": ["../packages/shared-types/src/property-record.types.ts"]
     }
   },
   "include": [

@@ -19,7 +19,7 @@ import {
   CanonicalAppraiserInfo,
   HighestAndBestUse,
   ValueType,
-} from '../../../types/canonical-schema';
+} from '@l1/shared-types';
 import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

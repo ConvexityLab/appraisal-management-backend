@@ -42,32 +42,48 @@ function createDispatcher(overrides?: {
 }
 
 describe('AiActionDispatcherService', () => {
-  it('creates orders through OrderManagementService.createOrder()', async () => {
-    const createOrder = vi.fn().mockResolvedValue({
-      success: true,
-      data: { id: 'order-1', orderNumber: 'ORD-1', status: 'NEW' },
-    });
-    const { dispatcher } = createDispatcher({ orderService: { createOrder } });
+  it('creates a VendorOrder via ClientOrderService.addVendorOrders against an existing ClientOrder', async () => {
+    const addVendorOrders = vi.fn().mockResolvedValue([
+      { id: 'vo-1', orderNumber: 'ORD-1', status: 'NEW' },
+    ]);
+    const { dispatcher } = createDispatcher();
+    // Phase B step 7: dispatcher constructs ClientOrderService internally
+    // from dbService. Override the field directly to inject our stub.
+    (dispatcher as unknown as { clientOrderService: { addVendorOrders: typeof addVendorOrders } })
+      .clientOrderService = { addVendorOrders };
 
     const result = await dispatcher.handleCreateOrder({
       clientId: 'client-1',
-      // Slice 8g: engagement-primacy guard requires engagementId in the AI
-      // payload. The model is contracted to call CREATE_ENGAGEMENT first
-      // (or look up an existing engagement) and pass its id here.
+      // The new contract requires the full engagement hierarchy from the
+      // AI payload. The model first calls CREATE_ENGAGEMENT (or looks up an
+      // existing engagement) and passes the resolved IDs here.
       engagementId: 'eng-1',
-      propertyAddress: { streetAddress: '123 Main', city: 'Dallas', state: 'TX', zipCode: '75001' },
+      engagementPropertyId: 'prop-1',
+      propertyId: 'prop-1',
+      clientOrderId: 'co-1',
       orderType: 'PURCHASE',
       productType: 'FULL_APPRAISAL',
       dueDate: '2030-01-01T00:00:00.000Z',
     }, context);
 
-    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
-      tenantId: 'tenant-123',
-      createdBy: 'user-123',
-      clientId: 'client-1',
-      engagementId: 'eng-1',
-    }));
-    expect(result.data).toEqual({ orderId: 'order-1', orderNumber: 'ORD-1', status: 'NEW' });
+    expect(addVendorOrders).toHaveBeenCalledWith(
+      'co-1',
+      'tenant-123',
+      [{ vendorWorkType: 'FULL_APPRAISAL' }],
+      expect.objectContaining({
+        engagementId: 'eng-1',
+        engagementPropertyId: 'prop-1',
+        engagementClientOrderId: 'co-1',
+        clientOrderId: 'co-1',
+        clientId: 'client-1',
+        propertyId: 'prop-1',
+        productType: 'FULL_APPRAISAL',
+        tenantId: 'tenant-123',
+        createdBy: 'user-123',
+      }),
+    );
+    expect(addVendorOrders.mock.calls[0]?.[3]).not.toHaveProperty('propertyAddress');
+    expect(result.data).toEqual({ orderId: 'vo-1', orderNumber: 'ORD-1', status: 'NEW' });
   });
 
   it('creates engagements through EngagementService.createEngagement()', async () => {

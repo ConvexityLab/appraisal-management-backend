@@ -28,6 +28,7 @@ import type { SeedModule, SeedModuleResult, SeedContext } from './seed-types.js'
 import { module as clientsModule } from './modules/clients.js';
 import { module as productsModule } from './modules/products.js';
 import { module as usersModule } from './modules/users.js';
+import { module as authorizationPoliciesModule } from './modules/authorization-policies.js';
 import { module as vendorsModule } from './modules/vendors.js';
 import { module as ordersModule } from './modules/orders.js';
 import { module as documentsModule } from './modules/documents.js';
@@ -39,7 +40,7 @@ import { module as constructionModule } from './modules/construction.js';
 import { module as bulkPortfoliosModule } from './modules/bulk-portfolios.js';
 import { module as matchingCriteriaModule } from './modules/matching-criteria.js';
 import { module as timelineModule } from './modules/timeline.js';
-import { module as mopCriteriaModule } from './modules/mop-criteria.js';
+import { module as mopCriteriaModule } from './modules/mop-criteria-seed.js';
 import { module as reviewProgramsModule } from './modules/review-programs.js';
 import { module as pdfTemplatesModule } from './modules/pdf-templates.js';
 import { module as escalationsModule } from './modules/escalations.js';
@@ -55,12 +56,14 @@ import { module as constructionCatalogModule } from './modules/construction-cata
 import { module as reportTemplatesModule } from './modules/report-templates.js';
 import { module as auditEventsModule } from './modules/audit-events.js';
 import { module as quickbooksModule } from './modules/quickbooks.js';
+import { module as vendorConnectionsModule } from './modules/vendor-connections.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
   clientsModule,        // Phase 1
   productsModule,       // Phase 2
   usersModule,          // Phase 2b — UserProfile documents (users container)
+  authorizationPoliciesModule, // Phase 2c — DB-backed auth policy defaults
   vendorsModule,        // Phase 3
   ordersModule,         // Phase 4
   documentsModule,      // Phase 5
@@ -88,6 +91,7 @@ const ALL_MODULES: SeedModule[] = [
   reportTemplatesModule,        // Phase 26
   auditEventsModule,            // Phase 27
   quickbooksModule,             // Phase 28 (External Sync)
+  vendorConnectionsModule,       // Phase 29 (Vendor Integration Config)
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
@@ -159,6 +163,7 @@ const CONTAINER_PARTITION_KEYS: Record<string, string> = {
   'engagement-audit-events':  '/engagementId',
   'appraisal-drafts':         '/orderId',
   'integrations':             '/tenantId',
+  'vendor-connections':       '/tenantId',
 };
 
 async function main(): Promise<void> {

@@ -183,7 +183,7 @@ describe('AxiomController webhook durable ACK', () => {
           tenantId: 'tenant-1',
           clientId: 'client-1',
           engagementId: 'eng-1',
-          engagementLoanId: 'loan-1',
+          engagementPropertyId: 'loan-1',
         },
       }),
     };
@@ -288,7 +288,7 @@ describe('AxiomController webhook durable ACK', () => {
           tenantId: 'tenant-1',
           clientId: 'client-1',
           engagementId: 'eng-1',
-          engagementLoanId: 'loan-1',
+          engagementPropertyId: 'loan-1',
         },
       }),
     };

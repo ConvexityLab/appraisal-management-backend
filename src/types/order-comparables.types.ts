@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Order-Comparables Types (Comp Collection stage)
  *
  * Types for the comp-collection stage of the comp pipeline that runs after a
@@ -20,7 +20,8 @@
  * @see OrderCompCollectionService (planned)
  */
 
-import type { CanonicalAddress, PropertyRecord, PropertyRecordType } from './property-record.types.js';
+import type { PropertyRecord, PropertyRecordType } from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 import type { GeohashExpansion } from '../utils/geohash.util.js';
 import type { AttomMappingCompleteness } from '../mappers/attom-to-property-record.mapper.js';
 

@@ -15,7 +15,7 @@ import {
 import { ACTIVE_LISTING_STATUS } from '../src/config/comp-collection-config';
 import { EventCategory, type ClientOrderCreatedEvent } from '../src/types/events';
 import type { CompSearchParams, CompSearchResult } from '../src/types/attom-data.types';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import { PropertyRecordType } from '@l1/shared-types';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -89,6 +89,7 @@ function makeMocks() {
       created.push(doc);
       return doc;
     }),
+    queryDocuments: vi.fn().mockResolvedValue([]),
   } as any;
 
   const propertyRecords = {
@@ -269,6 +270,14 @@ describe('OrderCompCollectionService.runForOrder', () => {
       expect(doc.subjectAddress!.zip).toBe('75225');
       expect(doc.subjectAddress!.latitude).toBe(32.85);
       expect(doc.subjectAddress!.longitude).toBe(-96.78);
+      expect(m.cosmos.queryDocuments).toHaveBeenCalledWith(
+        'property-observations',
+        expect.stringContaining('SELECT * FROM c'),
+        expect.arrayContaining([
+          expect.objectContaining({ name: '@tenantId', value: 'tenant-a' }),
+          expect.objectContaining({ name: '@propertyId', value: 'prop-1' }),
+        ]),
+      );
     });
 
     it('uses the per-product config for DESKTOP_APPRAISAL (tighter radius/counts)', async () => {

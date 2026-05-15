@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import { MopMapperService } from './MopMapperService';
-import { CanonicalReportDocument } from '../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
 
 describe('MopMapperService', () => {
     it('should correctly map canonical appraisal to MOP facts', () => {

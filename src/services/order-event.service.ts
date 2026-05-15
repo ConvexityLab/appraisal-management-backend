@@ -73,7 +73,7 @@ export class OrderEventService {
     // bare VendorOrder via a synthetic context — same behavior as before
     // this refactor.
     const ctx = this.contextLoader
-      ? await this.contextLoader.loadByVendorOrder(order)
+      ? await this.contextLoader.loadByVendorOrder(order, { includeProperty: true })
       : { vendorOrder: order, clientOrder: null };
     const canonical = buildCanonicalPayloadFromOrder(ctx);
 

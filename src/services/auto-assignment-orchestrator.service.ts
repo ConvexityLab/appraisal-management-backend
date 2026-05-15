@@ -38,7 +38,18 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
-import { VendorMatchingEngine } from './vendor-matching-engine.service.js';
+import { VendorMatchingEngine, inferNoMatchReason } from './vendor-matching-engine.service.js';
+
+/**
+ * Local helper — pull a 2-letter state code from a flat propertyAddress string
+ * for the no-match-reason message ("No vendor licensed in FL within 50 mi.").
+ * Mirrors the matcher's internal extractStateHint without exporting it.
+ */
+function extractStateHint(propertyAddress: string | undefined): string | undefined {
+  if (!propertyAddress) return undefined;
+  const match = propertyAddress.match(/\b([A-Z]{2})\b/);
+  return match?.[1];
+}
 import {
   AxiomService,
   type AxiomVendorBidAnalysisResult,
@@ -55,7 +66,9 @@ import {
   getDueDate,
   type OrderContext,
 } from './order-context-loader.service.js';
-import type { VendorMatchResult } from '../types/vendor-marketplace.types.js';
+import type { VendorMatchResult, MatchExplanation, DeniedVendorEntry } from '../types/vendor-marketplace.types.js';
+import { AssignmentTraceRecorder } from './assignment-trace-recorder.service.js';
+import type { AssignmentTraceDocument } from '../types/assignment-trace.types.js';
 import type {
   AppEvent,
   BaseEvent,
@@ -107,6 +120,11 @@ export interface RankedVendorEntry {
    * Role of the internal staff member — only set when staffType === 'internal'.
    */
   staffRole?: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
+  /**
+   * T6/F9 audit: full deterministic match explanation for this vendor.
+   * Optional for backwards compatibility with FSM states written before T6.
+   */
+  explanation?: MatchExplanation;
 }
 
 export interface AutoVendorAssignmentState {
@@ -127,6 +145,18 @@ export interface AutoVendorAssignmentState {
   broadcastMode?: boolean;
   broadcastBidIds?: string[];
   broadcastRound?: number;
+  /**
+   * T6/F9 audit: vendors filtered out by deny rules. Surfaced to operators
+   * so they can answer "why didn't vendor X get considered?".
+   */
+  deniedVendors?: DeniedVendorEntry[];
+  /**
+   * Populated by the orchestrator when matching produces zero candidates
+   * (status will be EXHAUSTED in that case). Sanitised category — drives the
+   * FE EXHAUSTED Alert's "Couldn't find a vendor: ..." body per Doug's
+   * meeting note. Inferred by inferNoMatchReason from the denied list.
+   */
+  noMatchReason?: import('../types/vendor-marketplace.types.js').NoMatchReason;
 }
 
 export interface RankedReviewerEntry {
@@ -192,11 +222,13 @@ export class AutoAssignmentOrchestratorService {
   private readonly tenantConfigService: TenantAutomationConfigService;
   private readonly supervisoryReviewService: SupervisoryReviewService;
   private readonly contextLoader: OrderContextLoader;
+  private readonly traceRecorder: AssignmentTraceRecorder;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
     this.contextLoader = new OrderContextLoader(this.dbService);
+    this.traceRecorder = new AssignmentTraceRecorder(this.dbService);
     this.publisher = new ServiceBusEventPublisher();
     // Use a dedicated subscription so we don't compete with the notification service
     this.subscriber = new ServiceBusEventSubscriber(
@@ -218,6 +250,14 @@ export class AutoAssignmentOrchestratorService {
       this.logger.warn('AutoAssignmentOrchestrator already started');
       return;
     }
+    // Set the flag BEFORE the awaits below — api-server.ts calls .start()
+    // twice (once from initializeDatabase for tests, once from
+    // startBackgroundJobs for prod). Both callers fire synchronously, so
+    // without setting isStarted up-front, the second one sees `false` and
+    // races a duplicate subscription set. Result was every event being
+    // handled twice → duplicate bid invitations going out to the same
+    // vendor. Surfaced by J16's BE log inspection.
+    this.isStarted = true;
 
     this.logger.info('Starting AutoAssignmentOrchestrator — registering event handlers');
 
@@ -270,7 +310,7 @@ export class AutoAssignmentOrchestratorService {
       ),
     ]);
 
-    this.isStarted = true;
+    // isStarted set above the awaits to prevent the double-start race.
     this.logger.info('AutoAssignmentOrchestrator started — listening for assignment workflow events');
   }
 
@@ -350,7 +390,12 @@ export class AutoAssignmentOrchestratorService {
    */
   private async onEngagementOrderCreated(event: EngagementOrderCreatedEvent): Promise<void> {
     const { orderId, orderNumber, tenantId, propertyAddress, productType, dueDate, priority, clientId,
-      productId, requiredCapabilities } = event.data;
+      productId } = event.data;
+    let requiredCapabilities: string[] | undefined = event.data.requiredCapabilities;
+
+    // Phase 5 T37: capture wall-clock for the trace's rankingLatencyMs.
+    const triggerStart = Date.now();
+    const initiatedAt = new Date(triggerStart).toISOString();
 
     this.logger.info('Processing engagement.order.created', { orderId, orderNumber });
 
@@ -377,11 +422,24 @@ export class AutoAssignmentOrchestratorService {
 
     const maxAttempts = tenantConfig.maxVendorAttempts;
 
-    // --- Rank vendors ---
+    // --- Enrich requiredCapabilities from product doc if not provided in the event ---
+    if (productId && !requiredCapabilities?.length) {
+      const productResult = await this.dbService.findProductById(productId, tenantId);
+      if (productResult.success && productResult.data?.requiredCapabilities?.length) {
+        requiredCapabilities = productResult.data.requiredCapabilities;
+      }
+    }
+
+    // --- Rank vendors (T6: also collect denied vendors for FSM audit trail) ---
     let rankedVendors: RankedVendorEntry[] = [];
     let matchResults: VendorMatchResult[] = [];
+    let deniedVendors: DeniedVendorEntry[] = [];
+    // Phase D.faithful — frozen facts the rules engine evaluated; persisted
+    // on the assignment-trace doc so Sandbox replay can re-evaluate against
+    // the SAME facts that drove the original decision.
+    let evaluationsSnapshot: Awaited<ReturnType<typeof this.matchingEngine.findMatchingVendorsAndDenied>>['evaluationsSnapshot'] = [];
     try {
-      matchResults = await this.matchingEngine.findMatchingVendors(
+      const result = await this.matchingEngine.findMatchingVendorsAndDenied(
         {
           orderId,
           tenantId,
@@ -403,20 +461,49 @@ export class AutoAssignmentOrchestratorService {
         },
         maxAttempts,
       );
+      matchResults = result.matches;
+      deniedVendors = result.denied;
+      evaluationsSnapshot = result.evaluationsSnapshot;
 
       rankedVendors = matchResults.map((r) => ({
         vendorId: r.vendorId,
         vendorName: r.vendor.name,
         score: r.matchScore,
+        explanation: r.explanation,
       }));
     } catch (err) {
       this.logger.error('Vendor matching failed for order', { orderId, error: err });
     }
 
     if (rankedVendors.length === 0) {
-      // No vendors at all — immediately escalate to human
-      this.logger.warn('No matching vendors found — escalating immediately', { orderId });
-      await this.escalateVendorAssignment(order, tenantId, []);
+      // No vendors at all — immediately escalate to human.
+      // Compute the sanitised "why no match" category so the FE assigner sees
+      // a one-line reason (Doug's meeting-note ask).
+      const stateHint = extractStateHint(propertyAddress);
+      const noMatchReason = inferNoMatchReason(deniedVendors, {
+        radiusUsed:
+          (tenantConfig as { defaultMaxDistanceMiles?: number }).defaultMaxDistanceMiles ?? 50,
+        ...(stateHint ? { productState: stateHint } : {}),
+      });
+      this.logger.warn('No matching vendors found — escalating immediately', {
+        orderId,
+        noMatchReasonCode: noMatchReason.code,
+      });
+      await this.recordAssignmentTrace({
+        tenantId, orderId, initiatedAt, triggerStart,
+        propertyAddress, productType,
+        ...(productId ? { productId } : {}),
+        ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
+        dueDate: dueDate as unknown as Date,
+        priority,
+        rankedVendors: [],
+        deniedVendors,
+        matchResults: [],
+        evaluationsSnapshot,
+        outcome: 'escalated',
+        selectedVendorId: null,
+      });
+      await this.escalateVendorAssignment(order, tenantId, [], noMatchReason);
       return;
     }
 
@@ -444,6 +531,7 @@ export class AutoAssignmentOrchestratorService {
         broadcastMode: true,
         broadcastBidIds: [],
         broadcastRound: 1,
+        ...(deniedVendors.length > 0 ? { deniedVendors } : {}),
       };
       await this.sendBroadcastBids(orderForDispatch, state, tenantId, priority, tenantConfig.broadcastCount);
     } else {
@@ -454,8 +542,36 @@ export class AutoAssignmentOrchestratorService {
         currentBidId: null,
         currentBidExpiresAt: null,
         initiatedAt: new Date().toISOString(),
+        ...(deniedVendors.length > 0 ? { deniedVendors } : {}),
       };
       await this.sendBidToVendor(orderForDispatch, state, tenantId, priority);
+    }
+
+    // Phase 5 T37: persist the per-assignment trace. Best-effort; recorder
+    // logs + swallows on failure so an assignment never fails because we
+    // couldn't write a trace.
+    {
+      const top = rankedVendors[0];
+      const isInternal = top?.staffType === 'internal';
+      const outcome: AssignmentTraceDocument['outcome'] = broadcastMode
+        ? 'broadcast'
+        : isInternal
+          ? 'assigned_internal'
+          : 'pending_bid';
+      await this.recordAssignmentTrace({
+        tenantId, orderId, initiatedAt, triggerStart,
+        propertyAddress, productType,
+        ...(productId ? { productId } : {}),
+        ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
+        dueDate: dueDate as unknown as Date,
+        priority,
+        rankedVendors,
+        deniedVendors,
+        matchResults,
+        evaluationsSnapshot,
+        outcome,
+        selectedVendorId: top?.vendorId ?? null,
+      });
     }
 
     // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
@@ -816,16 +932,14 @@ export class AutoAssignmentOrchestratorService {
     // load failure.
     let bidCtx;
     try {
-      bidCtx = await this.contextLoader.loadByVendorOrder(order);
+      bidCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('sendBidToVendor: could not load OrderContext; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const bidPropertyAddress = bidCtx
-      ? getPropertyAddress(bidCtx) ?? order.propertyDetails?.fullAddress
-      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const bidPropertyAddress = this.resolveOrderAddressText(order, bidCtx);
     const bidDueDate = bidCtx ? getDueDate(bidCtx) : order.dueDate;
     const bidOrderType = bidCtx?.clientOrder?.orderType ?? order.orderType;
 
@@ -837,7 +951,6 @@ export class AutoAssignmentOrchestratorService {
       vendorId: vendor.vendorId,
       vendorName: vendor.vendorName,
       tenantId,
-      propertyAddress: bidPropertyAddress,
       propertyType: order.productType ?? bidOrderType,
       dueDate: bidDueDate,
       urgency: order.priority,
@@ -981,16 +1094,14 @@ export class AutoAssignmentOrchestratorService {
     // from the parent ClientOrder.
     let broadcastCtx;
     try {
-      broadcastCtx = await this.contextLoader.loadByVendorOrder(order);
+      broadcastCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('sendBroadcastBids: could not load OrderContext; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const broadcastPropertyAddress = broadcastCtx
-      ? getPropertyAddress(broadcastCtx) ?? order.propertyDetails?.fullAddress
-      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const broadcastPropertyAddress = this.resolveOrderAddressText(order, broadcastCtx);
     const broadcastDueDate = broadcastCtx ? getDueDate(broadcastCtx) : order.dueDate;
     const broadcastOrderType = broadcastCtx?.clientOrder?.orderType ?? order.orderType;
 
@@ -1140,17 +1251,103 @@ export class AutoAssignmentOrchestratorService {
   }
 
   /**
+   * Phase 5 T37 — build + persist a per-assignment trace document.
+   * Best-effort: AssignmentTraceRecorder logs + swallows on storage failure.
+   *
+   * Co-locates everything an operator (or replay/sandbox in Phase 6) needs to
+   * answer "why this vendor / why not vendor X / how long did it take" from
+   * the order detail page without joining against the order itself.
+   */
+  private async recordAssignmentTrace(args: {
+    tenantId: string;
+    orderId: string;
+    initiatedAt: string;
+    triggerStart: number;
+    propertyAddress: string;
+    productType: string;
+    productId?: string;
+    requiredCapabilities?: string[];
+    dueDate: Date;
+    priority: EventPriority | 'STANDARD' | 'RUSH' | 'EMERGENCY';
+    rankedVendors: RankedVendorEntry[];
+    deniedVendors: DeniedVendorEntry[];
+    matchResults: VendorMatchResult[];
+    /** Phase D.faithful — frozen facts the engine evaluated. */
+    evaluationsSnapshot?: AssignmentTraceDocument['evaluationsSnapshot'];
+    outcome: AssignmentTraceDocument['outcome'];
+    selectedVendorId: string | null;
+  }): Promise<void> {
+    // Pull the rules provider name off the engine when available — gives the
+    // trace UI a way to indicate whether the eval ran on MOP or homegrown.
+    const providerName =
+      (this.matchingEngine as any)?.rulesProvider?.name ?? 'unknown';
+
+    // Build ranked entries with the explanation off matchResults (rankedVendors
+    // also carries explanation but we double-source for resilience against
+    // ordering shifts from the AI rerank).
+    const explanationByVendorId = new Map<string, MatchExplanation | undefined>();
+    for (const r of args.matchResults) explanationByVendorId.set(r.vendorId, r.explanation);
+
+    const trace: AssignmentTraceDocument = {
+      id: AssignmentTraceRecorder.composeId(args.tenantId, args.orderId, args.initiatedAt),
+      type: 'assignment-trace',
+      tenantId: args.tenantId,
+      orderId: args.orderId,
+      initiatedAt: args.initiatedAt,
+      rulesProviderName: providerName,
+      matchRequest: {
+        propertyAddress: args.propertyAddress,
+        propertyType: args.productType,
+        ...(args.productId ? { productId: args.productId } : {}),
+        ...(args.requiredCapabilities?.length ? { requiredCapabilities: args.requiredCapabilities } : {}),
+        dueDate: args.dueDate.toISOString(),
+        urgency:
+          args.priority === EventPriority.CRITICAL ? 'SUPER_RUSH'
+          : args.priority === EventPriority.HIGH ? 'RUSH'
+          : 'STANDARD',
+      },
+      rankedVendors: args.rankedVendors.map(v => ({
+        vendorId: v.vendorId,
+        vendorName: v.vendorName,
+        score: v.score,
+        ...(v.staffType ? { staffType: v.staffType } : {}),
+        ...(v.staffRole ? { staffRole: v.staffRole } : {}),
+        ...((v.explanation ?? explanationByVendorId.get(v.vendorId))
+          ? { explanation: v.explanation ?? explanationByVendorId.get(v.vendorId)! }
+          : {}),
+      })),
+      deniedVendors: args.deniedVendors,
+      outcome: args.outcome,
+      selectedVendorId: args.selectedVendorId,
+      rankingLatencyMs: Date.now() - args.triggerStart,
+      ...(args.evaluationsSnapshot && args.evaluationsSnapshot.length > 0
+        ? { evaluationsSnapshot: args.evaluationsSnapshot }
+        : {}),
+    };
+
+    await this.traceRecorder.record(trace);
+  }
+
+  /**
    * All vendors exhausted — mark order and publish escalation event.
    */
   private async escalateVendorAssignment(
     order: any,
     tenantId: string,
     vendorsContacted: string[],
+    /**
+     * Optional NoMatchReason inferred from the denied list. When the no-match
+     * path triggered the escalation (zero ranked vendors), the caller passes
+     * this through so the FE EXHAUSTED Alert can show "Couldn't find a vendor:
+     * no vendor licensed in FL within 50 miles" instead of just "exhausted".
+     */
+    noMatchReason?: import('../types/vendor-marketplace.types.js').NoMatchReason,
   ): Promise<void> {
     const exhausedState: Partial<AutoVendorAssignmentState> = {
       status: 'EXHAUSTED',
       currentBidId: null,
       currentBidExpiresAt: null,
+      ...(noMatchReason ? { noMatchReason } : {}),
     };
 
     await this.dbService.updateItem(
@@ -1310,20 +1507,14 @@ export class AutoAssignmentOrchestratorService {
     // reads on the bare order shape.
     let qcCtx: OrderContext | null = null;
     try {
-      qcCtx = await this.contextLoader.loadByVendorOrder(order);
+      qcCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('Could not load OrderContext for QC queue entry; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const qcAddr = qcCtx ? getPropertyAddress(qcCtx) : undefined;
-    const qcAddrString =
-      (qcAddr as { fullAddress?: string } | undefined)?.fullAddress ??
-      qcAddr?.streetAddress ??
-      order.propertyAddress?.fullAddress ??
-      order.propertyAddress?.streetAddress ??
-      (typeof order.propertyAddress === 'string' ? order.propertyAddress : '');
+    const qcAddrString = this.resolveOrderAddressText(order, qcCtx);
 
     // Add to QC queue
     let qcReviewId: string;
@@ -1653,7 +1844,7 @@ export class AutoAssignmentOrchestratorService {
       // Best-effort: if the load fails we still send the bare order shape.
       let ctx: OrderContext | undefined;
       try {
-        ctx = await this.contextLoader.loadByVendorOrder(order);
+        ctx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
       } catch (loadErr) {
         this.logger.warn('Could not load OrderContext for AI vendor-bid scoring; falling back to bare order', {
           orderId: order.id,
@@ -1785,19 +1976,7 @@ export class AutoAssignmentOrchestratorService {
     // pull from the parent ClientOrder when present and fall back to the
     // deprecated VendorOrder copy). When no context is provided, fall back
     // to the legacy any-typed reads.
-    const addrFromCtx = ctx ? getPropertyAddress(ctx) : undefined;
-    const addrSource = addrFromCtx ?? order.propertyAddress;
-    const propertyAddress =
-      typeof addrSource === 'string'
-        ? addrSource
-        : [
-            addrSource?.streetAddress ?? addrSource?.street ?? '',
-            addrSource?.city ?? '',
-            addrSource?.state ?? '',
-            addrSource?.zipCode ?? addrSource?.zip ?? '',
-          ]
-            .filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
-            .join(', ');
+    const propertyAddress = this.resolveOrderAddressText(order, ctx);
 
     const dueDateValue = ctx ? getDueDate(ctx) : order.dueDate;
     const orderTypeValue = ctx?.clientOrder?.orderType ?? order.orderType;
@@ -1808,6 +1987,52 @@ export class AutoAssignmentOrchestratorService {
       priority: order.priority ?? 'STANDARD',
       dueDate: dueDateValue ?? new Date().toISOString(),
     };
+  }
+
+  private resolveOrderAddressText(order: any, ctx?: OrderContext | null): string {
+    const canonicalAddress = ctx ? this.formatAddressValue(getPropertyAddress(ctx)) : '';
+    if (canonicalAddress) {
+      return canonicalAddress;
+    }
+
+    const workflowAddress = this.formatAddressValue(order.propertyAddress);
+    if (workflowAddress) {
+      return workflowAddress;
+    }
+
+    return typeof order.propertyDetails?.fullAddress === 'string'
+      ? order.propertyDetails.fullAddress
+      : '';
+  }
+
+  private formatAddressValue(address: unknown): string {
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (!address || typeof address !== 'object') {
+      return '';
+    }
+
+    const candidate = address as Record<string, unknown>;
+    const street = typeof candidate['streetAddress'] === 'string'
+      ? candidate['streetAddress']
+      : typeof candidate['street'] === 'string'
+        ? candidate['street']
+        : typeof candidate['fullAddress'] === 'string'
+          ? candidate['fullAddress']
+          : '';
+    const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+    const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+    const zip = typeof candidate['zipCode'] === 'string'
+      ? candidate['zipCode']
+      : typeof candidate['zip'] === 'string'
+        ? candidate['zip']
+        : '';
+
+    const locality = [city, state].filter(Boolean).join(', ');
+    const trailing = [locality, zip].filter(Boolean).join(' ');
+    return [street, trailing].filter(Boolean).join(', ');
   }
 
   private reorderRankedVendorsByAnalysis(

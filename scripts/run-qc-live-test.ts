@@ -27,13 +27,13 @@ const POLL_MS   = 2000; // ms between polls
 function makeToken(): string {
   return jwt.sign(
     {
-      sub: 'live-test-qc-analyst',
-      email: 'qc.analyst@test.local',
-      name: 'Live Test QC Analyst',
-      role: 'qc_analyst',
+      sub: 'live-test-analyst',
+      email: 'analyst@test.local',
+      name: 'Live Test Analyst',
+      role: 'analyst',
       clientId: 'default-client',   // must match checklist.clientId for hasChecklistExecuteAccess
       tenantId: 'test-tenant',
-      permissions: ['qc_execute', 'qc_validate', 'qc_metrics', 'order_view'],
+      permissions: ['qc_review:execute', 'qc_review:read', 'qc_queue:read', 'order:read'],
       accessScope: {
         teamIds: ['team-qc'],
         departmentIds: ['dept-quality'],

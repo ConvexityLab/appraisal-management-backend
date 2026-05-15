@@ -26,6 +26,61 @@ import { QC_CHECKLIST_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
 const CONTAINER = 'criteria';
 
+/**
+ * Map URAR-1004-XXX short codes to the canonical Axiom node IDs published by
+ * the FNMA-1004 compiled program. Each entry is `program:FNMA-1004:<Category>.<Subcategory>.<Concept>:<sequence>`.
+ *
+ * The FE's axiomQcBridge (`applyAxiomPrefill`) matches a checklist question's
+ * `axiomCriterionIds` against the eval result row's `criterionId` field — and
+ * those rows now carry the long-form node id. Without this mapping the FE
+ * sees zero matches and renders no "AI Verdict:" on questions even when the
+ * verdicts exist in evaluation-results. Verified against Axiom dev on
+ * 2026-05-13: every short code below resolves to a row in compiled-programs.
+ *
+ * When Axiom publishes a new program version, re-probe with:
+ *   SELECT c.id FROM compiled-programs c WHERE c.programId='FNMA-1004' ORDER BY c.id
+ */
+const FNMA_1004_NODE_IDS: Record<string, string> = {
+  'URAR-1004-001': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.SubjectAddressComplete:001',
+  'URAR-1004-002': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.LegalDescriptionPresent:002',
+  'URAR-1004-003': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.AssessorsParcelNumberPresent:003',
+  'URAR-1004-004': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.TaxYearAndAmountPresent:004',
+  'URAR-1004-005': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.BorrowerOwnerNamePresent:005',
+  'URAR-1004-006': 'program:FNMA-1004:SubjectProperty.PropertyIdentification.OccupancyStatusIndicated:006',
+  'URAR-1004-007': 'program:FNMA-1004:Neighborhood.MarketCharacteristics.LocationTypeIndicated:007',
+  'URAR-1004-008': 'program:FNMA-1004:Neighborhood.MarketConditions.PropertyValuesTrendIndicated:008',
+  'URAR-1004-009': 'program:FNMA-1004:Neighborhood.MarketConditions.MarketingTimeIndicated:009',
+  'URAR-1004-010': 'program:FNMA-1004:Neighborhood.SiteCharacteristics.FemaFloodZoneStated:010',
+  'URAR-1004-011': 'program:FNMA-1004:Site.SiteDescription.SiteAreaStated:011',
+  'URAR-1004-012': 'program:FNMA-1004:Site.SiteDescription.ZoningClassificationPresent:012',
+  'URAR-1004-013': 'program:FNMA-1004:Site.SiteDescription.ZoningComplianceIndicated:013',
+  'URAR-1004-014': 'program:FNMA-1004:Improvements.GeneralDescription.YearBuiltStated:014',
+  'URAR-1004-015': 'program:FNMA-1004:Improvements.GeneralDescription.EffectiveAgeStated:015',
+  'URAR-1004-016': 'program:FNMA-1004:Improvements.RoomCount.GlaCalculatedAndStated:016',
+  'URAR-1004-017': 'program:FNMA-1004:Improvements.RoomCount.RoomCountStated:017',
+  'URAR-1004-018': 'program:FNMA-1004:Improvements.Condition.ConditionRatingStated:018',
+  'URAR-1004-019': 'program:FNMA-1004:Improvements.Condition.QualityRatingStated:019',
+  'URAR-1004-020': 'program:FNMA-1004:SalesComparisonApproach.ComparableSelection.MinimumThreeComparables:020',
+  'URAR-1004-021': 'program:FNMA-1004:SalesComparisonApproach.ComparableData.ComparableAddressesPresent:021',
+  'URAR-1004-022': 'program:FNMA-1004:SalesComparisonApproach.ComparableData.ComparableSalePricesPresent:022',
+  'URAR-1004-023': 'program:FNMA-1004:SalesComparisonApproach.ComparableData.ComparableGlaStated:023',
+  'URAR-1004-024': 'program:FNMA-1004:SalesComparisonApproach.Adjustments.NetAdjustmentWithinFnmaLimits:024',
+  'URAR-1004-025': 'program:FNMA-1004:SalesComparisonApproach.Adjustments.GrossAdjustmentWithinFnmaLimits:025',
+  'URAR-1004-026': 'program:FNMA-1004:SalesComparisonApproach.ValuationConclusion.IndicatedValueBySalesComparison:026',
+  'URAR-1004-027': 'program:FNMA-1004:Reconciliation.ValuationConclusion.FinalReconciledValueStated:027',
+  'URAR-1004-028': 'program:FNMA-1004:Reconciliation.AppraisalDates.EffectiveDateOfAppraisalStated:028',
+  'URAR-1004-029': 'program:FNMA-1004:Reconciliation.AppraisalConditions.AppraisalConditionsStated:029',
+  'URAR-1004-030': 'program:FNMA-1004:AppraisalCertification.Certification.AppraiserSignaturePresent:030',
+  'URAR-1004-031': 'program:FNMA-1004:AppraisalCertification.Certification.AppraiserLicenseNumberStated:031',
+  'URAR-1004-032': 'program:FNMA-1004:AppraisalCertification.Certification.DateOfSignatureStated:032',
+  'URAR-1004-033': 'program:FNMA-1004:AppraisalCertification.Certification.AppraiserCompanyAddressPresent:033',
+};
+
+/** Expand a list of URAR-1004-XXX short codes to full Axiom node IDs. */
+function ax(...shortCodes: Array<keyof typeof FNMA_1004_NODE_IDS>): string[] {
+  return shortCodes.map((c) => FNMA_1004_NODE_IDS[c]!);
+}
+
 function buildChecklists(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     {
@@ -62,7 +117,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'CRITICAL',
                   dataRequirements: [],
                   // Axiom: subject property address fully formed with required components.
-                  axiomCriterionIds: ['URAR-1004-001'],
+                  axiomCriterionIds: ax('URAR-1004-001'),
                 },
                 {
                   id: 'q-subj-02',
@@ -71,7 +126,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'MEDIUM',
                   dataRequirements: [],
                   // Axiom: lot/site size reported.
-                  axiomCriterionIds: ['URAR-1004-011'],
+                  axiomCriterionIds: ax('URAR-1004-011'),
                 },
                 {
                   id: 'q-subj-03',
@@ -80,7 +135,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'MEDIUM',
                   dataRequirements: [],
                   // Axiom: neighborhood built-up % + property value trend + marketing time.
-                  axiomCriterionIds: ['URAR-1004-007', 'URAR-1004-008', 'URAR-1004-009'],
+                  axiomCriterionIds: ax('URAR-1004-007', 'URAR-1004-008', 'URAR-1004-009'),
                 },
               ],
             },
@@ -102,7 +157,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'CRITICAL',
                   dataRequirements: [],
                   // Axiom: ≥3 closed comparable sales + full addresses for distance/proximity check.
-                  axiomCriterionIds: ['URAR-1004-020', 'URAR-1004-021'],
+                  axiomCriterionIds: ax('URAR-1004-020', 'URAR-1004-021'),
                 },
                 {
                   id: 'q-comp-02',
@@ -111,7 +166,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'CRITICAL',
                   dataRequirements: [],
                   // Axiom: closed sale prices and dates for comparables.
-                  axiomCriterionIds: ['URAR-1004-022'],
+                  axiomCriterionIds: ax('URAR-1004-022'),
                 },
                 {
                   id: 'q-comp-03',
@@ -120,7 +175,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'MEDIUM',
                   dataRequirements: [],
                   // Axiom: net adjustments ≤15% + gross adjustments ≤25%.
-                  axiomCriterionIds: ['URAR-1004-024', 'URAR-1004-025'],
+                  axiomCriterionIds: ax('URAR-1004-024', 'URAR-1004-025'),
                 },
               ],
             },
@@ -142,7 +197,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'CRITICAL',
                   dataRequirements: [],
                   // Axiom: reconciled indicated value from sales comp + final market value opinion.
-                  axiomCriterionIds: ['URAR-1004-026', 'URAR-1004-027'],
+                  axiomCriterionIds: ax('URAR-1004-026', 'URAR-1004-027'),
                 },
                 {
                   id: 'q-val-02',
@@ -151,7 +206,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'MEDIUM',
                   dataRequirements: [],
                   // Axiom: effective date of appraisal.
-                  axiomCriterionIds: ['URAR-1004-028'],
+                  axiomCriterionIds: ax('URAR-1004-028'),
                 },
               ],
             },
@@ -174,13 +229,13 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   dataRequirements: [],
                   // Axiom: legal description + APN + year built + above-grade GLA + room count.
                   // These are the structural URAR identity/measurement fields most often missing.
-                  axiomCriterionIds: [
+                  axiomCriterionIds: ax(
                     'URAR-1004-002',
                     'URAR-1004-003',
                     'URAR-1004-014',
                     'URAR-1004-016',
                     'URAR-1004-017',
-                  ],
+                  ),
                 },
                 {
                   id: 'q-uad-02',
@@ -189,7 +244,7 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
                   priority: 'MEDIUM',
                   dataRequirements: [],
                   // Axiom: UAD C1-C6 condition rating + Q1-Q6 quality rating.
-                  axiomCriterionIds: ['URAR-1004-018', 'URAR-1004-019'],
+                  axiomCriterionIds: ax('URAR-1004-018', 'URAR-1004-019'),
                 },
               ],
             },

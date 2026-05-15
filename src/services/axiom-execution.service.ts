@@ -124,6 +124,25 @@ export class AxiomExecutionService {
   }
 
   /**
+   * Get an execution by the upstream Axiom pipeline job ID.
+   */
+  async getExecutionByAxiomJobId(axiomJobId: string): Promise<ApiResponse<AxiomExecutionRecord>> {
+    try {
+      const { resources } = await this.container.items
+        .query<AxiomExecutionRecord>({
+          query: 'SELECT TOP 1 * FROM c WHERE c.axiomJobId = @axiomJobId ORDER BY c.createdAt DESC',
+          parameters: [{ name: '@axiomJobId', value: axiomJobId }],
+        })
+        .fetchAll();
+      const resource = resources[0];
+      if (!resource) return { success: false, error: createApiError('NOT_FOUND', 'Not found') };
+      return { success: true, data: resource };
+    } catch (error) {
+      return { success: false, error: createApiError('UNKNOWN_ERROR', error instanceof Error ? error.message : 'Unknown error') };
+    }
+  }
+
+  /**
    * Retrieve executions by OrderId
    */
   async getExecutionsByOrderId(tenantId: string, orderId: string): Promise<ApiResponse<AxiomExecutionRecord[]>> {

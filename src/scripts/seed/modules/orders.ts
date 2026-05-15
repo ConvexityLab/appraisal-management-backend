@@ -38,7 +38,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       reportId: REPORT_IDS.FULL_1004_ORDER_001,
       qcStatus: 'PASSED', qcScore: 94,
       engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
-      engagementLoanId: 'seed-loan-eng004-001',
+      engagementPropertyId: 'seed-loan-eng004-001',
       engagementClientOrderId: 'seed-co-eng004-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -68,6 +68,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 2 — QC_REVIEW — PREMIER timed out on attempt 0, ROCKY_MOUNTAIN accepted on attempt 1
     {
       id: ORDER_IDS.QC_REVIEW_002, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
+      engagementPropertyId: 'seed-loan-eng001-002',
+      engagementClientOrderId: 'seed-co-eng001-002',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.QC_REVIEW_002],
       status: 'QC_REVIEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -124,7 +127,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       appraiserFee: 500,
       reportId: REPORT_IDS.FULL_1004_ORDER_003,
       engagementId: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
-      engagementLoanId: 'seed-loan-eng001-001',
+      engagementPropertyId: 'seed-loan-eng001-001',
       engagementClientOrderId: 'seed-co-eng001-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -143,6 +146,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 4 — PENDING_ASSIGNMENT — PREMIER timed out, NVN is current live bid
     {
       id: ORDER_IDS.PENDING_004, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_BPO_002,
+      engagementPropertyId: 'seed-loan-eng002-002',
+      engagementClientOrderId: 'seed-co-eng002-002',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.PENDING_004],
       status: 'PENDING_ASSIGNMENT', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.CONDO_1073, productName: 'Condo Appraisal (1073)', productType: 'CONDO',
@@ -169,6 +175,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 5 — NEW / Desktop — internal direct assignment in progress for Sarah Chen (no bid loop)
     {
       id: ORDER_IDS.NEW_005, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
+      engagementPropertyId: 'seed-loan-eng001-003',
+      engagementClientOrderId: 'seed-co-eng001-003',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.NEW_005],
       status: 'NEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DESKTOP_REVIEW, productName: 'Desktop Appraisal', productType: 'DESKTOP',
@@ -193,6 +202,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 6 — FIX_AND_FLIP, in progress with ARV
     {
       id: ORDER_IDS.FIX_FLIP_006, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
+      engagementPropertyId: 'seed-loan-eng003-001',
+      engagementClientOrderId: 'seed-co-eng003-001',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.FIX_FLIP_006],
       status: 'IN_PROGRESS', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -224,6 +236,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 7 — ASSIGNED — NVN is current live bid, expires in ~4 hours
     {
       id: ORDER_IDS.ASSIGNED_007, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
+      engagementPropertyId: 'seed-loan-eng003-002',
+      engagementClientOrderId: 'seed-co-eng003-002',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ASSIGNED_007],
       status: 'ASSIGNED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',
@@ -263,7 +278,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       dueDate: daysAgo(-8), fee: 525, paidAmount: 0,
       appraiserFee: 390,
       engagementId: ENGAGEMENT_IDS.SINGLE_BPO_002,
-      engagementLoanId: 'seed-loan-eng002-001',
+      engagementPropertyId: 'seed-loan-eng002-001',
       engagementClientOrderId: 'seed-co-eng002-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -295,7 +310,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       dueDate: daysAgo(-3), fee: 800, paidAmount: 0,
       appraiserFee: 600, appraisedValue: 720000,
       engagementId: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
-      engagementLoanId: 'seed-loan-eng005-001',
+      engagementPropertyId: 'seed-loan-eng005-001',
       engagementClientOrderId: 'seed-co-eng005-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -324,6 +339,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 10 — REVISION_REQUESTED — QC review accepted and completed, then revision triggered
     {
       id: ORDER_IDS.REVISION_010, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_BPO_002,
+      engagementPropertyId: 'seed-loan-eng002-003',
+      engagementClientOrderId: 'seed-co-eng002-003',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
       status: 'REVISION_REQUESTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -366,6 +384,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 11 — CANCELLED
     {
       id: ORDER_IDS.CANCELLED_011, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
+      engagementPropertyId: 'seed-loan-eng005-002',
+      engagementClientOrderId: 'seed-co-eng005-002',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.CANCELLED_011],
       status: 'CANCELLED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -380,6 +401,9 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     // 12 — COMPLETED, drive-by
     {
       id: ORDER_IDS.COMPLETED_DRIVEBY_012, tenantId, type: 'vendor-order',
+      engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
+      engagementPropertyId: 'seed-loan-eng004-002',
+      engagementClientOrderId: 'seed-co-eng004-002',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_DRIVEBY_012],
       status: 'COMPLETED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',

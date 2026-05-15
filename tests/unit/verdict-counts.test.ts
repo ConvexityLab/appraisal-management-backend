@@ -14,7 +14,24 @@ describe('computeVerdictCounts', () => {
       passCount: 2,
       warnCount: 1,
       failCount: 1,
+      cannotEvaluateCount: 0,
       totalCount: 4,
+    });
+  });
+
+  it('counts cannot_evaluate verdicts separately from pass/warn/fail', () => {
+    const result = computeVerdictCounts([
+      { evaluation: 'cannot_evaluate' },
+      { evaluation: 'cannot_evaluate' },
+      { evaluation: 'pass' },
+    ]);
+
+    expect(result).toEqual({
+      passCount: 1,
+      warnCount: 0,
+      failCount: 0,
+      cannotEvaluateCount: 2,
+      totalCount: 3,
     });
   });
 
@@ -29,6 +46,7 @@ describe('computeVerdictCounts', () => {
       passCount: 0,
       warnCount: 0,
       failCount: 0,
+      cannotEvaluateCount: 0,
       totalCount: 3,
     });
   });
@@ -38,6 +56,7 @@ describe('computeVerdictCounts', () => {
       passCount: 0,
       warnCount: 0,
       failCount: 0,
+      cannotEvaluateCount: 0,
       totalCount: 0,
     });
   });

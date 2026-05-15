@@ -40,7 +40,7 @@ Clean separation of concerns between **authentication** (identity) and **authori
 │ 1. loadUserProfile()                                          │
 │    - Query database with req.user.id                         │
 │    - Load full UserProfile from Cosmos DB:                   │
-│      * role (admin, manager, qc_analyst, appraiser)          │
+│      * role (admin, manager, supervisor, analyst, appraiser, reviewer) │
 │      * accessScope (teams, departments, regions)             │
 │      * customPermissions                                     │
 │    - Set req.userProfile                                     │
@@ -253,15 +253,15 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
 p, role:admin, *, *
 p, role:manager, order, create
 p, role:manager, order, update
-p, role:manager, vendor, manage
-p, role:qc_analyst, order, qc_validate
-p, role:qc_analyst, order, qc_execute
-p, role:appraiser, order, view
+p, role:manager, vendor, update
+p, role:analyst, qc_review, read
+p, role:analyst, qc_review, execute
+p, role:appraiser, order, read
 p, role:appraiser, order, update
 
 # Role assignments (from UserProfile.role)
 g, user:john@example.com, role:manager
-g, user:jane@example.com, role:qc_analyst
+g, user:jane@example.com, role:analyst
 
 # Attribute-based policies (checked via context)
 # - User's team matches resource team

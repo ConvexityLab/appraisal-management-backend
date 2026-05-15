@@ -1,0 +1,55 @@
+{
+  "_comment_meta": "Wire contract between MopVendorMatchingRulesProvider (TS) and VendorMatchingService (C++). When you change this file, mirror the change in mortgage-origination-platform/tests/fixtures/vendor-matching-contract.json (the C++ Catch2 test loads the same shape). The contract is asserted from BOTH sides — drift surfaces as a test failure in whichever side wasn't updated.",
+  "_comment_owner": "Phase 2 of docs/AUTO_ASSIGNMENT_REVIEW.md; service-to-service via MOP auth-proxy with X-Service-Auth header.",
+
+  "request": {
+    "_comment": "Shape POSTed by MopVendorMatchingRulesProvider.evaluateForVendors to /api/v1/vendor-matching/evaluate. evaluations[] preserves caller order; results[] mirrors that order.",
+    "tenantId": "tenant-acme",
+    "program": "vendor-matching",
+    "evaluations": [
+      {
+        "vendor": {
+          "id": "vendor-1",
+          "capabilities": ["fha_approved", "va_panel"],
+          "states": ["CA", "NV"],
+          "performanceScore": 87,
+          "licenseType": "CertifiedResidential",
+          "distance": 42.5
+        },
+        "order": {
+          "productType": "FULL_APPRAISAL",
+          "propertyState": "CA",
+          "orderValueUsd": 450000
+        }
+      },
+      {
+        "vendor": {
+          "id": "vendor-blocked",
+          "capabilities": [],
+          "states": ["CA"]
+        },
+        "order": {
+          "propertyState": "CA"
+        }
+      }
+    ]
+  },
+
+  "response": {
+    "_comment": "Shape returned by VendorMatchingService.evaluateBatch. results[] length and order MUST match request.evaluations[]. Each result's appliedRuleIds is the union of all rule names whose actions fired. denyReasons is the human-readable strings collected from vendor_denied facts. scoreAdjustment sums numeric points from vendor_score_adjustment facts.",
+    "results": [
+      {
+        "eligible": true,
+        "scoreAdjustment": 10,
+        "appliedRuleIds": ["Example_Score_Boost_Preferred_State"],
+        "denyReasons": []
+      },
+      {
+        "eligible": false,
+        "scoreAdjustment": 0,
+        "appliedRuleIds": ["Example_Min_Performance_Score"],
+        "denyReasons": ["Performance score below minimum 70"]
+      }
+    ]
+  }
+}

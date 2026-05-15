@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client Configuration Service (Phase 1.3)
  *
  * Manages per-client configuration overrides: SLA terms, fee schedules,
@@ -12,6 +12,7 @@
 
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
+import type { ClientReportBranding } from '@l1/shared-types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,11 @@ export interface ClientConfiguration {
   waiverConfig?: ClientWaiverConfig;
   /** Matching criteria: blocked appraisers, geo restrictions, required certs */
   matchingCriteria?: ClientMatchingCriteria;
+  /**
+   * Report branding applied to all Handlebars-rendered reports for this client (R-21).
+   * When present, values are injected into the Handlebars context under the `branding` key.
+   */
+  reportBranding?: ClientReportBranding;
   /** Custom fields for client-specific business rules */
   customFields?: Record<string, unknown>;
   isActive: boolean;
@@ -178,6 +184,7 @@ export class ClientConfigurationService {
       ...(config.rovConfig !== undefined && { rovConfig: config.rovConfig }),
       ...(config.waiverConfig !== undefined && { waiverConfig: config.waiverConfig }),
       ...(config.matchingCriteria !== undefined && { matchingCriteria: config.matchingCriteria }),
+      ...(config.reportBranding !== undefined && { reportBranding: config.reportBranding }),
       ...(config.customFields !== undefined && { customFields: config.customFields }),
       ...(config.createdBy !== undefined && { createdBy: config.createdBy }),
     };

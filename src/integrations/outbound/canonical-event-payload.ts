@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Outbound canonical event-payload helper
  *
  * Centralises how AMP attaches canonical-shaped data to outbound events
@@ -28,7 +28,7 @@ import type {
     CanonicalLoanRatios,
     CanonicalReportDocument,
     CanonicalSubject,
-} from '../../types/canonical-schema.js';
+} from '@l1/shared-types';
 import type { OrderContext } from '../../services/order-context-loader.service.js';
 
 /**
@@ -43,7 +43,7 @@ export interface OutboundCanonicalPayload {
     subject?: Partial<CanonicalSubject>;
     loan?: CanonicalLoan;
     ratios?: CanonicalLoanRatios;
-    /** Optional snapshotId so consumers can fetch the full canonical from aiInsights. */
+    /** Optional snapshotId so consumers can fetch the full canonical from canonical-snapshots. */
     snapshotId?: string;
 }
 

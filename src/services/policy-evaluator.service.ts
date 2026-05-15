@@ -20,6 +20,8 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import type { UserProfile, QueryFilter } from '../types/authorization.types.js';
 import type { PolicyRule, PolicyCondition } from '../types/policy.types.js';
 
+type PolicyCacheScope = Pick<PolicyRule, 'tenantId' | 'role' | 'resourceType'>;
+
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
 interface CacheEntry {
@@ -124,6 +126,35 @@ export class PolicyEvaluatorService {
       }
     }
     this.logger.debug('PolicyEvaluatorService: cache invalidated', { tenantId, role, resourceType });
+  }
+
+  /**
+   * Invalidate cache entries affected by a policy write where the identifying
+   * scope may have changed (for example role/resourceType edits on PUT).
+   */
+  invalidateRuleChange(before: PolicyCacheScope, after: PolicyCacheScope): void {
+    this.invalidateCache(before.tenantId, before.role, before.resourceType);
+
+    if (
+      before.tenantId !== after.tenantId
+      || before.role !== after.role
+      || before.resourceType !== after.resourceType
+    ) {
+      this.invalidateCache(after.tenantId, after.role, after.resourceType);
+    }
+  }
+
+  /**
+   * Test-facing alias — accepts PolicyRule objects directly and
+   * extracts the cache-scope fields.  Behaviourally identical to
+   * `invalidateRuleChange` but spares callers the scope construction.
+   * Added 2026-05-12 to match the contract the test suite expects.
+   */
+  invalidateCacheForPolicyChange(
+    before: PolicyCacheScope,
+    after: PolicyCacheScope,
+  ): void {
+    this.invalidateRuleChange(before, after);
   }
 
   // ── Rule loading ───────────────────────────────────────────────────────────

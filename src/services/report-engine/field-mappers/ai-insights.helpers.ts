@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared helpers for exposing Capability-5 AI/enrichment fields
  * (criteriaEvaluations, extractedDataFields, enrichmentData, sourceDocuments)
  * in the Handlebars context returned by every field mapper.
@@ -7,7 +7,7 @@
  * passed by mapToFieldMap().  They never throw; missing data yields safe nulls.
  */
 
-import type { CanonicalReportDocument } from '../../../types/canonical-schema';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 
 // ── Footnotes / Citations ─────────────────────────────────────────────────────
 

@@ -54,7 +54,7 @@ export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
     tenantId: string;
     clientOrderId: string;
     engagementId: string;
-    engagementLoanId: string;
+    engagementPropertyId: string;
     clientId: string;
     propertyId: string;
     vendorWorkType: VendorWorkType;
@@ -63,6 +63,10 @@ export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
     /** Free-form scope/instructions surfaced to the assigned vendor. */
     instructions?: string;
 };
+
+function hasCanonicalPropertyId(propertyId: string | undefined): propertyId is string {
+    return typeof propertyId === 'string' && propertyId.trim().length > 0;
+}
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
@@ -101,7 +105,17 @@ export class VendorOrderService {
             });
         }
 
-        const row = await this.dbService.createOrder({ ...(input as Omit<Order, 'id'>), accessControl });
+        const rawRowInput = input as Omit<Order, 'id'>;
+        const rowInput: Omit<Order, 'id'> = (() => {
+            if (!hasCanonicalPropertyId(input.propertyId)) {
+                return { ...rawRowInput, accessControl };
+            }
+
+            const { propertyDetails: _propertyDetails, ...withoutPropertyDetails } = rawRowInput;
+            return { ...withoutPropertyDetails, accessControl };
+        })();
+
+        const row = await this.dbService.createOrder(rowInput);
         if (!row.success || !row.data) {
             const err = row.error?.message ?? 'unknown error';
             throw new Error(
@@ -123,7 +137,7 @@ export class VendorOrderService {
             tenantId: input.tenantId,
             clientOrderId: input.clientOrderId,
             engagementId: input.engagementId,
-            engagementLoanId: input.engagementLoanId,
+            engagementPropertyId: input.engagementPropertyId,
             clientId: input.clientId,
             productType: input.productType ?? input.vendorWorkType,
             propertyId: input.propertyId,

@@ -92,7 +92,7 @@ export class ROVManagementService {
       // parent ClientOrder when the VendorOrder doesn't carry them.
       let ctx;
       try {
-        ctx = await this.contextLoader.loadByVendorOrderId(input.orderId);
+        ctx = await this.contextLoader.loadByVendorOrderId(input.orderId, { includeProperty: true });
       } catch {
         return { success: false, error: 'Order not found' };
       }

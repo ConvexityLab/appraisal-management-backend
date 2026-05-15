@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { attomToPropertyRecord } from '../src/mappers/attom-to-property-record.mapper';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import { PropertyRecordType } from '@l1/shared-types';
 import type { AttomDataDocument } from '../src/types/attom-data.types';
 
 // ── helpers ────────────────────────────────────────────────────────────────

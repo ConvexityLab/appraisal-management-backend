@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Completion Report Mapper
  *
  * Validates a CanonicalCompletionReport and produces a "generation-ready"
@@ -24,7 +24,7 @@ import {
   CrRepairItem,
   generateFinalValueConditionStatement,
   PropertyValuationConditionalConclusionType,
-} from '../types/canonical-completion-report.js';
+} from '@l1/shared-types';
 
 // ─── Output type ─────────────────────────────────────────────────────────────
 

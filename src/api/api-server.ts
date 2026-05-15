@@ -29,6 +29,7 @@ import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-aut
 
 // Import Authorization middleware
 import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { Role, UserProfile } from '../types/authorization.types.js';
 
 // Import QC controllers and middleware. Each controller is instantiated in
 // initializeDatabase() (post-loadAppConfig) — never at module-import time —
@@ -50,10 +51,30 @@ import { createBulkIngestionRouter } from '../controllers/bulk-ingestion.control
 import { createBulkAdapterDefinitionsRouter } from '../controllers/bulk-adapter-definitions.controller.js';
 import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
+import { DecisionRulePackService } from '../services/decision-rule-pack.service.js';
+import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
+import { DecisionEngineOpsController } from '../controllers/decision-engine-ops.controller.js';
+import { DecisionEngineOrderDecompositionController } from '../controllers/decision-engine-order-decomposition.controller.js';
+import { OrderDecompositionService } from '../services/order-decomposition.service.js';
+import { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
+import { DecisionOverrideService } from '../services/decision-engine/override/decision-override.service.js';
+import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
+import {
+  CategoryRegistry,
+  buildVendorMatchingCategory,
+  buildReviewProgramCategory,
+  buildFiringRulesCategory,
+  buildAxiomCriteriaCategory,
+  buildOrderDecompositionCategory,
+  buildUadComplianceCategory,
+  wireRegistryHooks,
+} from '../services/decision-engine/index.js';
+import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
 import { createAppraisalDraftRouter } from '../controllers/appraisal-draft.controller.js';
+import { createReportConfigRouter } from '../controllers/report-config.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
 
@@ -123,12 +144,15 @@ import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.c
 import { createMopCriteriaRouter } from '../controllers/mop-criteria.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
+import { createPropertyRecordRouter } from '../controllers/property-record.controller.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 
 // Import Item 3: Enhanced Vendor Management controllers
 import { createVendorCertificationRouter } from '../controllers/vendor-certification.controller';
 import { createPaymentRouter } from '../controllers/payment.controller';
 import { createVendorOnboardingRouter } from '../controllers/vendor-onboarding.controller';
 import { createVendorAnalyticsRouter } from '../controllers/vendor-analytics.controller';
+import { createVendorConnectionAdminRouter } from '../controllers/vendor-connection.controller.js';
 
 // Import Exclusionary List controller
 import { createExclusionListRouter } from '../controllers/exclusion-list.controller';
@@ -167,10 +191,13 @@ import { createVendorIntegrationRouter } from '../controllers/vendor-integration
 // Import Vendor Timeout Job (Phase 4.2)
 import { QuickBooksTokenRefreshJob } from '../jobs/quickbooks-token-refresh.job.js';
 import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
+import { VendorOrderStuckCheckerJob } from '../jobs/vendor-order-stuck-checker.job';
 
 // Import Phase 3 background jobs
 import { SLAMonitoringJob } from '../jobs/sla-monitoring.job';
 import { OverdueOrderDetectionJob } from '../jobs/overdue-order-detection.job';
+import { AiAutopilotSweepJob } from '../jobs/ai-autopilot-sweep.job.js';
+import { AiAutopilotConsumer } from '../services/ai-autopilot-consumer.service.js';
 import { AxiomTimeoutWatcherJob } from '../jobs/axiom-timeout-watcher.job';
 import { SupervisionTimeoutWatcherJob } from '../jobs/supervision-timeout-watcher.job';
 
@@ -179,6 +206,11 @@ import { AppraiserController } from '../controllers/appraiser.controller';
 
 // Import Vendor Controller (Phase A - Live Data)
 import { VendorController } from '../controllers/production-vendor.controller';
+import { VendorMatchingCriteriaController } from '../controllers/vendor-matching-criteria.controller.js';
+import { ScorecardRollupProfileController } from '../controllers/scorecard-rollup-profile.controller.js';
+import { PropertyFieldDiffController } from '../controllers/property-field-diff.controller.js';
+import { UadComplianceController } from '../controllers/uad-compliance.controller.js';
+import { UadComplianceCatalogueController } from '../controllers/uad-compliance-catalogue.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -206,7 +238,6 @@ import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingest
 import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
 import { CompCollectionListenerJob } from '../jobs/comp-collection-listener.job.js';
 import { OrderCompCollectionService } from '../services/order-comp-collection.service.js';
-import { PropertyRecordService } from '../services/property-record.service.js';
 import { AttomDataCompSearchService } from '../services/attom-data-comp-search.service.js';
 import { CompSelectionStrategyRegistry } from '../services/comp-selection/registry.js';
 import { CompSelectionPromptLoader } from '../services/comp-selection/prompt-loader.js';
@@ -218,12 +249,23 @@ import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
 import { VendorOutboxWorkerService } from '../services/vendor-integrations/VendorOutboxWorkerService.js';
+import { BlobSyncWorkerService } from '../services/vendor-integrations/BlobSyncWorkerService.js';
+import { VendorOutboundDispatcher } from '../services/vendor-integrations/VendorOutboundDispatcher.js';
+import { VendorOutboundOutboxService } from '../services/vendor-integrations/VendorOutboundOutboxService.js';
+import { VendorOutboundWorkerService } from '../services/vendor-integrations/VendorOutboundWorkerService.js';
+import { PropertyOutboxWorkerService } from '../services/property-outbox-worker.service.js';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
 import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
 import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
+import { FiringRulesEvaluatorJob } from '../jobs/firing-rules-evaluator.job.js';
+import { DecisionAnalyticsAggregationJob } from '../jobs/decision-analytics-aggregation.job.js';
+import { DecisionAnalyticsAggregationService } from '../services/decision-engine/analytics/decision-analytics-aggregation.service.js';
+import { DecisionImpactSimulatorService } from '../services/decision-engine/simulator/decision-impact-simulator.service.js';
+import { PackVersionDiffService } from '../services/decision-engine/diff/pack-version-diff.service.js';
+import { ReviewProgramOrchestrator } from '../services/decision-engine/review-program/review-program-orchestrator.service.js';
 import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
 // Import Audit Event Sink + Engagement Audit Controller
@@ -240,6 +282,14 @@ import { createAutomationMetricsRouter } from '../controllers/automation-metrics
 import { createQCIssuesOrderScopedRouter, createQCIssuesRouter } from '../controllers/qc-issues.controller.js';
 import { createVendorOutboxMonitorRouter } from '../controllers/vendor-outbox-monitor.controller.js';
 import { createVendorBidAnalysisRouter } from '../controllers/vendor-bid-analysis.controller.js';
+import type { Action, ResourceType } from '../types/authorization.types.js';
+import {
+  CANONICAL_ROLES,
+  CANONICAL_ROLE_PERMISSION_BUNDLES,
+  normalizeRoleAlias,
+} from '../utils/auth-normalization.js';
+
+const VALID_USER_ROLES: readonly Role[] = CANONICAL_ROLES;
 
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
@@ -312,6 +362,11 @@ import {
 import { createAiExecuteRouter } from '../controllers/ai-execute.controller.js';
 import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
+import { createAiCostRouter } from '../controllers/ai-cost.controller.js';
+import { createAiAutopilotRouter } from '../controllers/ai-autopilot.controller.js';
+import { createAiCatalogRouter } from '../controllers/ai-catalog.controller.js';
+import { bootstrapAiCatalog } from '../bootstrap/ai-catalog-bootstrap.js';
+import { createAiRateLimitMiddleware } from '../middleware/ai-rate-limit.middleware.js';
 import { createAiConversationRouter } from '../controllers/ai-conversation.controller.js';
 import { createAiFlagsRouter } from '../controllers/ai-flags.controller.js';
 import { createAiTelemetryRouter } from '../controllers/ai-telemetry.controller.js';
@@ -338,8 +393,11 @@ export class AppraisalManagementAPIServer {
   private unifiedAuth: ReturnType<typeof createUnifiedAuth>;
   private authzMiddleware?: AuthorizationMiddleware;
   private vendorTimeoutJob?: VendorTimeoutCheckerJob;
+  private vendorOrderStuckJob?: VendorOrderStuckCheckerJob;
   private slaMonitoringJob?: SLAMonitoringJob;
   private overdueDetectionJob?: OverdueOrderDetectionJob;
+  private aiAutopilotSweepJob?: AiAutopilotSweepJob;
+  private aiAutopilotConsumer?: AiAutopilotConsumer;
   private eventOrchestrator?: EventNotificationOrchestrator;
   private autoAssignmentOrchestrator?: AutoAssignmentOrchestratorService;
   private reviewTimeoutJob?: ReviewAssignmentTimeoutJob;
@@ -359,6 +417,9 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
   private vendorOutboxWorkerService?: VendorOutboxWorkerService;
+  private vendorOutboundWorkerService?: VendorOutboundWorkerService;
+  private blobSyncWorkerService?: BlobSyncWorkerService;
+  private propertyOutboxWorkerService?: PropertyOutboxWorkerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
@@ -434,6 +495,12 @@ export class AppraisalManagementAPIServer {
       );
     }
 
+    // Initialize authorization middleware after database is ready - pass dbService.
+    // This must happen before any authz-protected routes are registered so the
+    // route stack never captures a fail-open placeholder.
+    this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
+    this.logger.info('Authorization middleware initialized');
+
     // Initialize QC routers now that env (loadAppConfig + bicep) and Cosmos are ready.
     // Construction triggers CosmosDbService / AxiomService / etc. which read env vars.
     this.qcChecklistRouter = new QCChecklistController().getRouter();
@@ -452,13 +519,9 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/qc/execution',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'qc_execute'),
+      this.authorize('qc_review', 'execute'),
       this.qcExecutionRouter
     );
-    
-    // Initialize authorization middleware after database is ready - pass dbService
-    this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
-    this.logger.info('Authorization middleware initialized');
     
     // Register QC Results routes AFTER authz middleware is ready
     this.app.use('/api/qc/results',
@@ -488,16 +551,49 @@ export class AppraisalManagementAPIServer {
     
     // Register authorization routes AFTER middleware is initialized
     this.setupAuthorizationRoutes();
-    
+
+    // Instantiate the auto-assignment orchestrator here (not in startBackgroundJobs)
+    // so that the lazy ref registered in setupAuthorizationRoutes is resolvable
+    // when the server is used via initDb() in tests (which never calls start()).
+    try {
+      this.autoAssignmentOrchestrator = new AutoAssignmentOrchestratorService(this.dbService);
+      this.logger.info('AutoAssignmentOrchestratorService instantiated');
+      // Start here so event subscriptions (e.g. vendor.bid.accepted) are active
+      // in test processes that call initDb() rather than start().
+      this.autoAssignmentOrchestrator.start().catch(err => {
+        this.logger.warn('AutoAssignmentOrchestratorService failed to start — event-driven assignment disabled', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AutoAssignmentOrchestratorService could not be instantiated — auto-assignment disabled', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Register error handlers LAST (after all routes)
     this.setupErrorHandling();
   }
 
   /**
-   * Helper to return authz middleware only if initialized
+   * Request-time user-profile loader for routes registered before or after
+   * authz initialization. Fails closed if authorization middleware is missing.
    */
   private loadUserProfileIfAvailable(): express.RequestHandler[] {
-    return this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : [];
+    return [
+      (req, res, next) => {
+        if (!this.authzMiddleware) {
+          this.logger.error('Authorization middleware not initialized - blocking request during profile load');
+          res.status(503).json({
+            error: 'Authorization middleware not initialized',
+            code: 'AUTHORIZATION_MIDDLEWARE_NOT_INITIALIZED'
+          });
+          return;
+        }
+
+        return this.authzMiddleware.loadUserProfile()(req, res, next);
+      }
+    ];
   }
 
   private setupMiddleware(): void {
@@ -670,17 +766,24 @@ export class AppraisalManagementAPIServer {
       createUserProfileRouter()
     );
 
-    // Access graph management (admin only)
-    this.app.use('/api/access-graph',
+    // Property Record / Provenance Event Stream
+    const propertyRecordService = new PropertyRecordService(this.dbService);
+    this.app.use('/api/properties',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('access_graph', 'manage'),
-      createAccessGraphRouter()
+      createPropertyRecordRouter(propertyRecordService)
     );
+
+      this.app.use('/api/v1/property-records',
+        this.unifiedAuth.authenticate(),
+        this.authzMiddleware.loadUserProfile(),
+        createPropertyRecordRouter(propertyRecordService)
+      );
 
     // Authorization testing endpoint (authenticated users only)
     this.app.use('/api/authz-test',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
       createAuthorizationTestRouter()
     );
 
@@ -776,7 +879,12 @@ export class AppraisalManagementAPIServer {
       // External vendor integrations (AIM-Port, future webhook/direct-call partners)
       // Intentionally unauthenticated at the app layer — authentication is performed
       // inside the vendor integration framework using vendor-specific credentials.
-      this.app.use('/api/v1/integrations', createVendorIntegrationRouter());
+      // Passes a lazy ref to the auto-assignment orchestrator so the matching engine
+      // is triggered immediately after each inbound order is created.
+      this.app.use('/api/v1/integrations', createVendorIntegrationRouter(
+        undefined,
+        () => this.autoAssignmentOrchestrator,
+      ));
 
       this.app.use('/api/portal',
         this.unifiedAuth.authenticate(),
@@ -866,6 +974,64 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendors',
       this.unifiedAuth.authenticate(),
       vendorController.router
+    );
+
+    // Phase B — Vendor Matching Criteria Profiles. Doug/David toggle the
+    // per-product matching criteria here; the matcher resolves the active
+    // profile at decision time.
+    const vendorMatchingCriteriaController = new VendorMatchingCriteriaController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/vendor-matching-criteria-profiles',
+      this.unifiedAuth.authenticate(),
+      vendorMatchingCriteriaController.router,
+    );
+
+    // Scorecard Rollup Profiles — David's algorithm (category weights,
+    // window, decay, gates, penalties, tier thresholds). The performance
+    // calculator resolves these at compute time; admins author via
+    // /admin/scorecard-rollup.
+    const scorecardRollupProfileController = new ScorecardRollupProfileController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/scorecard-rollup-profiles',
+      this.unifiedAuth.authenticate(),
+      scorecardRollupProfileController.router,
+    );
+
+    // Property field diff — compares the report's claimed subject-property
+    // values to the latest public-records enrichment for the order.
+    // GET /api/orders/:orderId/property-field-diff
+    const propertyFieldDiffController = new PropertyFieldDiffController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      propertyFieldDiffController.router,
+    );
+
+    // UAD-3.6 compliance — per-rule check over the latest canonical
+    // extraction snapshot for an order.
+    // GET /api/orders/:orderId/uad-compliance
+    const uadComplianceController = new UadComplianceController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      uadComplianceController.router,
+    );
+
+    // UAD-3.6 compliance catalogue — static rule list consumed by the
+    // admin workspace editor (drops the FE hand-mirror).
+    // GET /api/uad-compliance/catalogue
+    const uadCatalogueController = new UadComplianceCatalogueController(this.authzMiddleware);
+    this.app.use('/api/uad-compliance',
+      this.unifiedAuth.authenticate(),
+      uadCatalogueController.router,
     );
 
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
@@ -1006,7 +1172,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/axiom/admin',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('admin_panel', 'write'),
+      this.authorize('admin_panel', 'manage'),
       createAxiomAdminRouter(sharedAxiomService)
     );
 
@@ -1048,6 +1214,14 @@ export class AppraisalManagementAPIServer {
       this.authzMiddleware.loadUserProfile(),
       this.authorize('vendor', 'create'),
       createVendorOnboardingRouter()
+    );
+
+    // Vendor Integration Connections - tenant-scoped credentials and endpoints for external vendor integrations.
+    this.app.use('/api/vendor-integrations/connections',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('vendor', 'update'),
+      createVendorConnectionAdminRouter(this.dbService)
     );
 
     // Vendor Analytics - Performance dashboards, trends, comparative analytics (authenticated users)
@@ -1124,17 +1298,43 @@ export class AppraisalManagementAPIServer {
     );
 
     // AI Agentic Workflow / Structured Parsing
+    // Seed the AI catalog registry before any /api/ai/catalog request
+    // could land.  Phase 10-full part 1 — controllers will eventually
+    // register their own entries inline; this bootstrap holds the
+    // baseline until that migration completes.
+    bootstrapAiCatalog();
+
+    // Phase 17.6 / BE rate-limit middleware (2026-05-11).  Applied to
+    // every AI route via family-keyed buckets.  Backend remains the
+    // authoritative gate; the FE has its own friendly-first-stop
+    // limiter at src/utils/aiRateLimit.ts.
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
+      createAiRateLimitMiddleware('native'),
       createAiExecuteRouter({ dbService: this.dbService }),
     );
     this.app.use('/api/agent',
       this.unifiedAuth.authenticate(),
+      createAiRateLimitMiddleware('axiom'),
       createVendorBidAnalysisRouter(this.dbService),
     );
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
-      createAiParsingRouter()
+      createAiRateLimitMiddleware('native'),
+      createAiParsingRouter(this.dbService)
+    );
+    // Phase 17b token-meter: per-tenant spend snapshot endpoint.  Mounted
+    // separately from ai-audit since the read pattern is "sum across
+    // rows" rather than "list rows."
+    this.app.use('/api/ai/cost',
+      this.unifiedAuth.authenticate(),
+      createAiCostRouter(this.dbService),
+    );
+
+    // Phase 14 v2 autopilot recipe + run admin surface.
+    this.app.use('/api/ai/autopilot',
+      this.unifiedAuth.authenticate(),
+      createAiAutopilotRouter(this.dbService),
     );
 
     // AI Assistant — subsystem endpoints backing the frontend under
@@ -1145,6 +1345,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/ai/audit',
       this.unifiedAuth.authenticate(),
       createAiAuditRouter(this.dbService)
+    );
+    // AI catalog — Phase 10-full of AI-UNIVERSAL-SURFACE-PLAN.md.
+    // Read-only metadata endpoint backing the FE's CapabilityCatalog
+    // consumer; controllers opt in to AI exposure by calling
+    // registerAiRoute() from utils/ai-catalog-registry.ts at module load.
+    this.app.use('/api/ai/catalog',
+      this.unifiedAuth.authenticate(),
+      createAiCatalogRouter()
     );
     this.app.use('/api/ai/conversations',
       this.unifiedAuth.authenticate(),
@@ -1238,7 +1446,7 @@ export class AppraisalManagementAPIServer {
       createQCWorkflowRouter(this.authzMiddleware)
     );
 
-    // QC Rules Engine - automation rule configuration (admin + qc_analyst only)
+    // QC Rules Engine - automation rule configuration (admin + analyst only)
     // Per-route guards are baked into the router by createQCRulesRouter.
     this.app.use('/api/qc-rules',
       this.unifiedAuth.authenticate(),
@@ -1250,6 +1458,35 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/clients',
       this.unifiedAuth.authenticate(),
       clientController.router
+    );
+
+    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
+    // Mounted here so controller-level authorization middleware is active.
+    const clientOrderController = new ClientOrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/client-orders',
+      this.unifiedAuth.authenticate(),
+      clientOrderController.router
+    );
+
+    // VendorOrder reads — children of a parent ClientOrder. Read-only:
+    // writes go through ClientOrderController or legacy OrderController.
+    const vendorOrderController = new VendorOrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/vendor-orders',
+      this.unifiedAuth.authenticate(),
+      vendorOrderController.router
+    );
+
+    // Order comparables (read-only) — exposes the `order-comparables`
+    // Cosmos container to the UI's Comp Workspace. Mounted here so parent
+    // client/vendor order authorization runs before reads.
+    const orderComparablesController = new OrderComparablesController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/orders/:orderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByClientOrder
+    );
+    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByVendorOrder
     );
 
     // Construction Finance Module — Draw inspections (per-route ABAC)
@@ -1264,11 +1501,11 @@ export class AppraisalManagementAPIServer {
       drawInspectionController.router
     );
 
-    // Policy management (admin only)
+    // Policy management (platform admin + client admin)
     this.app.use('/api/policies',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('policy', 'manage'),
+      this.authorizePolicyAdministration(),
       createPolicyManagementRouter(this.dbService)
     );
 
@@ -1351,44 +1588,8 @@ export class AppraisalManagementAPIServer {
     // OrderController is created and mounted in setupAuthorizationRoutes() after authzMiddleware
     // is initialized, so that per-route ABAC guards are always active.
 
-    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
-    // Additive: legacy /api/orders is unchanged. Frontends opt in by
-    // posting to /api/client-orders. See controllers/client-order.controller.ts.
-    const clientOrderController = new ClientOrderController(this.dbService);
-    this.app.use('/api/client-orders',
-      this.unifiedAuth.authenticate(),
-      clientOrderController.router
-    );
-
-    // VendorOrder reads — children of a parent ClientOrder. Read-only:
-    // writes go through ClientOrderController or legacy OrderController.
-    const vendorOrderController = new VendorOrderController(this.dbService);
-    this.app.use('/api/vendor-orders',
-      this.unifiedAuth.authenticate(),
-      vendorOrderController.router
-    );
-
-    // Order comparables (read-only) — exposes the `order-comparables`
-    // Cosmos container to the UI's Comp Workspace. Mounted under both
-    // /api/orders/:orderId/comparables (orderId === clientOrderId) and
-    // /api/vendor-orders/:vendorOrderId/comparables (resolves the parent
-    // ClientOrder first). See controllers/order-comparables.controller.ts.
-    const orderComparablesController = new OrderComparablesController(this.dbService);
-    this.app.use('/api/orders/:orderId/comparables',
-      this.unifiedAuth.authenticate(),
-      orderComparablesController.routerByClientOrder
-    );
-    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
-      this.unifiedAuth.authenticate(),
-      orderComparablesController.routerByVendorOrder
-    );
-
-    // Client (Lender / AMC / Broker) management — G10
-    const clientController = new ClientController(this.dbService);
-    this.app.use('/api/clients',
-      this.unifiedAuth.authenticate(),
-      clientController.router
-    );
+    // Client, client-order, vendor-order, and comparable routes are mounted in
+    // setupAuthorizationRoutes() so authorization middleware is always active.
 
     // Construction Finance Module — Loan management
     const constructionLoanController = new ConstructionLoanController(this.dbService);
@@ -1494,6 +1695,145 @@ export class AppraisalManagementAPIServer {
       createMatchingCriteriaRouter(this.dbService)
     );
 
+    // Decision Engine Rule Packs — Phase A + B of DECISION_ENGINE_RULES_SURFACE.md.
+    // Per-tenant, per-category, immutable, versioned rule packs that drive
+    // every decision-engine evaluator on the platform. Categories register
+    // themselves with the CategoryRegistry; the controller dispatches into
+    // the registered category at request time, and push-on-write is wired
+    // via wireRegistryHooks.
+    {
+      const packs = new DecisionRulePackService(this.dbService);
+
+      // Build the vendor-matching pusher only when MOP is configured. Without
+      // it, the category still validates and serves CRUD; only push / preview
+      // / seed / drop are absent and the controller surfaces 501 for those
+      // endpoints. Acceptable for local dev; production sets MOP_RULES_BASE_URL.
+      const mopBaseUrl = process.env['MOP_RULES_BASE_URL'];
+      const mopAuthToken = process.env['MOP_RULES_SERVICE_AUTH_TOKEN'];
+      let vendorMatchingPusher: MopRulePackPusher | null = null;
+      if (mopBaseUrl) {
+        vendorMatchingPusher = new MopRulePackPusher({
+          baseUrl: mopBaseUrl,
+          ...(mopAuthToken ? { serviceAuthToken: mopAuthToken } : {}),
+        });
+      }
+
+      const registry = new CategoryRegistry();
+      registry.register(buildVendorMatchingCategory({
+        pusher: vendorMatchingPusher,
+        db: this.dbService,
+      }));
+      // Phase F/G/H: storage is wired via the generic surface (each registers
+      // a `validateRules` so creates land in `decision-rule-packs`). Push /
+      // preview / replay / analytics are deferred to per-category polish PRs
+      // — until then the controller surfaces 501 for those endpoints and
+      // the FE renders an empty state explaining the upstream evaluator is
+      // pending.
+      registry.register(buildReviewProgramCategory({ db: this.dbService }));
+      registry.register(buildFiringRulesCategory({ db: this.dbService }));
+      registry.register(buildAxiomCriteriaCategory({ db: this.dbService }));
+      registry.register(buildOrderDecompositionCategory({ db: this.dbService }));
+      // UAD-3.6 compliance — in-process category. The pack carries per-rule
+      // config overrides (enable/severity/messageOverride) keyed to the
+      // built-in rule catalogue; UadComplianceController resolves the active
+      // pack at request time so a save takes effect on the next read.
+      registry.register(buildUadComplianceCategory());
+
+      // Register each category's `push` as an onNewActivePack hook so saves
+      // automatically notify the upstream evaluator.
+      wireRegistryHooks(registry, packs);
+
+      // Phase I (kill-switch BE wiring): per-tenant kill switches stored in
+      // the existing client-configs container with a discriminator entityType.
+      // Lives at /api/decision-engine/ops/kill-switches; the rules controller
+      // consults it on every write/eval path so toggling kill takes effect on
+      // the very next decision (60s in-process cache TTL).
+      const killSwitches = new DecisionEngineKillSwitchService(this.dbService);
+
+      const analyticsAggregator = new DecisionAnalyticsAggregationService(this.dbService);
+
+      // Scope expansions (rev 15): impact simulator + pack-version diff.
+      // Simulator needs the MOP pusher for replay-style preview; diff is
+      // category-agnostic and only needs Cosmos + the pack service.
+      const impactSimulator = vendorMatchingPusher
+        ? new DecisionImpactSimulatorService(this.dbService, vendorMatchingPusher)
+        : null;
+      const packDiff = new PackVersionDiffService(packs);
+
+      this.app.use('/api/decision-engine/rules/:category',
+        this.unifiedAuth.authenticate(),
+        new DecisionEngineRulesController(
+          packs, registry, killSwitches, analyticsAggregator, impactSimulator, packDiff,
+        ).router,
+      );
+
+      const overrideService = new DecisionOverrideService(this.dbService);
+      this.app.use('/api/decision-engine/ops',
+        this.unifiedAuth.authenticate(),
+        new DecisionEngineOpsController(killSwitches, registry, overrideService, packs).router,
+      );
+
+      // Phase N3 — Order Decomposition CRUD through Decision Engine workspace.
+      // Proxies through OrderDecompositionService (which owns the existing
+      // decomposition-rules container) so authoring flows through the
+      // canonical service, not a parallel write path.
+      const decompositionService = new OrderDecompositionService(this.dbService);
+      this.app.use('/api/decision-engine/order-decomposition',
+        this.unifiedAuth.authenticate(),
+        new DecisionEngineOrderDecompositionController(
+          decompositionService,
+          this.dbService,
+          killSwitches,
+        ).router,
+      );
+
+      // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
+      // 308 Permanent Redirect to the new generalized path. Method + body
+      // are preserved across 308 (unlike 301/302), so POST/PUT/DELETE still
+      // hit the right handler. Phase A.6 of DECISION_ENGINE_RULES_SURFACE.md.
+      this.app.all('/api/auto-assignment/rules', (req, res) => {
+        const search = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        res.redirect(308, `/api/decision-engine/rules/vendor-matching${search}`);
+      });
+      this.app.all('/api/auto-assignment/rules/*', (req, res) => {
+        // req.url here is everything after '/api/auto-assignment/rules' (the mount)
+        // but because we used app.all (not app.use), req.url is the full path.
+        // Strip the legacy prefix and append the rest to the new path.
+        const legacyPrefix = '/api/auto-assignment/rules';
+        const tail = req.originalUrl.startsWith(legacyPrefix)
+          ? req.originalUrl.slice(legacyPrefix.length)
+          : '';
+        res.redirect(308, `/api/decision-engine/rules/vendor-matching${tail}`);
+      });
+
+      // Phase E.preagg — Decision Analytics Aggregation Job. Daily run that
+      // pre-computes per-(tenant, category, days) summaries and writes to
+      // `decision-rule-analytics`. The /analytics endpoint reads these
+      // snapshots before falling back to live compute. Off by default until
+      // the container is provisioned (see
+      // infrastructure/modules/cosmos-decision-engine-analytics-container.bicep).
+      if (process.env['DECISION_ANALYTICS_JOB_ENABLED'] === 'true') {
+        try {
+          const analyticsJob = new DecisionAnalyticsAggregationJob(this.dbService, registry);
+          analyticsJob.start();
+          this.logger.info('DecisionAnalyticsAggregationJob enabled (DECISION_ANALYTICS_JOB_ENABLED=true)');
+        } catch (err) {
+          this.logger.warn('DecisionAnalyticsAggregationJob could not be started', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    // Assignment Traces — Phase 5 of AUTO_ASSIGNMENT_REVIEW.md §13.6.
+    // Per-order evaluation traces written by the orchestrator after each
+    // triggerVendorAssignment. Powers the order-detail "why this vendor"
+    // timeline + (eventually) the live feed page.
+    this.app.use('/api/auto-assignment/traces',
+      this.unifiedAuth.authenticate(),
+      new AssignmentTracesController(this.dbService).router,
+    );
+
     // RFB — Request-for-Bid lifecycle (order-scoped endpoints)
     this.app.use('/api/orders/:orderId/rfb',
       this.unifiedAuth.authenticate(),
@@ -1518,6 +1858,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/appraisal-drafts',
       this.unifiedAuth.authenticate(),
       createAppraisalDraftRouter(this.dbService)
+    );
+
+    // Report Config — effective merged config per order (R-8)
+    this.app.use('/api/report-config',
+      this.unifiedAuth.authenticate(),
+      createReportConfigRouter(this.dbService)
     );
 
     // ARV — analyses linked to an order
@@ -1553,14 +1899,14 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/analytics/overview',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getAnalyticsOverview.bind(this)
     );
 
     this.app.get('/api/analytics/performance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
     );
@@ -1568,14 +1914,14 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/analytics/orders/trend',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getOrderTrend.bind(this)
     );
 
     this.app.get('/api/analytics/vendors/performance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getVendorPerformanceSummary.bind(this)
     );
 
@@ -1727,7 +2073,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/analyze',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performQCAnalysis
     );
@@ -1735,7 +2081,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/technical',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performTechnicalQC
     );
@@ -1743,7 +2089,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/compliance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performComplianceQC
     );
@@ -1781,7 +2127,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/completion',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'generate'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletion
     );
@@ -1793,7 +2139,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/completion/stream',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'generate'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletionStream
     );
@@ -1824,7 +2170,7 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/ai/usage',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.aiServicesController.getUsageStats
     );
 
@@ -1863,7 +2209,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/reviews',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware?.loadUserProfile() || ((req: any, res: any, next: any) => next()),
-      createReviewRouter()
+      createReviewRouter(this.dbService)
     );
 
     // Legacy Azure Functions proxy routes
@@ -1971,13 +2317,46 @@ export class AppraisalManagementAPIServer {
   };
 
   // Authorization middleware - now using Casbin
-  private authorize(resourceType: string, action: string) {
-    if (!this.authzMiddleware) {
-      this.logger.warn('Authorization middleware not initialized - allowing request');
-      return (req: any, res: any, next: any) => next();
-    }
-    // Cast to proper types since we know these match Casbin's ResourceType and Action
-    return this.authzMiddleware.authorize(resourceType as any, action as any);
+  private authorize(resourceType: ResourceType, action: Action) {
+    return (req: any, res: any, next: any) => {
+      if (!this.authzMiddleware) {
+        this.logger.error('Authorization middleware not initialized - blocking request');
+        res.status(503).json({
+          error: 'Authorization middleware not initialized',
+          code: 'AUTHORIZATION_MIDDLEWARE_NOT_INITIALIZED'
+        });
+        return;
+      }
+
+      // Cast to proper types since we know these match Casbin's ResourceType and Action
+      return this.authzMiddleware.authorize(resourceType, action)(req, res, next);
+    };
+  }
+
+  private authorizePolicyAdministration() {
+    return (req: UnifiedAuthRequest, res: express.Response, next: express.NextFunction): void => {
+      const userProfile = req.userProfile as UserProfile | undefined;
+      if (!userProfile) {
+        res.status(401).json({
+          error: 'User profile required',
+          code: 'USER_PROFILE_REQUIRED',
+        });
+        return;
+      }
+
+      const isPlatformAdmin = userProfile.role === 'admin' && userProfile.portalDomain === 'platform';
+      const isClientAdmin = userProfile.role === 'manager' && userProfile.portalDomain === 'client';
+
+      if (!isPlatformAdmin && !isClientAdmin) {
+        res.status(403).json({
+          error: 'Policy administration access denied',
+          code: 'POLICY_ADMIN_FORBIDDEN',
+        });
+        return;
+      }
+
+      next();
+    };
   }
 
   // Validation middleware
@@ -1995,7 +2374,7 @@ export class AppraisalManagementAPIServer {
       body('password').isLength({ min: 8 }).matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/),
       body('firstName').isLength({ min: 1 }).trim(),
       body('lastName').isLength({ min: 1 }).trim(),
-      body('role').isIn(['admin', 'manager', 'appraiser', 'qc_analyst']),
+      body('role').isIn([...VALID_USER_ROLES, 'qc_analyst']),
       this.handleValidationErrors
     ];
   }
@@ -2568,9 +2947,11 @@ export class AppraisalManagementAPIServer {
 
       // Return user without password hash
       const { passwordHash, ...userWithoutPassword } = user;
+      const normalizedRole = this.normalizeUserRole(user.role);
       return {
         ...userWithoutPassword,
-        permissions: this.getRolePermissions(user.role)
+        role: normalizedRole,
+        permissions: this.getRolePermissions(normalizedRole)
       };
     } catch (error) {
       this.logger.error('Error validating user credentials', { error: error instanceof Error ? error.message : String(error) });
@@ -2590,14 +2971,15 @@ export class AppraisalManagementAPIServer {
 
   private async createUser(userData: any): Promise<any> {
     try {
-      const permissions = this.getRolePermissions(userData.role);
+      const normalizedRole = this.normalizeUserRole(userData.role);
+      const permissions = this.getRolePermissions(normalizedRole);
       const newUser = {
         id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         email: userData.email,
         passwordHash: userData.password, // Already hashed in register method
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role,
+        role: normalizedRole,
         permissions,
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -2622,20 +3004,20 @@ export class AppraisalManagementAPIServer {
     }
   }
 
+  private normalizeUserRole(role: string): Role {
+    const normalizedRole = normalizeRoleAlias(role);
+    if (normalizedRole) {
+      return normalizedRole;
+    }
+
+    throw new Error(
+      `Unsupported user role "${role}". Expected one of: ${VALID_USER_ROLES.join(', ')} or legacy alias qc_analyst.`,
+    );
+  }
+
   private getRolePermissions(role: string): string[] {
-    const rolePermissions = {
-      admin: ['*'],
-      manager: [
-        'order_manage', 'vendor_manage', 'qc_validate', 'analytics_view',
-        'qc_execute', 'qc_manage', 'qc_checklist_manage', 'qc_results_view'
-      ],
-      appraiser: ['order_view', 'order_update', 'qc_results_view'],
-      qc_analyst: [
-        'qc_validate', 'qc_metrics', 'analytics_view', 'qc_execute', 
-        'qc_manage', 'qc_checklist_manage', 'qc_results_view'
-      ]
-    };
-    return rolePermissions[role as keyof typeof rolePermissions] || [];
+    const normalizedRole = this.normalizeUserRole(role);
+    return CANONICAL_ROLE_PERMISSION_BUNDLES[normalizedRole];
   }
 
   private setupErrorHandling(): void {
@@ -4898,10 +5280,28 @@ export class AppraisalManagementAPIServer {
       if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) axiomWarnings.push('AZURE_STORAGE_ACCOUNT_NAME not set — Axiom extraction trigger input will be incomplete');
       for (const w of axiomWarnings) this.logger.warn(`[Axiom Config] ${w}`);
 
+      // Validate MOP/Prio pricing-engine configuration.
+      //
+      // Originally this threw in production when MOP_PRIO_API_BASE_URL was
+      // unset, but that contradicted the warn-only pattern used by every
+      // other config check in this block (AXIOM_API_BASE_URL, API_BASE_URL,
+      // AXIOM_WEBHOOK_SECRET, STORAGE_CONTAINER_DOCUMENTS, etc).  The
+      // strict check bricked the 53a3468 deploy on staging — the new
+      // revision crash-looped and the old one silently served all
+      // traffic, masking shipped fixes.  Aligning with the surrounding
+      // warn-pattern: MOP_PRIO pricing legs simply skip when the URL
+      // isn't configured, matching the documented graceful degradation.
+      // Production deployments that NEED MOP/Prio active should set the
+      // env var; environments that don't need it should not be blocked
+      // from starting.
+      if (!process.env.MOP_PRIO_API_BASE_URL) {
+        this.logger.warn('[MOP/Prio Config] MOP_PRIO_API_BASE_URL not set — MOP/Prio pricing legs will be skipped');
+      }
+
       // Initialize database connection
       await this.initializeDatabase();
-      // Start background jobs
-      this.startBackgroundJobs();
+      // Start background jobs — throws in production if any critical service fails
+      await this.startBackgroundJobs();
       
       this.app.listen(this.port, () => {
         this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
@@ -4917,12 +5317,19 @@ export class AppraisalManagementAPIServer {
   }
 
   /**
-   * Start background jobs
+   * Start background jobs.
+   * Critical services (AxiomAutoTriggerService, QCLifecycleHandler,
+   * CriteriaReevaluationHandlerService) throw in production on failure so the
+   * process exits rather than silently serving traffic in a broken state.
    */
-  private startBackgroundJobs(): void {
+  private async startBackgroundJobs(): Promise<void> {
     // Start vendor timeout checker (Phase 4.2) - pass dbService
     this.vendorTimeoutJob = new VendorTimeoutCheckerJob(this.dbService);
     this.vendorTimeoutJob.start();
+
+    // Start vendor order stuck checker — alerts on silent AIM-Port push failures
+    this.vendorOrderStuckJob = new VendorOrderStuckCheckerJob(this.dbService);
+    this.vendorOrderStuckJob.start();
 
     // Start SLA monitoring job (Phase 3.3)
     this.slaMonitoringJob = new SLAMonitoringJob(this.dbService);
@@ -4931,6 +5338,25 @@ export class AppraisalManagementAPIServer {
     // Start overdue order detection job (Phase 3.4)
     this.overdueDetectionJob = new OverdueOrderDetectionJob(this.dbService);
     this.overdueDetectionJob.start();
+
+    // AI Autopilot — Phase 14 v2 (2026-05-11).  Two pieces:
+    //   1. Sweep job (in-process timer) emits SB messages for active
+    //      cron-triggered recipes.
+    //   2. Consumer service subscribes to the autopilot-tasks queue
+    //      and processes each message via AiAutopilotService.
+    // Enabled by default in production; gate via AI_AUTOPILOT_ENABLED=false
+    // to disable per-environment.  Both pieces no-op safely when no
+    // recipes exist or when Service Bus is in mock mode.
+    if (process.env.AI_AUTOPILOT_ENABLED !== 'false') {
+      this.aiAutopilotSweepJob = new AiAutopilotSweepJob(this.dbService);
+      this.aiAutopilotSweepJob.start();
+      this.aiAutopilotConsumer = new AiAutopilotConsumer(this.dbService);
+      this.aiAutopilotConsumer.start().catch((err) => {
+        this.logger.warn('AI autopilot consumer failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     // Start event-driven notification orchestrator (Phase E)
     // Subscribes to Service Bus events and routes to WebSocket/Email/SMS channels
@@ -4947,17 +5373,12 @@ export class AppraisalManagementAPIServer {
       });
     }
 
-    // Start Auto-Assignment Orchestrator (event-driven vendor + review staff assignment)
-    try {
-      this.autoAssignmentOrchestrator = new AutoAssignmentOrchestratorService(this.dbService);
+    // Start Auto-Assignment Orchestrator — instantiated in initializeDatabase(); just start it here.
+    if (this.autoAssignmentOrchestrator) {
       this.autoAssignmentOrchestrator.start().catch(err => {
         this.logger.warn('AutoAssignmentOrchestrator failed to start — auto-assignment events will not be processed', {
-          error: err instanceof Error ? err.message : String(err)
+          error: err instanceof Error ? err.message : String(err),
         });
-      });
-    } catch (err) {
-      this.logger.warn('AutoAssignmentOrchestrator could not be created', {
-        error: err instanceof Error ? err.message : String(err)
       });
     }
 
@@ -5028,21 +5449,26 @@ export class AppraisalManagementAPIServer {
     }
 
     // Q-01 / Q-03 / Q-04: QC lifecycle auto-transitions
+    // CRITICAL: hard-gate in production — QC state machine won't advance without this.
     try {
       this.qcLifecycleHandler = new QCLifecycleHandler(this.dbService);
-      this.qcLifecycleHandler.start().catch(err => {
-        this.logger.warn('QCLifecycleHandler failed to start', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
+      await this.qcLifecycleHandler.start();
     } catch (err) {
-      this.logger.warn('QCLifecycleHandler could not be created', {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`QCLifecycleHandler failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('QCLifecycleHandler failed to start — QC auto-transitions will be unavailable', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
     try {
-      this.vendorIntegrationEventConsumerService = new VendorIntegrationEventConsumerService(this.dbService);
+      this.vendorIntegrationEventConsumerService = new VendorIntegrationEventConsumerService(
+        this.dbService,
+        undefined,
+        undefined,
+        new VendorOutboundOutboxService(this.dbService),
+      );
       this.vendorIntegrationEventConsumerService.start().catch(err => {
         this.logger.warn('VendorIntegrationEventConsumerService failed to start', {
           error: err instanceof Error ? err.message : String(err),
@@ -5055,16 +5481,16 @@ export class AppraisalManagementAPIServer {
     }
 
     // Start Axiom Auto-Trigger Service (listens for order.status.changed and fires Axiom evaluations)
+    // CRITICAL: hard-gate in production — if this doesn't start, new orders won't get Axiom evaluations.
     try {
       this.axiomAutoTriggerService = new AxiomAutoTriggerService(this.dbService);
-      this.axiomAutoTriggerService.start().catch(err => {
-        this.logger.warn('AxiomAutoTriggerService failed to start', {
-          error: err instanceof Error ? err.message : String(err)
-        });
-      });
+      await this.axiomAutoTriggerService.start();
     } catch (err) {
-      this.logger.warn('AxiomAutoTriggerService could not be created', {
-        error: err instanceof Error ? err.message : String(err)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`AxiomAutoTriggerService failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('AxiomAutoTriggerService failed to start — Axiom auto-trigger will be unavailable', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -5266,6 +5692,48 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Blob Sync Worker Service (consumes blob-sync-events Service Bus queue for file-drop clients)
+    try {
+      this.blobSyncWorkerService = new BlobSyncWorkerService();
+      this.blobSyncWorkerService.start().catch(err => {
+        this.logger.warn('BlobSyncWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BlobSyncWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start Vendor Outbound Worker Service (delivers outbound vendor HTTP calls from durable outbox)
+    try {
+      this.vendorOutboundWorkerService = new VendorOutboundWorkerService(this.dbService);
+      this.vendorOutboundWorkerService.start().catch(err => {
+        this.logger.warn('VendorOutboundWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('VendorOutboundWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Start Property Outbox Worker Service (publishes property-domain notifications from durable outbox)
+    try {
+      this.propertyOutboxWorkerService = new PropertyOutboxWorkerService(this.dbService);
+      this.propertyOutboxWorkerService.start().catch(err => {
+        this.logger.warn('PropertyOutboxWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('PropertyOutboxWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)
     try {
       this.engagementLetterAutoSendService = new EngagementLetterAutoSendService(this.dbService);
@@ -5333,6 +5801,46 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Firing Rules Evaluator Job — Phase G of DECISION_ENGINE_RULES_SURFACE.md.
+    // Daily run that evaluates each tenant's firing-rules pack against current
+    // vendor performance metrics and writes per-vendor decisions to the
+    // firing-decisions container. Off by default — set FIRING_RULES_JOB_ENABLED=true
+    // once the tenant population starts authoring firing-rules packs to avoid
+    // accumulating no-action documents.
+    if (process.env['FIRING_RULES_JOB_ENABLED'] === 'true') {
+      try {
+        const decisionPacksForJob = new DecisionRulePackService(this.dbService);
+        const killSwitchesForJob = new DecisionEngineKillSwitchService(this.dbService);
+        const firingJob = new FiringRulesEvaluatorJob(this.dbService, decisionPacksForJob, killSwitchesForJob);
+        firingJob.start();
+        this.logger.info('FiringRulesEvaluatorJob enabled (FIRING_RULES_JOB_ENABLED=true) — honors per-tenant kill switch');
+      } catch (err) {
+        this.logger.warn('FiringRulesEvaluatorJob could not be started', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
+
+    // ReviewProgramOrchestrator — Phase K of DECISION_ENGINE_RULES_SURFACE.md.
+    // Subscribes to engagement.order.created and runs review-program eval
+    // for any tenant that flipped reviewProgramOnOrderCreated=true in its
+    // ClientAutomationConfig. Always-on subscriber (per-tenant gating is
+    // inside the orchestrator); kill switch honored per evaluation.
+    try {
+      const killSwitchesForReviewProg = new DecisionEngineKillSwitchService(this.dbService);
+      const reviewProgOrchestrator = new ReviewProgramOrchestrator(this.dbService, killSwitchesForReviewProg);
+      reviewProgOrchestrator.start().catch(err => {
+        this.logger.warn('ReviewProgramOrchestrator failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('ReviewProgramOrchestrator could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Start Audit Event Sink (persists every Service Bus event to engagement-audit-events container)
     try {
       this.auditEventSinkService = new AuditEventSinkService(this.dbService);
@@ -5364,16 +5872,16 @@ export class AppraisalManagementAPIServer {
 
     // Start Criteria Reevaluation Handler — turns field-correction cascade requests
     // into criteria-only reruns and per-criterion reevaluation audit events.
+    // CRITICAL: hard-gate in production — field corrections won't retrigger QC without this.
     try {
       this.criteriaReevaluationHandlerService = new CriteriaReevaluationHandlerService(this.dbService);
-      this.criteriaReevaluationHandlerService.start().catch(err => {
-        this.logger.warn('CriteriaReevaluationHandlerService failed to start', {
-          error: err instanceof Error ? err.message : String(err)
-        });
-      });
+      await this.criteriaReevaluationHandlerService.start();
     } catch (err) {
-      this.logger.warn('CriteriaReevaluationHandlerService could not be created', {
-        error: err instanceof Error ? err.message : String(err)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`CriteriaReevaluationHandlerService failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('CriteriaReevaluationHandlerService failed to start — cascade reevaluation will be unavailable', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -5406,7 +5914,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'bulk-upload-event-listener', 'bulk-ingestion-processor', 'bulk-ingestion-canonical-worker', 'bulk-ingestion-order-creation-worker', 'bulk-ingestion-extraction-worker', 'bulk-ingestion-criteria-worker', 'bulk-ingestion-finalizer', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'bulk-upload-event-listener', 'bulk-ingestion-processor', 'bulk-ingestion-canonical-worker', 'bulk-ingestion-order-creation-worker', 'bulk-ingestion-extraction-worker', 'bulk-ingestion-criteria-worker', 'bulk-ingestion-finalizer', 'vendor-outbox-worker', 'property-outbox-worker', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
     });
   }
 
@@ -5416,6 +5924,9 @@ export class AppraisalManagementAPIServer {
   public stopBackgroundJobs(): void {
     if (this.vendorTimeoutJob) {
       this.vendorTimeoutJob.stop();
+    }
+    if (this.vendorOrderStuckJob) {
+      this.vendorOrderStuckJob.stop();
     }
     if (this.slaMonitoringJob) {
       this.slaMonitoringJob.stop();
@@ -5479,6 +5990,15 @@ export class AppraisalManagementAPIServer {
     }
     if (this.vendorOutboxWorkerService) {
       this.vendorOutboxWorkerService.stop().catch(() => {});
+    }
+    if (this.blobSyncWorkerService) {
+      this.blobSyncWorkerService.stop().catch(() => {});
+    }
+    if (this.vendorOutboundWorkerService) {
+      this.vendorOutboundWorkerService.stop().catch(() => {});
+    }
+    if (this.propertyOutboxWorkerService) {
+      this.propertyOutboxWorkerService.stop().catch(() => {});
     }
     if (this.bulkIngestionFinalizerService) {
       this.bulkIngestionFinalizerService.stop().catch(() => {});

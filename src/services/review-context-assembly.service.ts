@@ -1,11 +1,11 @@
-import { CosmosDbService } from './cosmos-db.service.js';
+﻿import { CosmosDbService } from './cosmos-db.service.js';
 import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { RunLedgerService } from './run-ledger.service.js';
 import type { DocumentMetadata } from '../types/document.types.js';
 import type { ReviewProgram } from '../types/review-tape.types.js';
 import type { CanonicalSnapshotRecord, RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AnalysisSubmissionActorContext } from '../types/analysis-submission.types.js';
-import type { CanonicalComp, CanonicalReportDocument } from '../types/canonical-schema.js';
+import type { CanonicalComp, CanonicalReportDocument } from '@l1/shared-types';
 import type { ReviewContext } from '../types/review-context.types.js';
 import type { PrepareReviewProgramsRequest } from '../types/review-preparation.types.js';
 import { selectPreferredReviewProgram } from '../utils/review-program-normalization.js';
@@ -105,6 +105,18 @@ export class ReviewContextAssemblyService {
       ...(latestSnapshot?.normalizedData
         ? {
             canonicalData: {
+              // `canonical` is the UAD/MISMO-aligned projection — the
+              // preferred view per slice 8j and the one whose paths line
+              // up with Axiom criteria's `dataRequirements.fieldRef.path`
+              // (e.g. `subject.taxYear`). Earlier this destructure only
+              // copied subjectProperty/extraction/providerData/provenance,
+              // silently dropping canonical — the envelope assembler then
+              // had no canonical bucket to publish, so every Axiom
+              // criterion resolved to `cannot_evaluate` (surfaced by the
+              // full-pipeline live-fire on 2026-05-11).
+              ...((latestSnapshot.normalizedData as { canonical?: Record<string, unknown> }).canonical
+                ? { canonical: (latestSnapshot.normalizedData as { canonical?: Record<string, unknown> }).canonical }
+                : {}),
               ...(latestSnapshot.normalizedData.subjectProperty
                 ? { subjectProperty: latestSnapshot.normalizedData.subjectProperty }
                 : {}),
@@ -356,7 +368,14 @@ export class ReviewContextAssemblyService {
 
     for (const root of roots) {
       for (const path of root) {
-        const normalized = path.replace(/^(subjectProperty|extraction|providerData|provenance)\./, '');
+        // Strip ALL known bucket prefixes (canonical / subjectProperty /
+        // extraction / providerData / provenance) so consumers checking
+        // "do we have `subject.X`?" find it regardless of which bucket
+        // the snapshot stored it in. Earlier this regex omitted
+        // `canonical`, leaving `canonical.subject.taxYear` un-normalized
+        // in the path set — same class of bug as the canonicalData
+        // destructure omission in this file (see f12fc18).
+        const normalized = path.replace(/^(canonical|subjectProperty|extraction|providerData|provenance)\./, '');
         if (normalized.length > 0) {
           pathSet.add(normalized);
         }

@@ -17,6 +17,7 @@ import type { VendorOrder } from '../types/vendor-order.types.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { EmailNotificationService } from './email-notification.service.js';
 import { Logger } from '../utils/logger.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 
 interface EmailOptions {
   to: string;
@@ -38,6 +39,60 @@ export class NotificationService {
     this.emailService = new EmailNotificationService();
     this.dbService = new CosmosDbService();
     this.tenantId = process.env.DEFAULT_TENANT_ID || 'tenant-001';
+  }
+
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as {
+      streetAddress?: string;
+      street?: string;
+      city?: string;
+      state?: string;
+      zipCode?: string;
+    };
+
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
+  private async resolveOrderAddress(order: VendorOrder): Promise<string> {
+    try {
+      const loader = new OrderContextLoader(this.dbService);
+      const ctx = await loader.loadByVendorOrder(order, { includeProperty: true });
+      const canonicalAddress = getPropertyAddress(ctx);
+      if (canonicalAddress) {
+        return this.formatPropertyAddress(canonicalAddress);
+      }
+    } catch (error) {
+      this.logger.debug('NotificationService.resolveOrderAddress: canonical load failed, using legacy order copy', {
+        orderId: order.id,
+        error,
+      });
+    }
+
+    const legacyAddress = this.formatPropertyAddress(
+      order.propertyAddress ?? (order as VendorOrder & { propertyDetails?: { fullAddress?: string } }).propertyDetails?.fullAddress,
+    );
+    if (legacyAddress) {
+      return legacyAddress;
+    }
+
+    return 'Address pending';
   }
 
   /**
@@ -93,9 +148,7 @@ export class NotificationService {
       }
 
       const vendor = vendorResult.data;
-      const address = order.propertyAddress
-        ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
-        : 'Address pending';
+      const address = await this.resolveOrderAddress(order);
 
       await this.sendEmail({
         to: vendor.email,

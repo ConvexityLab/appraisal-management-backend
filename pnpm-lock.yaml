@@ -68,6 +68,9 @@ importers:
       '@fluidframework/azure-service-utils':
         specifier: ^2.90.0
         version: 2.90.0
+      '@l1/shared-types':
+        specifier: workspace:*
+        version: link:packages/shared-types
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7(@azure/identity@4.13.1)
@@ -282,6 +285,12 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@20.19.33)(@vitest/ui@3.2.4)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/shared-types:
+    devDependencies:
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
 
 packages:
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PropertyComparableSale — Persisted Market Transaction Record
  *
  * A comparable sale is a MARKET EVENT — a specific sale that occurred on a
@@ -23,7 +23,7 @@
  * @see PROPERTY_DATA_REFACTOR_PLAN.md — Phase R0.2
  */
 
-import type { PropertyIdResolutionMethod } from './property-record.types.js';
+import type { PropertyIdResolutionMethod } from '@l1/shared-types';
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 

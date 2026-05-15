@@ -1,13 +1,15 @@
-/**
+﻿/**
  * Seed Module: Properties
  *
- * Seeds 6 property records and property-summary snapshots linked to orders.
- * Containers: properties, property-summaries (both partition /tenantId)
+ * Seeds legacy property rows, property-summary snapshots, and canonical
+ * PropertyRecord aggregate roots linked to seeded orders.
+ * Containers: properties, property-summaries, property-records
  */
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
 import { PROPERTY_IDS, ORDER_IDS } from '../seed-ids.js';
+import { BuildingQualityRating, PropertyRecordCondition, PropertyRecordType } from '@l1/shared-types';
 
 function buildProperties(tenantId: string): Record<string, unknown>[] {
   return [
@@ -109,9 +111,440 @@ function buildPropertySummaries(tenantId: string): Record<string, unknown>[] {
   ];
 }
 
+function buildPropertyRecords(tenantId: string): Record<string, unknown>[] {
+  return [
+    {
+      id: PROPERTY_IDS.MOCKINGBIRD_LANE,
+      tenantId,
+      type: 'property',
+      apn: '00-48113-221-0042000',
+      fipsCode: '48113',
+      address: {
+        street: '5432 MOCKINGBIRD LN',
+        city: 'DALLAS',
+        state: 'TX',
+        zip: '75206',
+        county: 'Dallas',
+        countyFips: '48113',
+        latitude: 32.8348,
+        longitude: -96.7697,
+        isNormalized: true,
+        geocodedAt: daysAgo(30),
+      },
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+      zoning: 'R-7.5',
+      zoningDescription: 'Single Family Residential',
+      legalDescription: 'Lot 12 Block D Mockingbird Estates',
+      subdivision: 'Mockingbird Estates',
+      lotSizeSqFt: 8700,
+      lotSizeAcres: 0.2,
+      floodZone: 'X',
+      floodMapNumber: '48113C0315K',
+      floodMapDate: '2024-09-27',
+      building: {
+        gla: 2150,
+        totalBuildingAreaSqFt: 2480,
+        yearBuilt: 1958,
+        effectiveYearBuilt: 2006,
+        bedrooms: 3,
+        bathrooms: 2,
+        fullBathrooms: 2,
+        stories: 1,
+        garageSpaces: 2,
+        constructionType: 'Frame',
+        exteriorWalls: 'Brick Veneer',
+        roofCover: 'Composition Shingle',
+        heatSource: 'Central',
+        airConditioning: 'Central',
+        fireplaces: 1,
+        pool: false,
+        condition: PropertyRecordCondition.GOOD,
+        quality: BuildingQualityRating.B_PLUS,
+      },
+      currentOwner: 'Sarah Johnson',
+      ownerOccupied: true,
+      taxAssessments: [
+        {
+          taxYear: 2025,
+          totalAssessedValue: 402000,
+          landValue: 168000,
+          improvementValue: 234000,
+          annualTaxAmount: 9480,
+          marketValue: 425000,
+          isDelinquent: false,
+          assessedAt: '2025-01-15',
+        },
+        {
+          taxYear: 2024,
+          totalAssessedValue: 388000,
+          landValue: 160000,
+          improvementValue: 228000,
+          annualTaxAmount: 9152,
+          marketValue: 409000,
+          isDelinquent: false,
+          assessedAt: '2024-01-15',
+        },
+      ],
+      permits: [
+        {
+          permitNumber: 'DAL-2024-01981',
+          type: 'REMODEL',
+          description: 'Kitchen remodel and interior finish updates',
+          issuedDate: '2024-03-04',
+          closedDate: '2024-06-22',
+          finalInspectionDate: '2024-06-21',
+          valuationAmount: 34000,
+          isMaterialChange: false,
+          source: 'CITY',
+        },
+      ],
+      avm: {
+        value: 427500,
+        fetchedAt: daysAgo(4),
+        source: 'bridge-zestimate',
+        confidence: 0.82,
+      },
+      recordVersion: 3,
+      versionHistory: [
+        {
+          version: 1,
+          createdAt: daysAgo(30),
+          createdBy: 'SYSTEM',
+          reason: 'Initial canonical seed for completed appraisal order',
+          source: 'MANUAL_CORRECTION',
+          sourceProvider: 'Seed bootstrap',
+          sourceArtifactId: 'seed-doc-report-001',
+          changedFields: ['address', 'apn', 'building', 'propertyType'],
+          previousValues: {},
+          newValues: {
+            address: '5432 MOCKINGBIRD LN, DALLAS, TX 75206',
+            apn: '00-48113-221-0042000',
+          },
+        },
+        {
+          version: 2,
+          createdAt: daysAgo(18),
+          createdBy: 'seed-user-coordinator-001',
+          reason: 'Appraiser inspection reconciled GLA and quality',
+          source: 'APPRAISER_INSPECTION',
+          sourceProvider: 'Premier Appraisal Group',
+          sourceArtifactId: 'seed-doc-report-001',
+          changedFields: ['building.gla', 'building.quality', 'building.condition'],
+          previousValues: {
+            'building.gla': 2100,
+            'building.quality': 'B',
+            'building.condition': 'average',
+          },
+          newValues: {
+            'building.gla': 2150,
+            'building.quality': 'B+',
+            'building.condition': 'good',
+          },
+        },
+        {
+          version: 3,
+          createdAt: daysAgo(4),
+          createdBy: 'SYSTEM',
+          reason: 'Canonical snapshot refresh from latest order artifacts',
+          source: 'CANONICAL_SNAPSHOT',
+          sourceProvider: 'Axiom Document Extraction',
+          sourceArtifactId: 'seed-doc-report-001',
+          changedFields: ['lastVerifiedAt', 'lastVerifiedSource', 'currentCanonical'],
+          previousValues: {
+            lastVerifiedAt: daysAgo(18),
+            lastVerifiedSource: 'Premier Appraisal Group',
+          },
+          newValues: {
+            lastVerifiedAt: daysAgo(4),
+            lastVerifiedSource: 'Axiom Document Extraction',
+          },
+        },
+      ],
+      dataSource: 'APPRAISER_ENTRY',
+      dataSourceRecordId: ORDER_IDS.COMPLETED_001,
+      lastVerifiedAt: daysAgo(4),
+      lastVerifiedSource: 'Axiom Document Extraction',
+      currentCanonical: {
+        subject: {
+          occupancy: 'Owner occupied',
+          propertyType: 'Single Family',
+        },
+        transactionHistory: {
+          priorSales: [
+            {
+              saleDate: '2021-04-20',
+              salePrice: 310000,
+            },
+          ],
+        },
+        avmCrossCheck: {
+          avmValue: 427500,
+          variancePct: 0.0059,
+        },
+        riskFlags: {
+          flood: false,
+        },
+        lastSnapshotAt: daysAgo(4),
+        lastSnapshotId: 'seed-snapshot-property-001-v3',
+      },
+      createdAt: daysAgo(30),
+      updatedAt: daysAgo(4),
+      createdBy: 'SYSTEM',
+    },
+    {
+      id: PROPERTY_IDS.SWISS_AVE,
+      tenantId,
+      type: 'property',
+      apn: '00-48113-154-0011000',
+      fipsCode: '48113',
+      address: {
+        street: '2100 SWISS AVE',
+        city: 'DALLAS',
+        state: 'TX',
+        zip: '75204',
+        county: 'Dallas',
+        countyFips: '48113',
+        latitude: 32.7874,
+        longitude: -96.7825,
+        isNormalized: true,
+        geocodedAt: daysAgo(14),
+      },
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+      zoning: 'PD-193',
+      zoningDescription: 'Planned Development Residential',
+      legalDescription: 'Swiss Avenue Historic District Lot 4',
+      subdivision: 'Swiss Avenue Historic District',
+      lotSizeSqFt: 14200,
+      lotSizeAcres: 0.326,
+      floodZone: 'X',
+      floodMapNumber: '48113C0326K',
+      floodMapDate: '2024-09-27',
+      building: {
+        gla: 3400,
+        totalBuildingAreaSqFt: 3880,
+        yearBuilt: 1925,
+        effectiveYearBuilt: 2016,
+        bedrooms: 4,
+        bathrooms: 3.5,
+        fullBathrooms: 3,
+        halfBathrooms: 1,
+        stories: 2,
+        garageSpaces: 2,
+        basement: true,
+        basementSqFt: 420,
+        constructionType: 'Masonry',
+        exteriorWalls: 'Brick',
+        roofCover: 'Tile',
+        heatSource: 'Boiler',
+        airConditioning: 'Central',
+        fireplaces: 2,
+        pool: false,
+        condition: PropertyRecordCondition.EXCELLENT,
+        quality: BuildingQualityRating.A,
+      },
+      currentOwner: 'Carlos & Elena Mendez',
+      ownerOccupied: true,
+      taxAssessments: [
+        {
+          taxYear: 2025,
+          totalAssessedValue: 365000,
+          landValue: 205000,
+          improvementValue: 160000,
+          annualTaxAmount: 8614,
+          marketValue: 385000,
+          isDelinquent: false,
+          assessedAt: '2025-01-15',
+        },
+      ],
+      permits: [
+        {
+          permitNumber: 'DAL-2023-11771',
+          type: 'ROOFING',
+          description: 'Historic roof replacement and drainage improvements',
+          issuedDate: '2023-08-11',
+          closedDate: '2023-10-03',
+          finalInspectionDate: '2023-10-02',
+          valuationAmount: 56000,
+          isMaterialChange: false,
+          source: 'CITY',
+        },
+      ],
+      avm: {
+        value: 382000,
+        fetchedAt: daysAgo(2),
+        source: 'bridge-zestimate',
+        confidence: 0.79,
+      },
+      recordVersion: 2,
+      versionHistory: [
+        {
+          version: 1,
+          createdAt: daysAgo(14),
+          createdBy: 'SYSTEM',
+          reason: 'Initial canonical seed for QC review order',
+          source: 'PUBLIC_RECORDS_API',
+          sourceProvider: 'ATTOM Data Solutions',
+          sourceArtifactId: 'seed-doc-report-009',
+          changedFields: ['address', 'building', 'taxAssessments'],
+          previousValues: {},
+          newValues: {
+            address: '2100 SWISS AVE, DALLAS, TX 75204',
+          },
+        },
+        {
+          version: 2,
+          createdAt: daysAgo(2),
+          createdBy: 'seed-user-qc-analyst-001',
+          reason: 'QC verified condition and historical district notes',
+          source: 'MANUAL_CORRECTION',
+          sourceProvider: 'QC Analyst Review',
+          sourceArtifactId: 'seed-doc-report-009',
+          changedFields: ['building.condition', 'zoningDescription', 'lastVerifiedSource'],
+          previousValues: {
+            'building.condition': 'good',
+            zoningDescription: 'Historic residential',
+          },
+          newValues: {
+            'building.condition': 'excellent',
+            zoningDescription: 'Planned Development Residential',
+            lastVerifiedSource: 'QC Analyst Review',
+          },
+        },
+      ],
+      dataSource: 'PUBLIC_RECORDS_API',
+      dataSourceRecordId: ORDER_IDS.QC_REVIEW_002,
+      lastVerifiedAt: daysAgo(2),
+      lastVerifiedSource: 'QC Analyst Review',
+      currentCanonical: {
+        subject: {
+          occupancy: 'Owner occupied',
+          propertyType: 'Single Family',
+        },
+        transactionHistory: {
+          priorSales: [
+            {
+              saleDate: '2019-05-18',
+              salePrice: 290000,
+            },
+          ],
+        },
+        riskFlags: {
+          historicDistrict: true,
+        },
+        lastSnapshotAt: daysAgo(2),
+        lastSnapshotId: 'seed-snapshot-property-002-v2',
+      },
+      createdAt: daysAgo(14),
+      updatedAt: daysAgo(2),
+      createdBy: 'SYSTEM',
+    },
+    {
+      id: PROPERTY_IDS.LAMAR_ST,
+      tenantId,
+      type: 'property',
+      apn: '00-48113-550-0033000',
+      fipsCode: '48113',
+      address: { street: '789 S LAMAR ST', city: 'DALLAS', state: 'TX', zip: '75215', county: 'Dallas', countyFips: '48113', latitude: 32.7627, longitude: -96.8024, isNormalized: true, geocodedAt: daysAgo(7) },
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+      zoning: 'MF-2',
+      zoningDescription: 'Multi-family transitional',
+      lotSizeSqFt: 4500,
+      floodZone: 'AE',
+      building: { gla: 1800, yearBuilt: 2018, bedrooms: 3, bathrooms: 2.5, fullBathrooms: 2, halfBathrooms: 1, stories: 2, garageSpaces: 1, constructionType: 'Frame', exteriorWalls: 'Fiber Cement', roofCover: 'Composition Shingle', heatSource: 'Central', airConditioning: 'Central', condition: PropertyRecordCondition.GOOD, quality: BuildingQualityRating.B },
+      taxAssessments: [{ taxYear: 2025, totalAssessedValue: 348000, annualTaxAmount: 8213, marketValue: 356000, isDelinquent: false, assessedAt: '2025-01-15' }],
+      permits: [],
+      recordVersion: 1,
+      versionHistory: [{ version: 1, createdAt: daysAgo(7), createdBy: 'SYSTEM', reason: 'Seeded canonical property record', source: 'MANUAL_CORRECTION', sourceProvider: 'Seed bootstrap', sourceArtifactId: ORDER_IDS.IN_PROGRESS_003, changedFields: ['address', 'building'], previousValues: {}, newValues: { propertyType: PropertyRecordType.SINGLE_FAMILY } }],
+      dataSource: 'APPRAISER_ENTRY',
+      dataSourceRecordId: ORDER_IDS.IN_PROGRESS_003,
+      lastVerifiedAt: daysAgo(7),
+      lastVerifiedSource: 'Seed bootstrap',
+      createdAt: daysAgo(7),
+      updatedAt: daysAgo(7),
+      createdBy: 'SYSTEM',
+    },
+    {
+      id: PROPERTY_IDS.GREENVILLE_AVE,
+      tenantId,
+      type: 'property',
+      apn: '00-48113-311-0009000',
+      fipsCode: '48113',
+      address: { street: '4100 GREENVILLE AVE UNIT 18B', city: 'DALLAS', state: 'TX', zip: '75206', county: 'Dallas', countyFips: '48113', unit: '18B', latitude: 32.8401, longitude: -96.7685, isNormalized: true, geocodedAt: daysAgo(2) },
+      propertyType: PropertyRecordType.CONDO,
+      zoning: 'MF-3',
+      zoningDescription: 'Multifamily residential',
+      lotSizeSqFt: 0,
+      floodZone: 'X',
+      building: { gla: 1250, yearBuilt: 2005, bedrooms: 2, bathrooms: 2, fullBathrooms: 2, stories: 1, constructionType: 'Masonry', exteriorWalls: 'Stucco', roofCover: 'Membrane', heatSource: 'Central', airConditioning: 'Central', condition: PropertyRecordCondition.AVERAGE, quality: BuildingQualityRating.B },
+      ownerOccupied: false,
+      taxAssessments: [{ taxYear: 2025, totalAssessedValue: 242000, annualTaxAmount: 5711, marketValue: 249000, isDelinquent: false, assessedAt: '2025-01-15' }],
+      permits: [],
+      recordVersion: 1,
+      versionHistory: [{ version: 1, createdAt: daysAgo(2), createdBy: 'SYSTEM', reason: 'Seeded canonical property record', source: 'PUBLIC_RECORDS_API', sourceProvider: 'ATTOM Data Solutions', sourceArtifactId: ORDER_IDS.PENDING_004, changedFields: ['address', 'building'], previousValues: {}, newValues: { propertyType: PropertyRecordType.CONDO } }],
+      dataSource: 'PUBLIC_RECORDS_API',
+      dataSourceRecordId: ORDER_IDS.PENDING_004,
+      lastVerifiedAt: daysAgo(2),
+      lastVerifiedSource: 'ATTOM Data Solutions',
+      createdAt: daysAgo(2),
+      updatedAt: daysAgo(2),
+      createdBy: 'SYSTEM',
+    },
+    {
+      id: PROPERTY_IDS.ABRAMS_RD,
+      tenantId,
+      type: 'property',
+      apn: '00-48113-277-0091000',
+      fipsCode: '48113',
+      address: { street: '3210 ABRAMS RD', city: 'DALLAS', state: 'TX', zip: '75214', county: 'Dallas', countyFips: '48113', latitude: 32.8221, longitude: -96.7444, isNormalized: true, geocodedAt: daysAgo(20) },
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+      zoning: 'R-7.5',
+      zoningDescription: 'Single Family Residential',
+      lotSizeSqFt: 7200,
+      floodZone: 'X',
+      building: { gla: 1600, yearBuilt: 1952, bedrooms: 3, bathrooms: 1, fullBathrooms: 1, stories: 1, constructionType: 'Frame', exteriorWalls: 'Brick Veneer', roofCover: 'Composition Shingle', condition: PropertyRecordCondition.FAIR, quality: BuildingQualityRating.C },
+      taxAssessments: [{ taxYear: 2025, totalAssessedValue: 176000, annualTaxAmount: 4150, marketValue: 180000, isDelinquent: false, assessedAt: '2025-01-15' }],
+      permits: [{ permitNumber: 'DAL-2025-77841', type: 'REMODEL', description: 'Fix-and-flip interior rehab', issuedDate: '2025-11-03', valuationAmount: 95000, isMaterialChange: true, source: 'CITY' }],
+      recordVersion: 1,
+      versionHistory: [{ version: 1, createdAt: daysAgo(20), createdBy: 'SYSTEM', reason: 'Seeded canonical property record', source: 'MANUAL_CORRECTION', sourceProvider: 'Construction intake seed', sourceArtifactId: ORDER_IDS.FIX_FLIP_006, changedFields: ['address', 'building', 'permits'], previousValues: {}, newValues: { rehab: 'planned' } }],
+      dataSource: 'MANUAL_ENTRY',
+      dataSourceRecordId: ORDER_IDS.FIX_FLIP_006,
+      lastVerifiedAt: daysAgo(20),
+      lastVerifiedSource: 'Construction intake seed',
+      createdAt: daysAgo(20),
+      updatedAt: daysAgo(20),
+      createdBy: 'SYSTEM',
+    },
+    {
+      id: PROPERTY_IDS.BOULDER_MAIN_ST,
+      tenantId,
+      type: 'property',
+      apn: 'CO-013-113-22-001',
+      fipsCode: '08013',
+      address: { street: '810 MAIN ST', city: 'BOULDER', state: 'CO', zip: '80302', county: 'Boulder', countyFips: '08013', latitude: 40.015, longitude: -105.2705, isNormalized: true, geocodedAt: daysAgo(5) },
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+      zoning: 'RL-1',
+      zoningDescription: 'Residential Low 1',
+      lotSizeSqFt: 10500,
+      floodZone: 'X',
+      building: { gla: 2400, yearBuilt: 1972, bedrooms: 4, bathrooms: 2.5, fullBathrooms: 2, halfBathrooms: 1, stories: 2, garageSpaces: 2, constructionType: 'Frame', exteriorWalls: 'Wood Siding', roofCover: 'Composition Shingle', heatSource: 'Forced Air', airConditioning: 'Evaporative', condition: PropertyRecordCondition.GOOD, quality: BuildingQualityRating.B },
+      taxAssessments: [{ taxYear: 2025, totalAssessedValue: 812000, annualTaxAmount: 9022, marketValue: 835000, isDelinquent: false, assessedAt: '2025-01-15' }],
+      permits: [],
+      recordVersion: 1,
+      versionHistory: [{ version: 1, createdAt: daysAgo(5), createdBy: 'SYSTEM', reason: 'Seeded canonical property record', source: 'PUBLIC_RECORDS_API', sourceProvider: 'County Assessor', sourceArtifactId: ORDER_IDS.ACCEPTED_008, changedFields: ['address', 'building'], previousValues: {}, newValues: { propertyType: PropertyRecordType.SINGLE_FAMILY } }],
+      dataSource: 'COUNTY_ASSESSOR',
+      dataSourceRecordId: ORDER_IDS.ACCEPTED_008,
+      lastVerifiedAt: daysAgo(5),
+      lastVerifiedSource: 'County Assessor',
+      createdAt: daysAgo(5),
+      updatedAt: daysAgo(5),
+      createdBy: 'SYSTEM',
+    },
+  ];
+}
+
 export const module: SeedModule = {
   name: 'properties',
-  containers: ['properties', 'property-summaries'],
+  containers: ['properties', 'property-summaries', 'property-records'],
 
   async run(ctx: SeedContext): Promise<SeedModuleResult> {
     const result: SeedModuleResult = { created: 0, failed: 0, skipped: 0, cleaned: 0 };
@@ -119,6 +552,7 @@ export const module: SeedModule = {
     if (ctx.clean) {
       result.cleaned += await cleanContainer(ctx, 'properties');
       result.cleaned += await cleanContainer(ctx, 'property-summaries');
+      result.cleaned += await cleanContainer(ctx, 'property-records');
     }
 
     for (const prop of buildProperties(ctx.tenantId)) {
@@ -126,6 +560,9 @@ export const module: SeedModule = {
     }
     for (const summary of buildPropertySummaries(ctx.tenantId)) {
       await upsert(ctx, 'property-summaries', summary, result);
+    }
+    for (const propertyRecord of buildPropertyRecords(ctx.tenantId)) {
+      await upsert(ctx, 'property-records', propertyRecord, result);
     }
 
     return result;

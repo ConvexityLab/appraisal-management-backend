@@ -14,13 +14,180 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { VendorPerformanceCalculatorService } from './vendor-performance-calculator.service';
 import {
+  type RuleEvaluationContext,
+  type RuleEvaluationResult,
+} from './vendor-matching-rules.service.js';
+import {
+  type VendorMatchingRulesProvider,
+  createVendorMatchingRulesProvider,
+} from './vendor-matching-rules/index.js';
+import {
   VendorMatchRequest,
   VendorMatchResult,
   VendorMatchCriteria,
   VendorAvailability,
   VendorPerformanceMetrics,
-  GeographicArea
+  MatchExplanation,
+  DeniedVendorEntry,
+  GeographicArea,
+  NoMatchReason,
+  NoMatchReasonCode,
 } from '../types/vendor-marketplace.types.js';
+import {
+  VendorMatchingCriteriaService,
+  type ResolvedCriteriaProfile,
+} from './vendor-matching-criteria.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
+
+/**
+ * Tag identifying the scoring profile used (T6 audit). Bump when weights or
+ * band thresholds change so historical match explanations remain replayable.
+ */
+const WEIGHTS_VERSION = 'v1-30/25/20/15/10';
+
+// ─── Phase B helpers (no-match reason + radius override + toggles) ─────────
+
+/**
+ * Convert a resolved criteria profile's per-criterion enabled+weight
+ * settings into the fixed-weight shape the scorer expects. Disabled
+ * criteria get weight=0; remaining weights renormalize so the total sums
+ * to 1.0. This keeps the per-criterion score values 0..100 from the
+ * existing calculators, while letting Doug toggle proximity off for DVR
+ * without re-implementing the scorer.
+ */
+export function computeEffectiveWeights(
+  criteria: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
+): { performance: number; availability: number; proximity: number; experience: number; cost: number } {
+  const raw = {
+    performance: criteria.performance.enabled ? criteria.performance.weight : 0,
+    availability: criteria.availability.enabled ? criteria.availability.weight : 0,
+    proximity: criteria.proximity.enabled && criteria.proximity.mode === 'SCORED' ? criteria.proximity.weight : 0,
+    experience: criteria.experience.enabled ? criteria.experience.weight : 0,
+    cost: criteria.cost.enabled ? criteria.cost.weight : 0,
+  };
+  const sum = raw.performance + raw.availability + raw.proximity + raw.experience + raw.cost;
+  if (sum <= 0) {
+    // Pathological: no SCORED criterion. Fall back to the legacy weights so
+    // we still rank vendors (every disabled criterion just contributes 0).
+    return { performance: 0.30, availability: 0.25, proximity: 0.20, experience: 0.15, cost: 0.10 };
+  }
+  return {
+    performance: raw.performance / sum,
+    availability: raw.availability / sum,
+    proximity: raw.proximity / sum,
+    experience: raw.experience / sum,
+    cost: raw.cost / sum,
+  };
+}
+
+// ─── Phase B helpers (no-match reason + radius override) ────────────────────
+
+function withMaxDistance(
+  request: VendorMatchRequest,
+  maxDistance: number,
+): VendorMatchRequest {
+  return {
+    ...request,
+    clientPreferences: {
+      ...(request.clientPreferences ?? {}),
+      maxDistance,
+    },
+  };
+}
+
+export function inferNoMatchReason(
+  denied: DeniedVendorEntry[],
+  ctx: { radiusUsed: number; productState?: string },
+): NoMatchReason {
+  if (denied.length === 0) {
+    // Nothing came back at all — either no vendors exist or none cover the area.
+    return {
+      code: 'NO_VENDOR_WITHIN_RADIUS',
+      message: `No vendor was found within ${ctx.radiusUsed} miles of the property.`,
+      hints: [
+        'Widen the search radius or attach a fallback overlay.',
+        'Check that at least one vendor covers this geography.',
+      ],
+    };
+  }
+
+  // Aggregate denial reasons so we can pick the dominant one. Sanitised — we
+  // expose categories, not per-vendor reasons (Doug: "don't list everything").
+  const reasonHits: Record<NoMatchReasonCode, number> = {
+    NO_LICENSED_VENDOR_IN_STATE: 0,
+    NO_VENDOR_WITHIN_RADIUS: 0,
+    NO_VENDOR_WITH_CAPACITY: 0,
+    NO_VENDOR_MEETS_TIER: 0,
+    ALL_VENDORS_EXCLUDED_BY_RULES: 0,
+    UNKNOWN: 0,
+  };
+  for (const entry of denied) {
+    const joined = entry.denyReasons.join(' ').toLowerCase();
+    if (joined.includes('licens') || joined.includes('state')) {
+      reasonHits.NO_LICENSED_VENDOR_IN_STATE++;
+    } else if (joined.includes('distance') || joined.includes('mile') || joined.includes('proximity')) {
+      reasonHits.NO_VENDOR_WITHIN_RADIUS++;
+    } else if (joined.includes('capacity') || joined.includes('available') || joined.includes('busy')) {
+      reasonHits.NO_VENDOR_WITH_CAPACITY++;
+    } else if (joined.includes('tier') || joined.includes('rating')) {
+      reasonHits.NO_VENDOR_MEETS_TIER++;
+    } else {
+      reasonHits.ALL_VENDORS_EXCLUDED_BY_RULES++;
+    }
+  }
+  const top = (Object.entries(reasonHits) as [NoMatchReasonCode, number][]).sort(
+    (a, b) => b[1] - a[1],
+  )[0]!;
+  const code = top[0];
+
+  const messages: Record<NoMatchReasonCode, string> = {
+    NO_LICENSED_VENDOR_IN_STATE: ctx.productState
+      ? `No vendor licensed in ${ctx.productState} qualified for this assignment.`
+      : 'No vendor with proper state licensing qualified.',
+    NO_VENDOR_WITHIN_RADIUS: `No vendor qualified within ${ctx.radiusUsed} miles of the property.`,
+    NO_VENDOR_WITH_CAPACITY: 'Every qualified vendor is at capacity or on vacation.',
+    NO_VENDOR_MEETS_TIER: 'No vendor meets the minimum performance/tier threshold for this work.',
+    ALL_VENDORS_EXCLUDED_BY_RULES:
+      'Every candidate was excluded by the active assignment rules. Review the rule pack.',
+    UNKNOWN: 'No vendor matched for an unspecified reason.',
+  };
+
+  return {
+    code,
+    message: messages[code],
+  };
+}
+
+/**
+ * Resolve the per-vendor product-weight overlay for a given product type.
+ * Returns 1.0 (no adjustment) when:
+ *   - vendor has no productWeights array
+ *   - request has no productId
+ *   - no entry matches the productId
+ * Clamps the returned weight to [0.0, 2.0] so a single overlay can't fully
+ * zero a vendor (use eligibleProductIds for hard gates) or 10x them past
+ * the rest of the candidate pool.
+ */
+export function lookupProductWeight(
+  vendor: { productWeights?: Array<{ productType: string; weight: number }> },
+  productId: string | undefined,
+): number {
+  if (!productId || !vendor.productWeights || vendor.productWeights.length === 0) {
+    return 1.0;
+  }
+  const entry = vendor.productWeights.find((e) => e.productType === productId);
+  if (!entry || typeof entry.weight !== 'number' || Number.isNaN(entry.weight)) {
+    return 1.0;
+  }
+  return Math.max(0.0, Math.min(2.0, entry.weight));
+}
+
+function extractStateHint(request: VendorMatchRequest): string | undefined {
+  // The request carries propertyAddress as a single string; try to pull a
+  // two-letter state code from the tail.
+  const match = request.propertyAddress?.match(/\b([A-Z]{2})\b/);
+  return match?.[1];
+}
 
 interface GeoCoordinates {
   latitude: number;
@@ -31,6 +198,7 @@ export class VendorMatchingEngine {
   private logger: Logger;
   private dbService: CosmosDbService;
   private performanceService: VendorPerformanceCalculatorService;
+  private rulesProvider: VendorMatchingRulesProvider;
 
   // Scoring weights (must sum to 1.0)
   private readonly WEIGHTS = {
@@ -50,10 +218,16 @@ export class VendorMatchingEngine {
     // > 300 miles: 0 points
   };
 
-  constructor() {
+  constructor(rulesProvider?: VendorMatchingRulesProvider) {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.performanceService = new VendorPerformanceCalculatorService();
+    // Phase 2: rules evaluation goes through a pluggable provider — homegrown
+    // (default), MOP (when enabled via env), or MOP-with-fallback. Engine no
+    // longer talks to VendorMatchingRulesService directly. See
+    // src/services/vendor-matching-rules/factory.ts for env-driven selection.
+    // Tenants with no rules see zero behavior change.
+    this.rulesProvider = rulesProvider ?? createVendorMatchingRulesProvider({ dbService: this.dbService });
   }
 
   /**
@@ -64,26 +238,39 @@ export class VendorMatchingEngine {
     topN: number = 10
   ): Promise<VendorMatchResult[]> {
     try {
-      this.logger.info('Finding matching vendors', { 
+      this.logger.info('Finding matching vendors', {
         propertyAddress: request.propertyAddress,
         propertyType: request.propertyType,
-        topN 
+        topN
       });
 
       // Get property coordinates
       const propertyCoords = await this.geocodeAddress(request.propertyAddress);
 
-      // Get eligible vendors
-      const eligibleVendors = await this.getEligibleVendors(request);
+      // Fetch product once so gradeBonus values come from the product document,
+      // not hardcoded constants. Absent/null gracefully degrades (no grade bonus).
+      let productGradeLevels: import('../types/index.js').GradeLevel[] | undefined;
+      if (request.productId) {
+        const productResult = await this.dbService.findProductById(request.productId, request.tenantId);
+        productGradeLevels = productResult.data?.gradeLevels ?? undefined;
+      }
+
+      // Get eligible vendors (with precomputed per-vendor distance — see T3 in
+      // docs/AUTO_ASSIGNMENT_REVIEW.md). Distance is computed once here so it is
+      // available to both the rules engine (T4, max_distance_miles rule) and the
+      // proximity scorer without recomputation.
+      const { eligible: eligibleVendors } = await this.getEligibleVendors(request, propertyCoords);
       this.logger.info(`Found ${eligibleVendors.length} eligible vendors`);
 
       if (eligibleVendors.length === 0) {
         return [];
       }
 
-      // Score each vendor
+      // Score each vendor (T4: ruleResult collected here, applied to score in T5)
       const scoredVendors = await Promise.all(
-        eligibleVendors.map(vendor => this.scoreVendor(vendor, request, propertyCoords))
+        eligibleVendors.map(({ vendor, distance, ruleResult }) =>
+          this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, undefined, productGradeLevels)
+        )
       );
 
       // Sort by match score (descending) and return top N
@@ -102,6 +289,218 @@ export class VendorMatchingEngine {
       this.logger.error('Failed to find matching vendors', error);
       throw error;
     }
+  }
+
+  /**
+   * Like findMatchingVendors but also returns the list of vendors filtered out
+   * by deny rules (with reasons). Used by the orchestrator to persist the full
+   * audit trail (denied + ranked) onto the order — see T6/F9.
+   */
+  async findMatchingVendorsAndDenied(
+    request: VendorMatchRequest,
+    topN: number = 10,
+    /**
+     * Phase B — optional resolved criteria profile. When supplied, scoreVendor
+     * honours toggles + renormalized weights + licensure HARD_GATE. When
+     * absent (the public legacy contract), the fixed-weight scorer runs.
+     */
+    criteriaProfile?: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
+  ): Promise<{
+    matches: VendorMatchResult[];
+    denied: DeniedVendorEntry[];
+    /**
+     * Phase D.faithful — frozen-fact snapshot of every {vendor, order}
+     * bundle the rules engine evaluated. Orchestrator persists this on
+     * the assignment-trace doc so Sandbox replay re-evaluates proposed
+     * rules against the SAME facts that drove the original decision
+     * (not against possibly-drifted current vendor data).
+     */
+    evaluationsSnapshot: Array<{
+      vendor: {
+        id: string;
+        capabilities?: string[];
+        states?: string[];
+        performanceScore?: number;
+        licenseType?: string;
+        distance?: number | null;
+      };
+      order: { productType?: string; propertyState?: string };
+      originallyRanked: boolean;
+      originalScore: number;
+    }>;
+  }> {
+    const propertyCoords = await this.geocodeAddress(request.propertyAddress);
+    const { eligible, denied } = await this.getEligibleVendors(request, propertyCoords);
+
+    if (eligible.length === 0) {
+      return { matches: [], denied, evaluationsSnapshot: [] };
+    }
+
+    // Fetch product once so gradeBonus values come from the product document.
+    let productGradeLevels: import('../types/index.js').GradeLevel[] | undefined;
+    if (request.productId) {
+      const productResult = await this.dbService.findProductById(request.productId, request.tenantId);
+      productGradeLevels = productResult.data?.gradeLevels ?? undefined;
+    }
+
+    const scoredVendors = await Promise.all(
+      eligible.map(({ vendor, distance, ruleResult }) =>
+        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, criteriaProfile, productGradeLevels)
+      )
+    );
+
+    const matches = scoredVendors
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, topN);
+
+    const evaluationsSnapshot = [
+      ...eligible.map(({ vendor, distance }) => ({
+        vendor: {
+          id: vendor.id as string,
+          ...(Array.isArray(vendor.capabilities) ? { capabilities: vendor.capabilities as string[] } : {}),
+          ...(Array.isArray((vendor as Record<string, unknown>).serviceAreas)
+            ? {
+                states: ((vendor as Record<string, unknown>).serviceAreas as Array<{ state?: string }>)
+                  .map(s => s.state)
+                  .filter((x): x is string => !!x),
+              }
+            : {}),
+          ...(typeof (vendor as Record<string, unknown>).overallScore === 'number'
+            ? { performanceScore: (vendor as Record<string, unknown>).overallScore as number }
+            : {}),
+          ...(typeof (vendor as Record<string, unknown>).licenseType === 'string'
+            ? { licenseType: (vendor as Record<string, unknown>).licenseType as string }
+            : {}),
+          distance: distance ?? null,
+        },
+        order: {
+          ...(request.productId ? { productType: request.productId } : {}),
+        },
+        originallyRanked: true,
+        originalScore: matches.find(m => m.vendorId === vendor.id)?.matchScore ?? 0,
+      })),
+      ...denied.map(d => ({
+        vendor: { id: d.vendorId },
+        order: { ...(request.productId ? { productType: request.productId } : {}) },
+        originallyRanked: false,
+        originalScore: 0,
+      })),
+    ];
+
+    return { matches, denied, evaluationsSnapshot };
+  }
+
+  /**
+   * Phase B — match with David/Doug's per-product overlays + a "why no match"
+   * reason when results are empty.
+   *
+   * Pipeline:
+   *   1. Resolve the active criteria profile for the (tenant, clientId,
+   *      productType, phase) tuple — overlays merged BASE → CLIENT → PRODUCT
+   *      → CLIENT_PRODUCT.
+   *   2. Run findMatchingVendorsAndDenied with the resolved profile's
+   *      primary proximity radius applied to the request's
+   *      clientPreferences.maxDistance.
+   *   3. If empty AND profile.proximity.expansionRadiusMiles is set,
+   *      RE-RUN with the wider radius (Doug's 30→50 mi pattern).
+   *   4. If still empty, infer a NoMatchReason from the denied list.
+   *
+   * NOTE: This is a wrapper. Per-criterion toggle enforcement in scoreVendor
+   * (e.g. "skip proximity for DVR product") is the larger rewrite of
+   * scoreVendor/getEligibleVendors and is intentionally deferred. The
+   * existing weights remain in force; this method changes the OUTER
+   * search behaviour and surfaces the no-match reason.
+   */
+  async findMatchingVendorsWithReason(
+    request: VendorMatchRequest,
+    options: {
+      clientId?: string;
+      phase?: 'ORIGINAL' | 'REVIEW';
+      topN?: number;
+    } = {},
+  ): Promise<{
+    matches: VendorMatchResult[];
+    denied: DeniedVendorEntry[];
+    appliedProfileIds: string[];
+    noMatchReason: NoMatchReason | null;
+    expansionApplied: boolean;
+  }> {
+    const topN = options.topN ?? 10;
+    const criteriaService = new VendorMatchingCriteriaService(
+      this.dbService,
+      new AuditTrailService(this.dbService),
+    );
+    const resolved = await criteriaService.resolveProfile({
+      tenantId: request.tenantId,
+      ...(options.clientId ? { clientId: options.clientId } : {}),
+      ...(request.productId ? { productType: request.productId } : {}),
+      ...(options.phase ? { phase: options.phase } : {}),
+    });
+
+    const primaryRadius = resolved.criteria.proximity.primaryRadiusMiles;
+    const expansionRadius = resolved.criteria.proximity.expansionRadiusMiles;
+
+    // First pass with primary radius — pass criteria through so toggles +
+    // licensure HARD_GATE + renormalized weights apply.
+    const firstPass = await this.findMatchingVendorsAndDenied(
+      withMaxDistance(request, primaryRadius),
+      topN,
+      resolved.criteria,
+    );
+    if (firstPass.matches.length > 0) {
+      return {
+        matches: firstPass.matches,
+        denied: firstPass.denied,
+        appliedProfileIds: resolved.appliedProfileIds,
+        noMatchReason: null,
+        expansionApplied: false,
+      };
+    }
+
+    // Expansion pass (Doug's pattern: 30 → 50 mi).
+    if (expansionRadius && expansionRadius > primaryRadius) {
+      this.logger.info('No matches at primary radius — expanding', {
+        primaryRadius,
+        expansionRadius,
+      });
+      const secondPass = await this.findMatchingVendorsAndDenied(
+        withMaxDistance(request, expansionRadius),
+        topN,
+        resolved.criteria,
+      );
+      if (secondPass.matches.length > 0) {
+        return {
+          matches: secondPass.matches,
+          denied: secondPass.denied,
+          appliedProfileIds: resolved.appliedProfileIds,
+          noMatchReason: null,
+          expansionApplied: true,
+        };
+      }
+      // Still nothing — fall through to reason inference, using the wider
+      // denied list which is more informative.
+      return {
+        matches: [],
+        denied: secondPass.denied,
+        appliedProfileIds: resolved.appliedProfileIds,
+        noMatchReason: inferNoMatchReason(secondPass.denied, {
+          radiusUsed: expansionRadius,
+          ...(extractStateHint(request) !== undefined ? { productState: extractStateHint(request) as string } : {}),
+        }),
+        expansionApplied: true,
+      };
+    }
+
+    return {
+      matches: [],
+      denied: firstPass.denied,
+      appliedProfileIds: resolved.appliedProfileIds,
+      noMatchReason: inferNoMatchReason(firstPass.denied, {
+        radiusUsed: primaryRadius,
+        ...(extractStateHint(request) !== undefined ? { productState: extractStateHint(request) as string } : {}),
+      }),
+      expansionApplied: false,
+    };
   }
 
   /**
@@ -222,17 +621,34 @@ export class VendorMatchingEngine {
   private async scoreVendor(
     vendor: any,
     request: VendorMatchRequest,
-    propertyCoords: GeoCoordinates | null
+    propertyCoords: GeoCoordinates | null,
+    precomputedDistance?: number | null,
+    ruleResult?: RuleEvaluationResult,
+    /**
+     * Phase B — resolved criteria profile from VendorMatchingCriteriaService.
+     * When provided, per-criterion enabled flags + weights override the
+     * fixed WEIGHTS table. Disabled criteria are excluded from the score
+     * and remaining weights renormalize to 1.0. When absent, behaviour is
+     * identical to the legacy fixed-weight scorer.
+     */
+    criteriaProfile?: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
+    /**
+     * Grade levels fetched from the Product document, keyed by level key.
+     * When provided, gradeBonus values come from the product, not hardcoded constants.
+     * When absent, no grade bonus is applied.
+     */
+    productGradeLevels?: import('../types/index.js').GradeLevel[],
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
-      const vendorCaps: string[] = vendor.capabilities ?? [];
+      const vendorCaps: string[] = [...(vendor.capabilities ?? []), ...(vendor.capabilityTags ?? [])];
       const missing = request.requiredCapabilities.filter(c => !vendorCaps.includes(c));
       if (missing.length > 0) {
+        const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
         return {
           vendorId: vendor.id,
           matchScore: 0,
-          scoreBreakdown: { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 },
+          scoreBreakdown: zeroComponents,
           distance: null,
           estimatedTurnaround: 0,
           estimatedFee: null,
@@ -242,6 +658,14 @@ export class VendorMatchingEngine {
             name: vendor.name || vendor.businessName,
             tier: 'BRONZE' as const,
             overallScore: 0
+          },
+          explanation: {
+            vendorId: vendor.id,
+            scoreComponents: zeroComponents,
+            ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: [], scoreAdjustment: 0 },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: WEIGHTS_VERSION,
           }
         };
       }
@@ -273,12 +697,13 @@ export class VendorMatchingEngine {
     // Calculate individual scores
     const performanceScore = this.calculatePerformanceScore(performance);
     const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability, request.dueDate);
-    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState);
+    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState, precomputedDistance);
     const experienceScore = this.calculateExperienceScore(
       vendor,
       request.propertyType,
       performance,
-      request.productId
+      request.productId,
+      productGradeLevels,
     );
     const costScore = this.calculateCostScore(
       vendor,
@@ -286,26 +711,86 @@ export class VendorMatchingEngine {
       request.clientPreferences?.maxFee
     );
 
-    // Weighted overall score
-    const matchScore = Math.round(
-      performanceScore * this.WEIGHTS.performance +
-      availabilityScore * this.WEIGHTS.availability +
-      proximityScore.score * this.WEIGHTS.proximity +
-      experienceScore * this.WEIGHTS.experience +
-      costScore * this.WEIGHTS.cost
+    // Phase B — licensure HARD_GATE: when the resolved profile marks
+    // licensure as a hard gate, a vendor that isn't licensed in the
+    // property's state scores 0 overall (analogous to the requiredCapabilities
+    // gate above). 'SCORED' mode would feed the licensure check into
+    // experienceScore instead — not yet wired since the existing scorer
+    // doesn't have a licensure component to score against; if you want
+    // SCORED licensure, do it in a follow-up.
+    if (criteriaProfile?.licensure?.enabled && criteriaProfile.licensure.mode === 'HARD_GATE') {
+      const licensedStates: string[] = (vendor.licensedStates as string[] | undefined) ?? [];
+      if (propertyState && licensedStates.length > 0 && !licensedStates.includes(propertyState)) {
+        const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
+        return {
+          vendorId: vendor.id,
+          matchScore: 0,
+          scoreBreakdown: zeroComponents,
+          distance: precomputedDistance ?? null,
+          estimatedTurnaround: 0,
+          estimatedFee: null,
+          matchReasons: [`Not licensed in ${propertyState} (HARD_GATE).`],
+          vendor: {
+            id: vendor.id,
+            name: vendor.name || vendor.businessName,
+            tier: 'BRONZE' as const,
+            overallScore: 0,
+          },
+          explanation: {
+            vendorId: vendor.id,
+            scoreComponents: zeroComponents,
+            ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: ['licensure HARD_GATE'], scoreAdjustment: 0 },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: WEIGHTS_VERSION,
+          },
+        };
+      }
+    }
+
+    // Weighted overall score — when a criteria profile is supplied, derive
+    // weights from it (honoring enabled flags and renormalizing). Otherwise
+    // use the legacy fixed WEIGHTS table so unprofiled tenants are unaffected.
+    const effectiveWeights = criteriaProfile
+      ? computeEffectiveWeights(criteriaProfile)
+      : this.WEIGHTS;
+
+    let baseScore = Math.round(
+      performanceScore * effectiveWeights.performance +
+      availabilityScore * effectiveWeights.availability +
+      proximityScore.score * effectiveWeights.proximity +
+      experienceScore * effectiveWeights.experience +
+      costScore * effectiveWeights.cost
     );
+
+    // Per-vendor product weight (David/Doug meeting: "each vendor can be
+    // weighted by each product"). Multiplies the base score by the vendor's
+    // per-product weight when present, clamped to [0.0, 2.0] so a single
+    // overlay can't either zero a vendor (use eligibleProductIds instead) or
+    // 10x them past the rest of the pack. Default 1.0 = no adjustment.
+    const productWeight = lookupProductWeight(vendor, request.productId);
+    if (productWeight !== 1.0) {
+      baseScore = Math.round(Math.min(100, Math.max(0, baseScore * productWeight)));
+    }
+
+    // T5: apply rules-engine score adjustments (boost / reduce), clamped to [0, 100].
+    // Clamp is documented (D6 in the review doc); revisit when scoring becomes
+    // data-driven in Phase 3 and admins may want unbounded scores for tuning.
+    const matchScore = this.applyScoreAdjustment(baseScore, ruleResult?.scoreAdjustment ?? 0);
+
+    const scoreComponents = {
+      performance: performanceScore,
+      availability: availabilityScore,
+      proximity: proximityScore.score,
+      experience: experienceScore,
+      cost: costScore,
+    };
 
     return {
       vendorId: vendor.id,
       matchScore,
       recentOrders: performance?.ordersLast30Days ?? performance?.totalOrdersCompleted ?? 0,
-      scoreBreakdown: {
-        performance: performanceScore,
-        availability: availabilityScore,
-        proximity: proximityScore.score,
-        experience: experienceScore,
-        cost: costScore
-      },
+      scoreBreakdown: scoreComponents,
       distance: proximityScore.distance,
       estimatedTurnaround: this.estimateTurnaround(performance, effectiveAvailability),
       estimatedFee: vendor.typicalFees?.[request.propertyType] || null,
@@ -315,6 +800,14 @@ export class VendorMatchingEngine {
         name: vendor.name || vendor.businessName,
         tier: performance?.tier || 'BRONZE',
         overallScore: performance?.overallScore || 0
+      },
+      explanation: {
+        vendorId: vendor.id,
+        scoreComponents,
+        ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: [], scoreAdjustment: 0 },
+        baseScore,
+        finalScore: matchScore,
+        weightsVersion: WEIGHTS_VERSION,
       }
     };
   }
@@ -373,7 +866,8 @@ export class VendorMatchingEngine {
   private async calculateProximityScore(
     vendor: any,
     propertyCoords: GeoCoordinates | null,
-    propertyState?: string
+    propertyState?: string,
+    precomputedDistance?: number | null
   ): Promise<{ score: number; distance: number | null }> {
     try {
       if (!propertyCoords) {
@@ -385,19 +879,29 @@ export class VendorMatchingEngine {
         return { score: 40, distance: null }; // No state match, lower score
       }
 
-      // Get vendor location
-      const vendorCoords = vendor.location || vendor.businessLocation;
-      if (!vendorCoords?.latitude || !vendorCoords?.longitude) {
-        return { score: 50, distance: null }; // Unknown location, medium score
+      // Use precomputed distance when supplied (T3: hoisted into getEligibleVendors).
+      // A null value here means "vendor has no usable coordinates" — the same case
+      // the inline-compute branch returns 50 for, preserving prior behavior.
+      let distance: number;
+      if (precomputedDistance !== undefined) {
+        if (precomputedDistance === null) {
+          return { score: 50, distance: null };
+        }
+        distance = precomputedDistance;
+      } else {
+        // Fallback: compute inline (preserves backward compatibility for any
+        // direct callers / tests that don't pre-compute).
+        const vendorCoords = vendor.location || vendor.businessLocation;
+        if (!vendorCoords?.latitude || !vendorCoords?.longitude) {
+          return { score: 50, distance: null };
+        }
+        distance = this.calculateDistance(
+          propertyCoords.latitude,
+          propertyCoords.longitude,
+          vendorCoords.latitude,
+          vendorCoords.longitude
+        );
       }
-
-      // Calculate distance
-      const distance = this.calculateDistance(
-        propertyCoords.latitude,
-        propertyCoords.longitude,
-        vendorCoords.latitude,
-        vendorCoords.longitude
-      );
 
       // Score based on distance thresholds
       let score = 0;
@@ -433,7 +937,8 @@ export class VendorMatchingEngine {
     vendor: any,
     propertyType: string,
     performance: VendorPerformanceMetrics | null,
-    productId?: string
+    productId?: string,
+    productGradeLevels?: import('../types/index.js').GradeLevel[],
   ): number {
     let score = 50; // Base score
 
@@ -455,13 +960,14 @@ export class VendorMatchingEngine {
       score += 10; // Some experience
     }
 
-    // Product grade bonus: reward vendors with proven competency on this product
-    if (productId) {
+    // Product grade bonus: reward vendors with proven competency on this product.
+    // Score bonus values come from the product document (data-driven), not hardcoded constants.
+    if (productId && productGradeLevels && productGradeLevels.length > 0) {
       const gradeEntry = (vendor.productGrades as Array<{ productId: string; grade: string }> | undefined)
         ?.find(g => g.productId === productId);
       if (gradeEntry) {
-        const gradeBonus: Record<string, number> = { trainee: 0, proficient: 5, expert: 10, lead: 15 };
-        score += gradeBonus[gradeEntry.grade] ?? 0;
+        const levelDef = productGradeLevels.find(gl => gl.key === gradeEntry.grade);
+        score += levelDef?.scoreBonus ?? 0;
       }
     }
 
@@ -545,9 +1051,40 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Get eligible vendors for the order
+   * Get eligible vendors for the order, with per-vendor precomputed distance
+   * and rules-engine evaluation result.
+   *
+   * Pipeline (per T3 + T4 in docs/AUTO_ASSIGNMENT_REVIEW.md):
+   *   1. Cosmos query: tenant + active + state-area filter
+   *   2. Hard gate: productId / eligibleProductIds (legacy field, F4 retires this)
+   *   3. Compute per-vendor distance (T3)
+   *   4. Load active rules for tenant once (T4)
+   *   5. Per vendor: build RuleEvaluationContext, call applyRules, drop denied
+   *   6. Return [{vendor, distance, ruleResult}] for the scoring step
+   *
+   * Tenants with zero rules see zero behavior change — applyRules returns
+   * eligible:true with empty appliedRuleIds and zero scoreAdjustment.
+   *
+   * Known semantic gaps in the rule context (acceptable for Phase 1):
+   *   - vendor.licenseType: not derivable from current vendor schema
+   *     (license_required rules will no-op until vendor.licenseType is exposed)
+   *   - vendor.performanceScore: not loaded until scoreVendor; passed as
+   *     undefined here, so min_performance_score rules treat it as 0 (deny).
+   *     This is conservative; real fix is loading perf in the eligibility step
+   *     or moving rules eval to post-scoring (deferred).
+   *   - order.productType: VendorMatchRequest has productId, not productType;
+   *     productId is passed as a proxy. Rules scoped to productType strings
+   *     should be migrated to productId when this path is used.
+   *   - order.orderValueUsd: VendorMatchRequest.budget is a fee budget, not
+   *     order value; passed as undefined, so max_order_value rules no-op.
    */
-  private async getEligibleVendors(request: VendorMatchRequest): Promise<any[]> {
+  private async getEligibleVendors(
+    request: VendorMatchRequest,
+    propertyCoords?: GeoCoordinates | null
+  ): Promise<{
+    eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>;
+    denied: DeniedVendorEntry[];
+  }> {
     const query = `
       SELECT * FROM c
       WHERE c.tenantId = @tenantId
@@ -557,18 +1094,18 @@ export class VendorMatchingEngine {
     `;
 
     // Extract state from address (simplified)
-    const state = this.extractStateFromAddress(request.propertyAddress);
+    const propertyState = this.extractStateFromAddress(request.propertyAddress);
 
     const result = await this.dbService.queryItems(
       'vendors',
       query,
       [
         { name: '@tenantId', value: request.tenantId },
-        { name: '@state', value: state }
+        { name: '@state', value: propertyState }
       ]
     ) as any;
 
-    let vendors: any[] = result.resources || [];
+    let vendors: any[] = result.data || [];
 
     // Hard gate: product eligibility — if vendor has an explicit allow-list, order's product must be in it
     if (request.productId) {
@@ -577,7 +1114,105 @@ export class VendorMatchingEngine {
       );
     }
 
-    return vendors;
+    // Phase 2: build all per-vendor contexts up front, then evaluate them in
+    // a single batch via the rules provider. The provider may be homegrown
+    // (Cosmos + in-process apply), MOP (HTTP), or MOP-with-fallback.
+    // Build context omitting fields that are not derivable from the current
+    // VendorMatchRequest / Vendor schemas (see gap notes above). Omitting
+    // (rather than passing undefined) is required by exactOptionalPropertyTypes
+    // and lets each rule's eval helper apply its own missing-data semantics.
+    const distances: (number | null)[] = vendors.map(v =>
+      this.computeVendorDistance(v, propertyCoords ?? null)
+    );
+
+    const orderCtx: RuleEvaluationContext['order'] = {
+      ...(request.productId !== undefined ? { productType: request.productId } : {}),
+      ...(propertyState !== undefined ? { propertyState } : {}),
+    };
+
+    const contexts: RuleEvaluationContext[] = vendors.map((vendor, i) => ({
+      vendor: {
+        id: vendor.id,
+        capabilities: vendor.capabilities ?? [],
+        states: (vendor.serviceAreas ?? []).map((sa: any) => sa.state).filter(Boolean),
+        distance: distances[i] ?? null,
+        ...(vendor.licenseType !== undefined ? { licenseType: vendor.licenseType } : {}),
+      },
+      order: orderCtx,
+    }));
+
+    let ruleResults: RuleEvaluationResult[];
+    try {
+      ruleResults = await this.rulesProvider.evaluateForVendors(request.tenantId, contexts);
+    } catch (err) {
+      // Fail open: if the provider can't be reached at all (and its own
+      // fallback chain — if any — also failed), proceed without rules. The
+      // engine's pre-rules hard gates still apply.
+      this.logger.error('Rules provider failed; continuing without rules', {
+        provider: this.rulesProvider.name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      ruleResults = contexts.map(() => ({
+        eligible: true,
+        scoreAdjustment: 0,
+        appliedRuleIds: [],
+        denyReasons: [],
+      }));
+    }
+
+    const eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
+    const denied: DeniedVendorEntry[] = [];
+
+    for (let i = 0; i < vendors.length; i++) {
+      const vendor = vendors[i];
+      const distance = distances[i] ?? null;
+      const ruleResult = ruleResults[i] ?? { eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] };
+
+      if (!ruleResult.eligible) {
+        this.logger.info('Vendor denied by rules provider', {
+          vendorId: vendor.id,
+          tenantId: request.tenantId,
+          provider: this.rulesProvider.name,
+          denyReasons: ruleResult.denyReasons,
+          appliedRuleIds: ruleResult.appliedRuleIds,
+        });
+        denied.push({
+          vendorId: vendor.id,
+          vendorName: vendor.name || vendor.businessName || vendor.id,
+          denyReasons: ruleResult.denyReasons,
+          appliedRuleIds: ruleResult.appliedRuleIds,
+        });
+        continue;
+      }
+
+      eligible.push({ vendor, distance, ruleResult });
+    }
+
+    return { eligible, denied };
+  }
+
+  /**
+   * Apply a rules-engine score adjustment to a base score, clamped to [0, 100].
+   * Extracted for direct unit testing; called from scoreVendor.
+   */
+  private applyScoreAdjustment(baseScore: number, adjustment: number): number {
+    return Math.max(0, Math.min(100, baseScore + adjustment));
+  }
+
+  /**
+   * Compute vendor-to-property distance when both ends have coordinates.
+   * Returns null if propertyCoords or vendor location is missing.
+   */
+  private computeVendorDistance(vendor: any, propertyCoords: GeoCoordinates | null): number | null {
+    if (!propertyCoords) return null;
+    const vendorCoords = vendor.location || vendor.businessLocation;
+    if (!vendorCoords?.latitude || !vendorCoords?.longitude) return null;
+    return this.calculateDistance(
+      propertyCoords.latitude,
+      propertyCoords.longitude,
+      vendorCoords.latitude,
+      vendorCoords.longitude
+    );
   }
 
   /**
@@ -639,9 +1274,12 @@ export class VendorMatchingEngine {
    * Extract state from address string
    */
   private extractStateFromAddress(address: string): string {
-    // Simple regex to extract US state code
-    const stateMatch = address.match(/\b([A-Z]{2})\b\s+\d{5}/);
-    return stateMatch && stateMatch[1] ? stateMatch[1] : 'CA'; // Default to CA
+    // Try comma+space+STATE+comma/end pattern first (handles "Austin, TX, 78701" format).
+    const commaFormat = address.match(/,\s*([A-Z]{2})\s*(?:,|$)/);
+    if (commaFormat && commaFormat[1]) return commaFormat[1];
+    // Fall back to STATE+space+zip format (handles "Austin TX 78701" format).
+    const spaceFormat = address.match(/\b([A-Z]{2})\s+\d{5}/);
+    return spaceFormat && spaceFormat[1] ? spaceFormat[1] : 'CA'; // Default to CA
   }
 
   /**
@@ -659,7 +1297,6 @@ export class VendorMatchingEngine {
         orderId,
         vendorId,
         tenantId: request.tenantId,
-        propertyAddress: request.propertyAddress,
         propertyType: request.propertyType,
         dueDate: request.dueDate,
         urgency: request.urgency,

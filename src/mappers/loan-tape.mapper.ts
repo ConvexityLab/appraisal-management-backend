@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Loan-tape → Canonical mapper
  *
  * Projects a RiskTapeItem (the legacy bulk-tape row shape — see
@@ -13,7 +13,7 @@
  */
 
 import type { RiskTapeItem } from '../types/review-tape.types.js';
-import type { CanonicalLoan, CanonicalLoanRatios } from '../types/canonical-schema.js';
+import type { CanonicalLoan, CanonicalLoanRatios } from '@l1/shared-types';
 
 function n(v: unknown): number | null {
     if (v == null) return null;

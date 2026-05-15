@@ -56,8 +56,8 @@ import { PropertyEnrichmentService, PROPERTY_ENRICHMENTS_CONTAINER } from '../..
 import { PropertyRecordService, PROPERTY_RECORDS_CONTAINER } from '../../src/services/property-record.service';
 import { OrderEventService }           from '../../src/services/order-event.service';
 import { OrderController }             from '../../src/controllers/order.controller';
-import { PropertyRecordType }          from '../../src/types/property-record.types';
-import type { PropertyRecord }         from '../../src/types/property-record.types';
+import { PropertyRecordType }          from '@l1/shared-types';
+import type { PropertyRecord }         from '@l1/shared-types';
 
 // ─── Get the singleton mock Bridge instance ───────────────────────────────────
 function bridgeMock() {

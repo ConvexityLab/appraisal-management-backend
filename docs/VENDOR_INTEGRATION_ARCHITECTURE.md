@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Owner:** Platform / vendor-integrations
-**Last updated:** 2026-05-04
+**Last updated:** 2026-05-10
 
 ---
 
@@ -24,14 +24,19 @@ This document covers **inbound ingress only**. Outbound calls (we → vendor) an
 
 ---
 
-## 3. Current state (2026-05-04)
+## 3. Current state (2026-05-10)
 
-- Express server in an Azure Container App with **public ingress** (`external: true`, `httpsOnly: true`).
-- Adapter pattern is in place — `VendorAdapter` interface, `AimPortAdapter`, `ClassValuationWebhookAdapter`. Body-shape based dispatch via `canHandleInbound`.
-- Single inbound endpoint: `POST /api/v1/integrations/inbound`.
-- **No edge layer.** APIM module exists in `infrastructure/modules/apim.bicep` but is not wired into `main.bicep` and is not deployed. The Container App FQDN is the public surface.
-- Auth lives entirely inside the adapter (`client_id` from body matches `connection.inboundIdentifier`; `api_key` matches Key Vault secret).
-- Express `express-rate-limit` applies a global 100 req / 15-min / IP cap on `/api/`, with skip() for the Axiom webhook only. AIM-Port's 15-min retry × 2-hour ceiling will trip this on a busy lender.
+- Express server runs in an Azure Container App with **public ingress** (`external: true`, `httpsOnly: true`).
+- Adapter pattern is in place — `VendorAdapter` interface, `AimPortAdapter`, `ClassValuationWebhookAdapter`.
+- Per-vendor inbound routes are live in application code:
+   - `POST /api/v1/integrations/aim-port/inbound`
+   - `POST /api/v1/integrations/class-valuation/inbound`
+- APIM is now wired into [infrastructure/main.bicep](../infrastructure/main.bicep) and the dedicated AIM-Port API resource exists in [infrastructure/modules/apim.bicep](../infrastructure/modules/apim.bicep).
+- AIM-Port APIM policy rewrites to the backend ingress route and stamps `X-APIM-Forwarded: true`.
+- Auth still lives inside the adapter (`client_id` from body matches `connection.inboundIdentifier`; `api_key` matches Key Vault secret).
+- Application code now rejects direct AIM-Port ingress outside `dev` unless `X-APIM-Forwarded: true` is present; Class Valuation still needs the same APIM + header-enforcement rollout.
+- Container App ingress IP allow-listing to APIM / vendor egress ranges is still an infra follow-up.
+- Express `express-rate-limit` now skips `/api/v1/integrations/*`, so vendor retries are not blocked by the generic app-user rate limiter.
 
 ---
 

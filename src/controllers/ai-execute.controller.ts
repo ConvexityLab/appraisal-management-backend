@@ -5,7 +5,9 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import {
   AiActionDispatchError,
   AiActionDispatcherService,
+  type AiActionDispatchResult,
 } from '../services/ai-action-dispatcher.service.js';
+import { AiAuditServerEmitter } from '../services/ai-audit-server.service.js';
 import { safeValidateAiIntentPayload } from '../validators/ai-intent-payloads.validator.js';
 import {
   AI_EXECUTABLE_INTENTS,
@@ -95,6 +97,15 @@ export function createAiExecuteRouter(options: AiExecuteRouterOptions = {}): Rou
   const router = Router();
   const dispatcher = options.dispatcher ??
     (options.dbService ? new AiActionDispatcherService(options.dbService) : undefined);
+  // Phase 17.5 / G3 (2026-05-10) — wire BE-side audit emitter.  Every
+  // /api/ai/execute call produces an audit row stamped source='be-dispatcher'
+  // so /ai-audit can show server-driven dispatches alongside FE-driven ones.
+  // Pre-Phase-17.5 the BE dispatcher had no audit pipeline at all; only the
+  // FE intent registry's emitAiAudit ran.  Future autopilot will reuse
+  // AiAuditServerEmitter directly (source='autopilot').
+  const auditEmitter = options.dbService
+    ? new AiAuditServerEmitter(options.dbService)
+    : undefined;
 
   const handlerMap: AiExecuteHandlerMap = {
     CREATE_ORDER: options.handlers?.CREATE_ORDER ??
@@ -149,7 +160,44 @@ export function createAiExecuteRouter(options: AiExecuteRouterOptions = {}): Rou
       }
 
       const handler = handlerMap[requestBody.intent];
-      const result = await handler(payloadValidation.data, executionContext, requestBody);
+      let result: AiActionDispatchResult;
+      try {
+        result = await handler(payloadValidation.data, executionContext, requestBody);
+      } catch (err) {
+        // Audit the failure before re-throwing so the row exists even
+        // when the catch below surfaces a 500.
+        if (auditEmitter) {
+          await auditEmitter.emit({
+            tenantId: executionContext.tenantId,
+            userId: executionContext.userId,
+            timestamp: new Date().toISOString(),
+            kind: 'intent',
+            name: requestBody.intent,
+            scopes: [],
+            sideEffect: 'write',
+            description: `BE-dispatched intent (failed): ${requestBody.intent}`,
+            success: false,
+            errorMessage: err instanceof Error ? err.message : String(err),
+            source: 'be-dispatcher',
+          });
+        }
+        throw err;
+      }
+      // Phase 17.5 / G3 — success-side audit row.
+      if (auditEmitter) {
+        await auditEmitter.emit({
+          tenantId: executionContext.tenantId,
+          userId: executionContext.userId,
+          timestamp: new Date().toISOString(),
+          kind: 'intent',
+          name: requestBody.intent,
+          scopes: [],
+          sideEffect: 'write',
+          description: `BE-dispatched intent: ${requestBody.intent}`,
+          success: true,
+          source: 'be-dispatcher',
+        });
+      }
 
       return res.status(200).json({
         success: true,

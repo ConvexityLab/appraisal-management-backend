@@ -21,10 +21,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import { UniversalAIService } from './universal-ai.service.js';
+import type { PropertyAddress } from '../types/index.js';
 import type {
   BaseEvent,
   EventHandler,
@@ -38,12 +40,14 @@ export class AIQCGateService {
   private readonly publisher: ServiceBusEventPublisher;
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly dbService: CosmosDbService;
+  private readonly orderContextLoader: OrderContextLoader;
   private readonly tenantConfigService: TenantAutomationConfigService;
   private readonly aiService: UniversalAIService;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
+    this.orderContextLoader = new OrderContextLoader(this.dbService);
     this.publisher = new ServiceBusEventPublisher();
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
@@ -76,6 +80,43 @@ export class AIQCGateService {
     this.logger.info('AIQCGateService stopped');
   }
 
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
+  private async resolveReportPropertyAddress(orderId: string, order: Record<string, any>): Promise<string> {
+    const fallback = this.formatPropertyAddress(order.propertyAddress ?? order.propertyDetails?.fullAddress);
+
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
+      return this.formatPropertyAddress(getPropertyAddress(ctx)) || fallback;
+    } catch (error) {
+      this.logger.warn('AIQCGateService: canonical property lookup failed; using legacy order copy', {
+        orderId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
+  }
+
   // ── Handler ────────────────────────────────────────────────────────────────
 
   private async onOrderStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
@@ -96,13 +137,18 @@ export class AIQCGateService {
     }
 
     // Build the report text from whatever is available on the order document.
+    const resolvedPropertyAddress =
+      order.reportText || order.appraisalReport
+        ? undefined
+        : await this.resolveReportPropertyAddress(orderId, order);
+
     const reportText: string =
       order.reportText ??
       order.appraisalReport ??
       JSON.stringify({
         orderId,
         productType: order.productType ?? order.orderType,
-        propertyAddress: order.propertyAddress ?? order.propertyDetails?.fullAddress,
+        propertyAddress: resolvedPropertyAddress,
         appraisedValue: order.appraisedValue ?? order.estimatedValue,
       });
 

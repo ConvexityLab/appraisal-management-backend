@@ -207,4 +207,90 @@ describe('PolicyEvaluatorService', () => {
     expect(allowed.sql).toBe('1=1');
     expect(denied.sql).toBe('1=0');
   });
+
+  it('reloads cached rules after invalidating the current cache scope', async () => {
+    const rules: PolicyRule[] = [rule({ role: 'manager', resourceType: 'order' })];
+    const queryMock = vi.fn((querySpec: { parameters: Array<{ name: string; value: any }> }) => ({
+      fetchAll: async () => {
+        const params = new Map(querySpec.parameters.map(p => [p.name, p.value]));
+        return {
+          resources: rules.filter(candidate =>
+            candidate.tenantId === params.get('@tenantId')
+            && candidate.role === params.get('@role')
+            && candidate.resourceType === params.get('@resourceType'),
+          ),
+        };
+      },
+    }));
+    const evaluator = new PolicyEvaluatorService({
+      getContainer: vi.fn(() => ({ items: { query: queryMock } })),
+    } as any);
+
+    const profile = makeProfile('manager');
+    const first = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(first.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(1);
+
+    rules.splice(0, rules.length, rule({ role: 'manager', resourceType: 'order', effect: 'deny' }));
+
+    const cached = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(cached.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(1);
+
+    evaluator.invalidateCache(profile.tenantId, profile.role, 'order');
+
+    const reloaded = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(reloaded.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates both old and new cache scopes when a policy changes role or resource type', async () => {
+    const rules: PolicyRule[] = [rule({ role: 'manager', resourceType: 'order' })];
+    const queryMock = vi.fn((querySpec: { parameters: Array<{ name: string; value: any }> }) => ({
+      fetchAll: async () => {
+        const params = new Map(querySpec.parameters.map(p => [p.name, p.value]));
+        return {
+          resources: rules.filter(candidate =>
+            candidate.tenantId === params.get('@tenantId')
+            && candidate.role === params.get('@role')
+            && candidate.resourceType === params.get('@resourceType'),
+          ),
+        };
+      },
+    }));
+    const evaluator = new PolicyEvaluatorService({
+      getContainer: vi.fn(() => ({ items: { query: queryMock } })),
+    } as any);
+
+    const managerProfile = makeProfile('manager');
+    const analystProfile = makeProfile('analyst');
+
+    const managerBefore = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystBefore = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
+
+    expect(managerBefore.sql).toBe('1=1');
+    expect(analystBefore.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
+
+    rules.splice(0, rules.length, rule({ role: 'analyst', resourceType: 'qc_review' }));
+
+    const managerCached = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystCached = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
+
+    expect(managerCached.sql).toBe('1=1');
+    expect(analystCached.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
+
+    evaluator.invalidateRuleChange(
+      { tenantId: TENANT, role: 'manager', resourceType: 'order' },
+      { tenantId: TENANT, role: 'analyst', resourceType: 'qc_review' },
+    );
+
+    const managerAfter = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystAfter = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
+
+    expect(managerAfter.sql).toBe('1=0');
+    expect(analystAfter.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(4);
+  });
 });

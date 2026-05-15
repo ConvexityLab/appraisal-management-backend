@@ -17,15 +17,17 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { EmailNotificationService } from './email-notification.service.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import { SmsNotificationService } from './sms-notification.service.js';
 import { TeamsService } from './teams.service.js';
-import type { Vendor } from '../types/index.js';
+import type { PropertyAddress, Vendor } from '../types/index.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
 
 export class OrderNotificationService {
   private readonly logger: Logger;
   private readonly db: CosmosDbService;
   private readonly email: EmailNotificationService;
+  private readonly orderContextLoader: OrderContextLoader;
   private readonly sms: SmsNotificationService;
   private readonly teams: TeamsService;
 
@@ -33,6 +35,7 @@ export class OrderNotificationService {
     this.logger = new Logger('OrderNotificationService');
     this.db = new CosmosDbService();
     this.email = new EmailNotificationService();
+    this.orderContextLoader = new OrderContextLoader(this.db);
     this.sms = new SmsNotificationService();
     this.teams = new TeamsService();
   }
@@ -44,7 +47,7 @@ export class OrderNotificationService {
    * Sends: email to vendor, SMS to vendor, Teams ops channel post.
    */
   async notifyVendorAssigned(order: VendorOrder): Promise<void> {
-    const { orderId, orderNumber, address } = this.extractOrderInfo(order);
+    const { orderId, orderNumber, address } = await this.extractOrderInfo(order);
 
     if (!order.assignedVendorId) {
       this.logger.warn('notifyVendorAssigned called but order has no assignedVendorId', { orderId });
@@ -84,7 +87,7 @@ export class OrderNotificationService {
    * Sends: email to vendor (if assigned), Teams ops channel post.
    */
   async notifyOrderCancelled(order: VendorOrder): Promise<void> {
-    const { orderId, orderNumber, address } = this.extractOrderInfo(order);
+    const { orderId, orderNumber, address } = await this.extractOrderInfo(order);
 
     const emailSubject = `Order Cancelled — #${orderNumber}`;
     const teamsMessage = this.buildTeamsMessage(
@@ -110,7 +113,7 @@ export class OrderNotificationService {
    * Sends: email to order contact, Teams ops channel post.
    */
   async notifyOrderDelivered(order: VendorOrder): Promise<void> {
-    const { orderId, orderNumber, address } = this.extractOrderInfo(order);
+    const { orderId, orderNumber, address } = await this.extractOrderInfo(order);
 
     const emailSubject = `Appraisal Delivered — Order #${orderNumber}`;
     const teamsMessage = this.buildTeamsMessage(
@@ -133,20 +136,36 @@ export class OrderNotificationService {
 
   // ─── Private helpers ───────────────────────────────────────────────────────
 
-  private extractOrderInfo(order: VendorOrder): {
+  private async extractOrderInfo(order: VendorOrder): Promise<{
     orderId: string;
     orderNumber: string;
     address: string;
-  } {
-    const addr = order.propertyAddress;
-    const address = addr
-      ? `${addr.streetAddress}, ${addr.city}, ${addr.state} ${addr.zipCode}`
-      : 'Unknown address';
+  }> {
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
-      address,
+      address: await this.resolveOrderAddress(order),
     };
+  }
+
+  private async resolveOrderAddress(order: VendorOrder): Promise<string> {
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+      const address = getPropertyAddress(ctx);
+      if (address) {
+        return formatPropertyAddress(address);
+      }
+    } catch (error) {
+      this.logger.warn('Failed to resolve canonical property address for order notification', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return formatPropertyAddress(
+      order.propertyAddress
+      ?? (order as VendorOrder & { propertyDetails?: { fullAddress?: string } }).propertyDetails?.fullAddress,
+    );
   }
 
   private async lookupVendor(vendorId: string, orderId: string): Promise<Vendor | null> {
@@ -305,4 +324,23 @@ export class OrderNotificationService {
 </body>
 </html>`;
   }
+}
+
+function formatPropertyAddress(address?: unknown): string {
+  if (!address) {
+    return 'Unknown address';
+  }
+
+  if (typeof address === 'string') {
+    return address.trim() || 'Unknown address';
+  }
+
+  if (typeof address !== 'object') {
+    return 'Unknown address';
+  }
+
+  const typedAddress = address as Partial<PropertyAddress> & { street?: string; fullAddress?: string };
+  const line1 = [typedAddress.streetAddress ?? typedAddress.street ?? typedAddress.fullAddress].filter(Boolean).join(', ');
+  const line2 = [typedAddress.city, typedAddress.state, typedAddress.zipCode].filter(Boolean).join(', ');
+  return [line1, line2].filter(Boolean).join(', ') || 'Unknown address';
 }

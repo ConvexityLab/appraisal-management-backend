@@ -95,7 +95,7 @@ function buildApp() {
       };
     }
 
-    if (containerName === 'aiInsights' && typeParam === 'canonical-snapshot') {
+    if (containerName === 'canonical-snapshots' && typeParam === 'canonical-snapshot') {
       return {
         success: true,
         data: [

@@ -83,7 +83,6 @@ export class BroadcastBidService {
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         tenantId,
-        propertyAddress: order['propertyAddress'] ?? order['propertyDetails'],
         propertyType: order['productType'] ?? order['orderType'],
         dueDate: order['dueDate'],
         urgency: order['priority'],

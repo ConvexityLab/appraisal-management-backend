@@ -50,9 +50,29 @@ export class VendorEventOutboxService {
     this.db = db ?? new CosmosDbService();
   }
 
+  /**
+   * Persists blob-sync inbound events into the durable vendor-event-outbox.
+   * Identical to persistInboundEvents but accepts the transport string directly
+   * so blob adapters do not need to implement the full VendorAdapter interface.
+   */
+  async persistBlobSyncEvents(
+    connection: VendorConnection,
+    events: VendorDomainEvent[],
+  ): Promise<VendorOutboxDocument[]> {
+    return this.persistInboundEventsWithTransport(connection, 'blob-sync', events);
+  }
+
   async persistInboundEvents(
     connection: VendorConnection,
     adapter: VendorAdapter,
+    events: VendorDomainEvent[],
+  ): Promise<VendorOutboxDocument[]> {
+    return this.persistInboundEventsWithTransport(connection, adapter.inboundTransport, events);
+  }
+
+  private async persistInboundEventsWithTransport(
+    connection: VendorConnection,
+    transport: import('../../types/vendor-integration.types.js').InboundTransport,
     events: VendorDomainEvent[],
   ): Promise<VendorOutboxDocument[]> {
     const receivedAt = new Date().toISOString();
@@ -93,7 +113,7 @@ export class VendorEventOutboxService {
         attemptCount: 0,
         payload: event.payload,
         metadata: {
-          transport: adapter.inboundTransport,
+          transport,
           replayKey,
         },
       };

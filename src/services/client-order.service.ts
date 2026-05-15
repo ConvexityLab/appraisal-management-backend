@@ -62,10 +62,10 @@ export type PlaceClientOrderInput = Partial<Order> & {
   tenantId: string;
   createdBy: string;
   engagementId: string;
-  engagementLoanId: string;
+  engagementPropertyId: string;
   clientId: string;
   productType: ProductType;
-  propertyDetails: PropertyDetails;
+  propertyDetails?: PropertyDetails;
   /** Optional canonical PropertyRecord id; passed through to each VendorOrder. */
   propertyId?: string;
   /** Optional client-facing instructions; copied to each VendorOrder by default. */
@@ -143,14 +143,17 @@ export class ClientOrderConcurrencyError extends Error {
 /** Max etag-conflict retries before giving up. */
 const ADD_VENDOR_ORDERS_MAX_ATTEMPTS = 4;
 
+function hasCanonicalPropertyId(propertyId: string | undefined): propertyId is string {
+  return typeof propertyId === 'string' && propertyId.trim().length > 0;
+}
+
 const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
   'tenantId',
   'createdBy',
   'engagementId',
-  'engagementLoanId',
+  'engagementPropertyId',
   'clientId',
   'productType',
-  'propertyDetails',
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -199,10 +202,14 @@ export class ClientOrderService {
     if (missing.length > 0) {
       throw new InvalidClientOrderInputError(missing as string[]);
     }
+    if (!input.propertyId && !input.propertyDetails) {
+      throw new InvalidClientOrderInputError(['propertyId|propertyDetails']);
+    }
 
     const now = new Date().toISOString();
     const clientOrderId = input.clientOrderId ?? newId();
     const clientOrderNumber = clientOrderId;
+    const persistPropertyDetails = !hasCanonicalPropertyId(input.propertyId);
 
     const clientOrder: ClientOrder = {
       id: clientOrderId,
@@ -211,11 +218,10 @@ export class ClientOrderService {
       clientOrderNumber,
 
       engagementId: input.engagementId,
-      engagementLoanId: input.engagementLoanId,
+      engagementPropertyId: input.engagementPropertyId,
       clientId: input.clientId,
 
       productType: input.productType,
-      propertyDetails: input.propertyDetails,
 
       clientOrderStatus: ClientOrderStatus.PLACED,
       placedAt: now,
@@ -227,6 +233,9 @@ export class ClientOrderService {
       createdBy: input.createdBy,
 
       ...(input.propertyId !== undefined ? { propertyId: input.propertyId } : {}),
+      ...(persistPropertyDetails && input.propertyDetails !== undefined
+        ? { propertyDetails: input.propertyDetails }
+        : {}),
       ...(input.instructions !== undefined ? { instructions: input.instructions } : {}),
       ...(input.priority !== undefined ? { priority: String(input.priority) } : {}),
       ...(input.dueDate !== undefined
@@ -311,7 +320,68 @@ export class ClientOrderService {
     // persisted and is the source of truth.
     await this.publishClientOrderCreated(finalClientOrder);
 
+    // Also publish `engagement.order.created` per child VendorOrder so the
+    // AutoAssignmentOrchestrator (which subscribes only to that event,
+    // matching what the legacy POST /api/orders path emits) can rank
+    // vendors and send bids. Was the gap J16 surfaced — without this,
+    // the new ClientOrder/VendorOrder split skipped auto-assignment.
+    for (const vo of vendorOrders) {
+      await this.publishEngagementOrderCreated(finalClientOrder, vo);
+    }
+
     return { clientOrder: finalClientOrder, vendorOrders };
+  }
+
+  /**
+   * Publish `engagement.order.created` for a single VendorOrder. Mirrors
+   * the shape order.controller.ts emits on the legacy POST /api/orders
+   * path, so AutoAssignmentOrchestrator handles both paths identically.
+   * Publish failures are logged but never rethrown — the VendorOrder is
+   * already persisted.
+   */
+  private async publishEngagementOrderCreated(
+    clientOrder: ClientOrder,
+    vendorOrder: VendorOrder,
+  ): Promise<void> {
+    const propAddr = (clientOrder as unknown as { propertyDetails?: { address?: string; city?: string; state?: string; zipCode?: string } }).propertyDetails;
+    const addrString = propAddr
+      ? [propAddr.address, propAddr.city, propAddr.state, propAddr.zipCode]
+          .filter((s): s is string => typeof s === 'string' && s.length > 0)
+          .join(', ')
+      : '';
+    const event = {
+      id: `eoc-${vendorOrder.id}-${Date.now()}`,
+      type: 'engagement.order.created' as const,
+      timestamp: new Date(),
+      source: 'ClientOrderService',
+      version: '1.0',
+      category: EventCategory.ASSIGNMENT,
+      data: {
+        engagementId: clientOrder.engagementId,
+        orderId: vendorOrder.id,
+        orderNumber: (vendorOrder as unknown as { orderNumber?: string }).orderNumber ?? '',
+        tenantId: clientOrder.tenantId,
+        productType: clientOrder.productType,
+        propertyAddress: addrString,
+        propertyState: propAddr?.state ?? '',
+        clientId: (clientOrder as unknown as { clientId?: string }).clientId ?? '',
+        loanAmount: 0,
+        priority: 'STANDARD' as const,
+        dueDate: (vendorOrder as unknown as { dueDate?: string | Date }).dueDate
+          ? new Date((vendorOrder as unknown as { dueDate: string | Date }).dueDate)
+          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    };
+    try {
+      await this.publisher.publish(event as never);
+    } catch (err) {
+      this.logger.warn('Failed to publish engagement.order.created — VendorOrder already persisted', {
+        vendorOrderId: vendorOrder.id,
+        clientOrderId: clientOrder.id,
+        tenantId: clientOrder.tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -389,11 +459,11 @@ export class ClientOrderService {
       tenantId: parent.tenantId,
       createdBy: parent.createdBy,
       engagementId: parent.engagementId,
-      engagementLoanId: parent.engagementLoanId,
+      engagementPropertyId: parent.engagementPropertyId,
       clientId: parent.clientId,
       productType: parent.productType,
-      propertyDetails: parent.propertyDetails,
       ...(parent.propertyId !== undefined ? { propertyId: parent.propertyId } : {}),
+      ...(parent.propertyDetails !== undefined ? { propertyDetails: parent.propertyDetails } : {}),
       ...(parent.instructions !== undefined ? { instructions: parent.instructions } : {}),
     };
 
@@ -469,23 +539,47 @@ export class ClientOrderService {
       ...vendorPassthrough
     } = placementInput;
 
+    const canonicalPropertyId = hasCanonicalPropertyId(clientOrder.propertyId)
+      ? clientOrder.propertyId
+      : hasCanonicalPropertyId(placementInput.propertyId)
+        ? placementInput.propertyId
+        : undefined;
+    const sanitizedVendorPassthrough = (() => {
+      if (!canonicalPropertyId) {
+        return vendorPassthrough;
+      }
+
+      const { propertyDetails: _propertyDetails, ...withoutPropertyDetails } = vendorPassthrough;
+      return withoutPropertyDetails;
+    })();
+
     const out: VendorOrder[] = [];
     for (const spec of specs) {
       // Slice 8e: route through VendorOrderService (the canonical write path)
       // instead of calling dbService.createOrder directly. Same write, same
       // shape — just owns the discriminator + linkage decisions in one place.
       const vendorOrderInput: CreateVendorOrderInput = {
-        ...vendorPassthrough,
+        ...sanitizedVendorPassthrough,
         status: OrderStatus.NEW,
         tenantId: clientOrder.tenantId,
         clientOrderId: clientOrder.id,
+        // Every VendorOrder must carry the id of its parent EngagementClientOrder
+        // (which is the same doc as the ClientOrder). Required by the
+        // engagement-primacy guard in CosmosDbService.createOrder.
+        engagementClientOrderId: clientOrder.id,
         engagementId: clientOrder.engagementId,
-        engagementLoanId: clientOrder.engagementLoanId,
+        engagementPropertyId: clientOrder.engagementPropertyId,
         clientId: clientOrder.clientId,
-        propertyId: clientOrder.propertyId ?? '',
+        propertyId: canonicalPropertyId ?? '',
         vendorWorkType: spec.vendorWorkType,
         ...(spec.vendorFee !== undefined ? { vendorFee: spec.vendorFee } : {}),
         ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
+        // Phase N4 — stamp the decomposition rule provenance on every
+        // VendorOrder so Decision Engine analytics for the
+        // 'order-decomposition' category can aggregate without joining.
+        ...(spec.decompositionRuleId !== undefined
+          ? { decompositionRuleId: spec.decompositionRuleId }
+          : {}),
       };
 
       const created = await this.vendorOrderService.createVendorOrder(vendorOrderInput);

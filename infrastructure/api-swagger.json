@@ -50,6 +50,72 @@
                                                                      }
                                                    }
                                       },
+                  "/api/v1/integrations/aim-port/inbound":  {
+                                                                  "post":  {
+                                                                               "operationId":  "aimPortInbound",
+                                                                               "summary":  "AIM-Port inbound webhook",
+                                                                               "tags":  [
+                                                                                            "Vendor Integrations"
+                                                                                        ],
+                                                                               "requestBody":  {
+                                                                                                   "required":  true,
+                                                                                                   "content":  {
+                                                                                                                   "application/json":  {
+                                                                                                                                             "schema":  {
+                                                                                                                                                            "type":  "object"
+                                                                                                                                                        }
+                                                                                                                                         }
+                                                                                                               }
+                                                                                               },
+                                                                               "responses":  {
+                                                                                                 "200":  {
+                                                                                                             "description":  "AIM-Port acknowledgment returned"
+                                                                                                         },
+                                                                                                 "400":  {
+                                                                                                             "description":  "Invalid AIM-Port payload"
+                                                                                                         },
+                                                                                                 "401":  {
+                                                                                                             "description":  "AIM-Port authentication failed"
+                                                                                                         },
+                                                                                                 "503":  {
+                                                                                                             "description":  "AIM-Port connection is not configured"
+                                                                                                         }
+                                                                                             }
+                                                                           }
+                                                              },
+                  "/api/v1/integrations/class-valuation/inbound":  {
+                                                                         "post":  {
+                                                                                      "operationId":  "classValuationInbound",
+                                                                                      "summary":  "Class Valuation inbound webhook",
+                                                                                      "tags":  [
+                                                                                                   "Vendor Integrations"
+                                                                                               ],
+                                                                                      "requestBody":  {
+                                                                                                          "required":  true,
+                                                                                                          "content":  {
+                                                                                                                          "application/json":  {
+                                                                                                                                                "schema":  {
+                                                                                                                                                               "type":  "object"
+                                                                                                                                                           }
+                                                                                                                                            }
+                                                                                                                      }
+                                                                                                      },
+                                                                                      "responses":  {
+                                                                                                        "202":  {
+                                                                                                                    "description":  "Class Valuation acknowledgment returned"
+                                                                                                                },
+                                                                                                        "400":  {
+                                                                                                                    "description":  "Invalid Class Valuation payload"
+                                                                                                                },
+                                                                                                        "401":  {
+                                                                                                                    "description":  "Class Valuation authentication failed"
+                                                                                                                },
+                                                                                                        "503":  {
+                                                                                                                    "description":  "Class Valuation connection is not configured"
+                                                                                                                }
+                                                                                                    }
+                                                                                  }
+                                                                     },
                   "/api/property-intelligence/analyze/transportation":  {
                                                                             "post":  {
                                                                                          "operationId":  "analyzeTransportation",

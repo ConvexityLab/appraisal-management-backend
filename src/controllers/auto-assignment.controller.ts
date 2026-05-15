@@ -11,6 +11,7 @@ import { VendorMatchingEngine } from '../services/vendor-matching-engine.service
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service.js';
+import { OrderContextLoader, getLoanInformation, getPropertyAddress } from '../services/order-context-loader.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import {
   loadVendorAndOrderContext,
@@ -26,7 +27,42 @@ import {
 const logger = new Logger();
 const matchingEngine = new VendorMatchingEngine();
 const dbService = new CosmosDbService();
-const publisher = new ServiceBusEventPublisher();
+// Lazily instantiated so it reads USE_MOCK_SERVICE_BUS at first-use time rather
+// than at module load time. Module-level eagerness breaks integration tests that
+// override the flag in beforeAll after the module has already been imported.
+let _publisher: ServiceBusEventPublisher | undefined;
+function getPublisher(): ServiceBusEventPublisher {
+  if (!_publisher) _publisher = new ServiceBusEventPublisher();
+  return _publisher;
+}
+const orderContextLoader = new OrderContextLoader(dbService);
+
+function formatPropertyAddress(address: unknown): string {
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (!address || typeof address !== 'object') {
+    return '';
+  }
+
+  const candidate = address as Record<string, unknown>;
+  const street = typeof candidate['streetAddress'] === 'string'
+    ? candidate['streetAddress']
+    : typeof candidate['street'] === 'string'
+      ? candidate['street']
+      : '';
+  const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+  const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+  const zip = typeof candidate['zipCode'] === 'string'
+    ? candidate['zipCode']
+    : typeof candidate['zip'] === 'string'
+      ? candidate['zip']
+      : '';
+  const locality = [city, state].filter(Boolean).join(', ');
+  const trailing = [locality, zip].filter(Boolean).join(' ');
+  return [street, trailing].filter(Boolean).join(', ');
+}
 
 export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestratorService): Router => {
   const router = express.Router();
@@ -66,12 +102,22 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           });
         }
 
+        let canonicalAddressText = formatPropertyAddress(order.propertyAddress);
+        try {
+          const ctx = await orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+          canonicalAddressText = formatPropertyAddress(getPropertyAddress(ctx)) || canonicalAddressText;
+        } catch (error) {
+          logger.warn('Auto-assignment suggest could not resolve canonical property address; using embedded order copy', {
+            orderId,
+            tenantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         const matchRequest: VendorMatchRequest = {
           orderId,
           tenantId,
-          propertyAddress: order.propertyAddress
-            ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
-            : '',
+          propertyAddress: canonicalAddressText,
           propertyType: order.propertyType || order.productType || 'Standard',
           ...(order.dueDate ? { dueDate: new Date(order.dueDate) } : {}),
           ...(order.urgency || order.priority ? { urgency: order.urgency || order.priority?.toUpperCase() } : {}),
@@ -432,6 +478,24 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           estimatedTurnaround: (bid as any).proposedTurnaround,
           estimatedFee: (bid as any).proposedFee,
           matchReasons: [],
+          explanation: {
+            vendorId: vendorId,
+            scoreComponents: {
+              performance: 0,
+              availability: 0,
+              proximity: 0,
+              experience: 0,
+              cost: 0
+            },
+            ruleResult: {
+              appliedRuleIds: [],
+              denyReasons: [],
+              scoreAdjustment: 0
+            },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: '1.0.0'
+          },
           vendor: {
             id: vendorId,
             name: (bid as any).vendorName,
@@ -588,18 +652,29 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           return res.status(404).json({ success: false, error: 'Order not found' });
         }
 
+        let propertyAddress = formatPropertyAddress(order.propertyAddress);
+        let propertyState = order.propertyAddress?.state ?? '';
+        let loanAmount = order.loanAmount ?? 0;
+        try {
+          const ctx = await orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+          const canonicalAddress = getPropertyAddress(ctx);
+          propertyAddress = formatPropertyAddress(canonicalAddress) || propertyAddress;
+          propertyState = canonicalAddress?.state ?? propertyState;
+          loanAmount = getLoanInformation(ctx)?.loanAmount ?? loanAmount;
+        } catch (error) {
+          logger.warn('Manual vendor trigger could not resolve canonical order context; using embedded order copy', {
+            orderId,
+            tenantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         if (!orchestrator) {
           return res.status(503).json({
             success: false,
             error: 'Auto-assignment orchestrator is not running',
           });
         }
-
-        const propertyAddress = order.propertyAddress
-          ? typeof order.propertyAddress === 'string'
-            ? order.propertyAddress
-            : `${order.propertyAddress.streetAddress ?? ''}, ${order.propertyAddress.city ?? ''}, ${order.propertyAddress.state ?? ''} ${order.propertyAddress.zipCode ?? ''}`.trim()
-          : '';
 
         await orchestrator.triggerVendorAssignment({
           orderId: order.id,
@@ -608,9 +683,9 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           engagementId: order.engagementId ?? '',
           productType: order.productType ?? order.orderType ?? 'FULL_APPRAISAL',
           propertyAddress,
-          propertyState: order.propertyAddress?.state ?? '',
+          propertyState,
           clientId: order.clientId ?? '',
-          loanAmount: order.loanAmount ?? 0,
+          loanAmount,
           priority: order.priority ?? 'STANDARD',
           dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 86400000),
           // Eligibility gates — carried from the order record into the matching engine
@@ -674,7 +749,7 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
         const currentVendor = state.rankedVendors?.[state.currentAttempt];
 
         // Publish event — auto-assignment orchestrator subscribes and advances the FSM
-        await publisher.publish({
+        await getPublisher().publish({
           id: uuidv4(),
           type: 'vendor.bid.declined',
           timestamp: new Date(),
@@ -709,6 +784,144 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
         });
       } catch (error: any) {
         logger.error('Failed to decline vendor bid', error);
+        return next(error);
+      }
+    }
+  );
+
+  /**
+   * POST /api/auto-assignment/orders/:orderId/vendor/accept
+   * Accept the currently active vendor bid, advancing the FSM to ACCEPTED.
+   * Used by the vendor portal, human operators, and integration tests.
+   * Publishes vendor.bid.accepted which the orchestrator's onVendorBidAccepted
+   * handler consumes to finalise the assignment.
+   */
+  router.post(
+    '/orders/:orderId/vendor/accept',
+    [
+      param('orderId').notEmpty().withMessage('orderId is required'),
+    ],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        const { orderId } = req.params as { orderId: string };
+
+        const result = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = result?.data ?? result;
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        const state = order.autoVendorAssignment;
+        if (!state || state.status !== 'PENDING_BID') {
+          return res.status(409).json({
+            success: false,
+            error: 'No active vendor bid to accept',
+            currentStatus: state?.status ?? 'NOT_STARTED',
+          });
+        }
+
+        const currentVendor = state.rankedVendors?.[state.currentAttempt];
+        if (!currentVendor) {
+          return res.status(409).json({
+            success: false,
+            error: 'No vendor in ranked list at current attempt index',
+          });
+        }
+
+        const acceptedAt = new Date();
+        const bidEventPayload = {
+          id: uuidv4(),
+          type: 'vendor.bid.accepted' as const,
+          timestamp: acceptedAt,
+          source: 'auto-assignment-controller',
+          version: '1.0',
+          category: EventCategory.VENDOR as EventCategory.VENDOR,
+          data: {
+            orderId: order.id,
+            orderNumber: order.orderNumber ?? order.id,
+            tenantId,
+            clientId: order.clientId ?? '',
+            vendorId: currentVendor.vendorId,
+            vendorName: currentVendor.vendorName,
+            bidId: state.currentBidId ?? '',
+            acceptedAt,
+            priority: EventPriority.NORMAL,
+          },
+        };
+
+        if (state.broadcastMode) {
+          // Broadcast mode: the orchestrator's onVendorBidAccepted owns the
+          // ACCEPTED transition AND cancels remaining broadcast bids.  Just
+          // publish the event — DO NOT write ACCEPTED to Cosmos here or the
+          // orchestrator will see status===ACCEPTED and skip cancellations.
+          await getPublisher().publish(bidEventPayload);
+
+          logger.info('Vendor bid accepted (broadcast) — orchestrator will finalise', {
+            orderId,
+            vendorId: currentVendor.vendorId,
+            bidId: state.currentBidId,
+          });
+
+          return res.json({
+            success: true,
+            message: 'Vendor bid accepted. Orchestrator finalising broadcast assignment.',
+            data: {
+              vendorId: currentVendor.vendorId,
+              vendorName: currentVendor.vendorName,
+              bidId: state.currentBidId,
+            },
+          });
+        }
+
+        // Sequential mode: orchestrator's onVendorBidAccepted is a no-op here,
+        // so write the ACCEPTED state directly before publishing the event.
+        const acceptedState = {
+          ...state,
+          status: 'ACCEPTED',
+          currentBidId: null,
+          currentBidExpiresAt: null,
+        };
+
+        await dbService.updateItem(
+          'orders',
+          orderId,
+          {
+            ...order,
+            autoVendorAssignment: acceptedState,
+            assignedVendorId: currentVendor.vendorId,
+            assignedVendorName: currentVendor.vendorName,
+            assignedAt: acceptedAt.toISOString(),
+            updatedAt: acceptedAt.toISOString(),
+          },
+          tenantId,
+        );
+
+        await getPublisher().publish(bidEventPayload);
+
+        logger.info('Vendor bid accepted by operator/portal (sequential)', {
+          orderId,
+          vendorId: currentVendor.vendorId,
+          attempt: state.currentAttempt,
+          bidId: state.currentBidId,
+        });
+
+        return res.json({
+          success: true,
+          message: 'Vendor bid accepted. Order assignment finalised.',
+          data: {
+            vendorId: currentVendor.vendorId,
+            vendorName: currentVendor.vendorName,
+            bidId: state.currentBidId,
+          },
+        });
+      } catch (error: any) {
+        logger.error('Failed to accept vendor bid', error);
         return next(error);
       }
     }
@@ -786,7 +999,7 @@ async function updateOrderBroadcastStatus(
 async function notifyVendorOfAssignment(vendorId: string, orderId: string): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidSent(publisher, ctx, orderId, 4, 'auto-assignment.controller');
+  await publishVendorBidSent(getPublisher(), ctx, orderId, 4, 'auto-assignment.controller');
   logger.info('Published vendor.bid.sent for direct assignment', { vendorId, orderId });
 }
 
@@ -797,14 +1010,14 @@ async function notifyVendorOfBroadcast(
 ): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidSent(publisher, ctx, orderId, expirationHours, 'auto-assignment.controller');
+  await publishVendorBidSent(getPublisher(), ctx, orderId, expirationHours, 'auto-assignment.controller');
   logger.info('Published vendor.bid.sent for broadcast', { vendorId, orderId, expirationHours });
 }
 
 async function notifyVendorOfAcceptance(vendorId: string, orderId: string): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidAccepted(publisher, ctx, orderId, 'auto-assignment.controller');
+  await publishVendorBidAccepted(getPublisher(), ctx, orderId, 'auto-assignment.controller');
   logger.info('Published vendor.bid.accepted', { vendorId, orderId });
 }
 

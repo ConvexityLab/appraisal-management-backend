@@ -44,7 +44,7 @@ function baseInput(overrides: Partial<CreateVendorOrderInput> = {}): CreateVendo
     tenantId: 'tenant-a',
     clientOrderId: 'co-1',
     engagementId: 'eng-1',
-    engagementLoanId: 'loan-1',
+    engagementPropertyId: 'loan-1',
     clientId: 'client-1',
     propertyId: 'prop-1',
     vendorWorkType: ProductType.FULL_APPRAISAL as any,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comparable Selection Service
  *
  * Automated two-phase pipeline for selecting the most relevant comparable
@@ -31,9 +31,13 @@ import { PropertyRecordService } from './property-record.service.js';
 import { PropertyDataCacheService } from './property-data-cache.service.js';
 import type { PropertyDataCacheEntry } from './property-data-cache.service.js';
 import { haversineDistanceMiles } from './comparable-sale.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import { Logger } from '../utils/logger.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
+// PropertyRecordType is re-exported as `export type` from the barrel (which
+// strips the runtime enum value). Import the value directly from the sub-path.
+import { PropertyRecordType } from '@l1/shared-types/property-record';
 import type {
   CompSelectionConfig,
   RankingWeights,
@@ -171,6 +175,7 @@ export function mapAttomTypeToRecordType(attomType: string): PropertyRecordType 
 
 export class ComparableSelectionService {
   private readonly logger: Logger;
+  private readonly observationService: PropertyObservationService;
 
   constructor(
     private readonly cosmos: CosmosDbService,
@@ -178,6 +183,7 @@ export class ComparableSelectionService {
     private readonly propertyDataCacheService: PropertyDataCacheService,
   ) {
     this.logger = new Logger('ComparableSelectionService');
+    this.observationService = new PropertyObservationService(cosmos);
   }
 
   // ─── Main entry point ───────────────────────────────────────────────────────
@@ -266,7 +272,9 @@ export class ComparableSelectionService {
   // ─── Subject loading ────────────────────────────────────────────────────────
 
   private async loadSubject(propertyId: string, tenantId: string): Promise<SelectionSubjectSummary> {
-    const record: PropertyRecord = await this.propertyRecordService.getById(propertyId, tenantId);
+    const rawRecord: PropertyRecord = await this.propertyRecordService.getById(propertyId, tenantId);
+    const observations = await this.observationService.listByPropertyId(propertyId, tenantId);
+    const record = materializePropertyRecordHistory(rawRecord, observations);
 
     const lat = record.address.latitude;
     const lng = record.address.longitude;

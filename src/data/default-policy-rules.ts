@@ -25,9 +25,8 @@
  *      here.  These special flags were evaluated before the role switch in
  *      Casbin; they should be migrated to explicit admin-granted PolicyRules
  *      or access-scope PATCH operations.
- *   2. The Casbin engine checked `role === 'qc_analyst'`, which is not in the
- *      `Role` union (`'analyst'` is the canonical value).  These rules use
- *      `'analyst'`.
+ *   2. Older code paths used the legacy alias `qc_analyst`, but the canonical
+ *      `Role` value is `analyst`. These rules use `analyst` only.
  *   3. `supervisor` and `reviewer` have no Casbin rules; they are not seeded
  *      here and will receive `1=0` until explicit rules are added.
  */
@@ -40,7 +39,7 @@ import type { ResourceType } from '../types/authorization.types.js';
 
 const ALL_RESOURCE_TYPES: ResourceType[] = [
   'order', 'client_order', 'vendor_order',
-  'vendor', 'qc_review', 'qc_queue',
+  'vendor', 'access_graph', 'admin_panel', 'ai', 'code', 'qc_review', 'qc_queue',
   'revision', 'escalation', 'analytics',
   'user', 'rov_request', 'arv_analysis',
   'document', 'engagement', 'appraiser',
@@ -141,6 +140,17 @@ export function buildDefaultPolicies(tenantId: string): PolicyRule[] {
     description: 'manager: vendor access by managedVendorIds',
   }));
 
+  // ── Manager: engagement ─────────────────────────────────────────────────────
+  rules.push(rule(tenantId, {
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [{ attribute: 'client.clientId', operator: 'in', userField: 'accessScope.managedClientIds' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager: engagement access by client.clientId',
+  }));
+
   // ── Manager: qc_review ──────────────────────────────────────────────────────
   rules.push(rule(tenantId, {
     role: 'manager',
@@ -152,7 +162,7 @@ export function buildDefaultPolicies(tenantId: string): PolicyRule[] {
     description: 'manager: qc_review access by teamId',
   }));
 
-  // ── Analyst (was qc_analyst): assigned items ────────────────────────────────
+  // ── Analyst: assigned items ────────────────────────────────────────────────
   const analystAssignedResources: ResourceType[] = ['order', 'qc_review', 'revision', 'escalation'];
   for (const rt of analystAssignedResources) {
     rules.push(rule(tenantId, {
@@ -174,6 +184,15 @@ export function buildDefaultPolicies(tenantId: string): PolicyRule[] {
     effect: 'allow',
     priority: 100,
     description: 'analyst: qc_queue always readable',
+  }));
+  rules.push(rule(tenantId, {
+    role: 'analyst',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [{ attribute: 'tenantId', operator: 'in', userField: 'tenantId' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'analyst: engagement access by tenantId',
   }));
 
   // ── Manager: engagement ─────────────────────────────────────────────────────
@@ -243,6 +262,35 @@ export function buildDefaultPolicies(tenantId: string): PolicyRule[] {
       description: `appraiser: ${rt} access when assigned`,
     }));
   }
+  rules.push(rule(tenantId, {
+    role: 'appraiser',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [{ attribute: 'tenantId', operator: 'in', userField: 'tenantId' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'appraiser: engagement access by tenantId',
+  }));
+
+  rules.push(rule(tenantId, {
+    role: 'supervisor',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [{ attribute: 'tenantId', operator: 'in', userField: 'tenantId' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'supervisor: engagement access by tenantId',
+  }));
+
+  rules.push(rule(tenantId, {
+    role: 'reviewer',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [{ attribute: 'tenantId', operator: 'in', userField: 'tenantId' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'reviewer: engagement access by tenantId',
+  }));
 
   return rules;
 }

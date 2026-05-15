@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property Enrichment → AMP Canonical Mapper
  *
  * Projects a `PropertyDataResult` (output of any third-party
@@ -32,7 +32,7 @@ import type {
     CanonicalAddress,
     CanonicalReportDocument,
     CanonicalSubject,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import type {
     PropertyDataCore,
     PropertyDataFlood,

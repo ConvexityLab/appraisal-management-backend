@@ -54,9 +54,9 @@ Stabilize the backend authorization system around one canonical policy source in
 
 ### Phase 3 — Policy storage hygiene
 
-- [ ] Add/update policy management validation so scoped policies can be created for tenant/client/sub-client.
-- [ ] Update default policy seed flow to support scoped seeding without silent defaults.
-- [ ] Review the mixed-use `authorization-policies` container layout and document discriminators/index expectations.
+- [x] Add/update policy management validation so scoped policies can be created for tenant/client/sub-client.
+- [x] Update default policy seed flow to support scoped seeding without silent defaults.
+- [x] Review the mixed-use `authorization-policies` container layout and document discriminators/index expectations.
 
 ### Phase 4 — Capability-source convergence
 
@@ -66,9 +66,9 @@ Stabilize the backend authorization system around one canonical policy source in
 
 ### Phase 5 — Verification
 
-- [ ] Repair stale authorization tests.
-- [ ] Add targeted tests for scoped rule resolution and Cosmos SQL generation.
-- [ ] Run targeted backend tests.
+- [x] Repair stale authorization tests.
+- [x] Add targeted tests for scoped rule resolution and Cosmos SQL generation.
+- [x] Run targeted backend tests.
 - [ ] Run SAST scan on modified backend code.
 
 ## Scope rules for this remediation
@@ -86,3 +86,14 @@ Stabilize the backend authorization system around one canonical policy source in
 - Started Phase 1 and Phase 2 implementation.
 - First code slice covers context propagation, scoped rule lookup, valid Cosmos SQL generation, and order list/search query wiring.
 - Second code slice introduced a shared order-query composition helper and wired dashboard + needs-attention reads through the authorization filter path.
+
+### 2026-05-08
+
+- Implemented strict request validation for `POST /api/policies`, `PUT /api/policies/:id`, and `POST /api/policies/evaluate`, including rejection of forged system-managed fields and malformed conditions.
+- Strengthened `PolicyEvaluatorService` cache invalidation so policy updates that move across `(tenantId, role, resourceType)` scopes evict both the old and new cache keys.
+- Added targeted authorization HTTP tests for policy payload validation and evaluator unit tests for cache invalidation behavior.
+- Integrated default authorization policy seeding into the unified seed orchestrator via `src/scripts/seed/modules/authorization-policies.ts` and aligned the standalone policy-seed script to the same deterministic `seed-policy-*` ID scheme.
+- Ran targeted backend validation:
+   - `pnpm vitest run tests/authorization/policy-management-http.test.ts`
+   - `pnpm vitest run tests/authorization/policy-evaluator-parity.test.ts tests/authorization/policy-management-http.test.ts`
+   - `pnpm exec tsc --noEmit`

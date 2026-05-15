@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CanonicalSnapshotService } from '../../src/services/canonical-snapshot.service.js';
 import type { RunLedgerRecord } from '../../src/types/run-ledger.types.js';
+import { OrderContextLoader } from '../../src/services/order-context-loader.service.js';
+import { PROPERTY_CANONICAL_PROJECTOR_VERSION } from '../../src/mappers/property-canonical-projection.js';
 
 function buildExtractionRun(overrides?: Partial<RunLedgerRecord>): RunLedgerRecord {
   const now = new Date().toISOString();
@@ -36,6 +38,96 @@ function buildExtractionRun(overrides?: Partial<RunLedgerRecord>): RunLedgerReco
 describe('CanonicalSnapshotService merge behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('records a document-extraction observation when property context is available', async () => {
+    vi.spyOn(OrderContextLoader.prototype, 'loadByVendorOrderId').mockResolvedValue({
+      vendorOrder: {
+        id: 'order-001',
+        tenantId: 'tenant-001',
+        propertyId: 'prop-001',
+      },
+      clientOrder: null,
+    } as any);
+
+    const queryItems = vi.fn().mockImplementation(async (container: string) => {
+      if (container === 'documents') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'doc-001',
+              tenantId: 'tenant-001',
+              orderId: 'order-001',
+              uploadedAt: new Date('2026-05-10T00:00:00.000Z'),
+              name: 'doc.pdf',
+              blobUrl: 'https://example/doc.pdf',
+              blobName: 'doc.pdf',
+              fileSize: 12,
+              mimeType: 'application/pdf',
+              version: 1,
+              isLatestVersion: true,
+              uploadedBy: 'user-1',
+              extractedData: { appraisalValue: 500000 },
+            },
+          ],
+        };
+      }
+      if (container === 'property-enrichments') {
+        return { success: true, data: [] };
+      }
+      if (container === 'property-records') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'prop-001',
+              tenantId: 'tenant-001',
+              address: { street: '1 MAIN', city: 'A', state: 'TX', zip: '1' },
+              propertyType: 'single_family_residential',
+              building: { gla: 1, yearBuilt: 1, bedrooms: 1, bathrooms: 1 },
+              taxAssessments: [],
+              permits: [],
+              recordVersion: 1,
+              versionHistory: [],
+              dataSource: 'MANUAL_ENTRY',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              createdBy: 'SYSTEM',
+            },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    const upsertItem = vi.fn().mockResolvedValue({ success: true });
+    const getDocument = vi.fn().mockResolvedValue(null);
+    const createDocument = vi.fn().mockImplementation(async (_container: string, doc: any) => doc);
+    const db = { queryItems, upsertItem, getDocument, createDocument };
+
+    const service = new CanonicalSnapshotService(db as any);
+    await service.createFromExtractionRun(buildExtractionRun());
+
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-observations',
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: 'prop-001',
+        observationType: 'document-extraction',
+        sourceSystem: 'document-extraction',
+        sourceRecordId: 'ext_run_001',
+      }),
+    );
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-event-outbox',
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        eventType: 'property.snapshot.created',
+        aggregateId: 'prop-001',
+        sourceSnapshotId: expect.stringMatching(/^snapshot_/),
+      }),
+    );
   });
 
   it('builds snapshot when enrichment is missing', async () => {
@@ -81,12 +173,19 @@ describe('CanonicalSnapshotService merge behavior', () => {
         sourceRunId: 'ext_run_001',
       }),
     ]);
+    expect(snapshot.projectorVersion).toBe(PROPERTY_CANONICAL_PROJECTOR_VERSION);
+    expect(snapshot.sourceSchemaVersion).toBe('1.0.0');
+    expect(snapshot.sourceRunId).toBe('ext_run_001');
+    expect(snapshot.documentId).toBe('doc-001');
+    expect(snapshot.orderId).toBe('order-001');
     expect(snapshot.normalizedData?.extraction).toMatchObject({ appraisalValue: 510000, qualityScore: 'A' });
     // Slice 8k: subjectProperty / providerData shims are no longer emitted on new
     // snapshots. Readers migrated to canonical paths in slice 8j.
     expect(snapshot.normalizedData?.providerData).toBeUndefined();
     expect(snapshot.normalizedData?.subjectProperty).toBeUndefined();
     expect(snapshot.normalizedData?.provenance).toMatchObject({
+      snapshotProjectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      sourceSchemaVersion: '1.0.0',
       extractionRunId: 'ext_run_001',
       documentId: 'doc-001',
       orderId: 'order-001',
@@ -105,7 +204,7 @@ describe('CanonicalSnapshotService merge behavior', () => {
     );
 
     expect(upsertItem).toHaveBeenCalledTimes(1);
-    expect(upsertItem.mock.calls[0][0]).toBe('aiInsights');
+    expect(upsertItem.mock.calls[0][0]).toBe('canonical-snapshots');
   });
 
   it('builds snapshot when extraction output is missing', async () => {
@@ -221,11 +320,15 @@ describe('CanonicalSnapshotService merge behavior', () => {
     const service = new CanonicalSnapshotService(db as any);
     const snapshot = await service.createFromExtractionRun(buildExtractionRun());
 
-    expect(snapshot.normalizedData?.provenance).toEqual({
+    expect(snapshot.normalizedData?.provenance).toMatchObject({
       extractionRunId: 'ext_run_001',
       documentId: 'doc-001',
       orderId: 'order-001',
       enrichmentId: 'enrich-999',
+      propertyId: 'prop-001',
+      snapshotOrderId: 'order-001',
+      snapshotProjectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      sourceSchemaVersion: '1.0.0',
     });
     expect(snapshot.sourceRefs).toEqual(
       expect.arrayContaining([
@@ -384,8 +487,16 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
 
   it('rebuilds normalizedData from the post-Axiom document and stamps refreshedAt + status=ready', async () => {
     const existing = buildExistingSnapshot();
+    vi.spyOn(OrderContextLoader.prototype, 'loadByVendorOrderId').mockResolvedValue({
+      vendorOrder: {
+        id: 'order-001',
+        tenantId: 'tenant-001',
+        propertyId: 'prop-001',
+      },
+      clientOrder: null,
+    } as any);
     const queryItems = vi.fn().mockImplementation(async (container: string, query: string) => {
-      if (container === 'aiInsights' || query.includes('canonical-snapshot')) {
+      if (container === 'canonical-snapshots' || query.includes('canonical-snapshot')) {
         // First query: getSnapshotById
         return { success: true, data: [existing] };
       }
@@ -408,8 +519,10 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
       return { success: true, data: [] };
     });
     const upsertItem = vi.fn().mockResolvedValue({ success: true });
+    const getDocument = vi.fn().mockResolvedValue(null);
+    const createDocument = vi.fn().mockImplementation(async (_container: string, doc: any) => doc);
 
-    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem, getDocument, createDocument } as any);
     const before = Date.now();
     const result = await service.refreshFromExtractionRun(
       buildExtractionRun({ canonicalSnapshotId: 'snap-001' }),
@@ -418,6 +531,9 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
     expect(result).not.toBeNull();
     expect(result!.id).toBe('snap-001');
     expect(result!.status).toBe('ready');
+    expect(result!.projectorVersion).toBe(PROPERTY_CANONICAL_PROJECTOR_VERSION);
+    expect(result!.sourceSchemaVersion).toBe('1.0.0');
+    expect(result!.sourceRunId).toBe('ext_run_001');
     expect(typeof (result as any).refreshedAt).toBe('string');
     expect(Date.parse((result as any).refreshedAt)).toBeGreaterThanOrEqual(before);
     // normalizedData should reflect the POST-Axiom document state, not the
@@ -432,13 +548,22 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
       id: 'snap-001',
       status: 'ready',
     });
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-event-outbox',
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        eventType: 'property.snapshot.refreshed',
+        aggregateId: 'prop-001',
+        sourceSnapshotId: 'snap-001',
+      }),
+    );
   });
 
   it('returns null and logs (no throw) when the upsert fails — caller in axiom.service.ts must not see a hard error', async () => {
     const existing = buildExistingSnapshot();
     const queryItems = vi.fn().mockImplementation(async (container: string) => {
-      // getSnapshotById queries the aiInsights container (runContainerName)
-      if (container === 'aiInsights') return { success: true, data: [existing] };
+      // getSnapshotById queries the canonical-snapshots container
+      if (container === 'canonical-snapshots') return { success: true, data: [existing] };
       if (container === 'documents') return { success: true, data: [{ id: 'doc-001', tenantId: 'tenant-001' }] };
       return { success: true, data: [] };
     });

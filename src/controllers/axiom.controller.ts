@@ -16,6 +16,8 @@ import { AxiomExecutionService } from '../services/axiom-execution.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
+import { AuditTrailService } from '../services/audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
@@ -56,6 +58,7 @@ import {
   AxiomWebhookValidationError,
   parseAxiomWebhook,
 } from '../integrations/axiom/inbound.adapter.js';
+import { AiAutopilotWebhookDispatcher } from '../services/ai-autopilot-webhook-dispatcher.service.js';
 
 const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion--';
 
@@ -74,6 +77,8 @@ export class AxiomController {
   private readonly criteriaStepInputService: CriteriaStepInputService;
   private readonly analysisSubmissionService: AnalysisSubmissionService;
   private readonly contextLoader: OrderContextLoader;
+  private readonly auditService: AuditTrailService;
+  private readonly autopilotWebhookDispatcher: AiAutopilotWebhookDispatcher;
   private readonly logger = new Logger('AxiomController');
 
   private createHeaderOrGeneratedValue(req: UnifiedAuthRequest, headerName: string, prefix: string): string {
@@ -193,8 +198,8 @@ export class AxiomController {
           {
             ...(document.orderId ? { orderId: document.orderId } : {}),
             ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-            ...(typeof order['engagementLoanId'] === 'string'
-              ? { loanPropertyContextId: order['engagementLoanId'] }
+            ...(typeof order['engagementPropertyId'] === 'string'
+              ? { loanPropertyContextId: order['engagementPropertyId'] }
               : document.orderId
                 ? { loanPropertyContextId: document.orderId }
                 : {}),
@@ -218,8 +223,8 @@ export class AxiomController {
       runReason: 'AUTO_DOCUMENT_EXTRACTION_WEBHOOK',
       engineTarget: 'AXIOM',
       ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
-        ? order['engagementLoanId']
+      loanPropertyContextId: typeof order['engagementPropertyId'] === 'string'
+        ? order['engagementPropertyId']
         : document.orderId,
       ...(extractionSourceIdentity ? { sourceIdentity: extractionSourceIdentity } : {}),
     });
@@ -267,8 +272,8 @@ export class AxiomController {
       ? extendIntakeSourceIdentity(snapshot.sourceIdentity, {
           ...(document.orderId ? { orderId: document.orderId } : {}),
           ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-          ...(typeof order['engagementLoanId'] === 'string'
-            ? { loanPropertyContextId: order['engagementLoanId'] }
+          ...(typeof order['engagementPropertyId'] === 'string'
+            ? { loanPropertyContextId: order['engagementPropertyId'] }
             : document.orderId
               ? { loanPropertyContextId: document.orderId }
               : {}),
@@ -291,8 +296,8 @@ export class AxiomController {
       runMode: 'FULL',
       engineTarget: 'AXIOM',
       ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
-        ? order['engagementLoanId']
+      loanPropertyContextId: typeof order['engagementPropertyId'] === 'string'
+        ? order['engagementPropertyId']
         : document.orderId,
       ...(criteriaSourceIdentity ? { sourceIdentity: criteriaSourceIdentity } : {}),
     });
@@ -382,6 +387,8 @@ export class AxiomController {
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.auditService = new AuditTrailService(dbService);
+    this.autopilotWebhookDispatcher = new AiAutopilotWebhookDispatcher(dbService);
   }
 
   /**
@@ -741,7 +748,7 @@ export class AxiomController {
       // Axiom pipeline payload sees lender-side fields from their proper home.
       let ctx: OrderContext;
       try {
-        ctx = await this.contextLoader.loadByVendorOrderId(notification.orderId);
+        ctx = await this.contextLoader.loadByVendorOrderId(notification.orderId, { includeProperty: true });
       } catch {
         res.status(404).json({
           success: false,
@@ -828,6 +835,11 @@ export class AxiomController {
    * }
    */
   analyzeDocument = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'DOCUMENT_ANALYZE'
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
+    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
+
     try {
       const { documentId, orderId, documentType, evaluationMode, programId, programVersion, forceResubmit } = req.body;
       const normalizedEvaluationMode =
@@ -1210,7 +1222,7 @@ export class AxiomController {
    * Replaces v1 `/api/axiom/analyze` and `/api/axiom/criteria/evaluate`.
    * Body: { programId, programVersion, schemaId? }
    */
-  evaluateScopeV2 = async (req: Request, res: Response): Promise<void> => {
+  evaluateScopeV2 = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { scopeId } = req.params;
       if (!scopeId) {
@@ -1226,6 +1238,37 @@ export class AxiomController {
       const programVersion =
         typeof body.programVersion === 'string' ? body.programVersion : undefined;
       const schemaId = typeof body.schemaId === 'string' ? body.schemaId : undefined;
+      // Pattern B inline extractions. Validated as an array; each entry must
+      // carry at least documentId + documentType — anything else is permissive
+      // (the assembler walks extractedData defensively).
+      const rawExtracted = body.extractedDocuments;
+      let extractedDocuments:
+        | import('../services/axiom/evaluation-envelope-assembler.js').InlineExtractedDocument[]
+        | undefined;
+      if (rawExtracted !== undefined) {
+        if (!Array.isArray(rawExtracted)) {
+          res.status(400).json({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'extractedDocuments must be an array when present' },
+          });
+          return;
+        }
+        for (const d of rawExtracted) {
+          if (!d || typeof d !== 'object'
+            || typeof (d as any).documentId !== 'string'
+            || typeof (d as any).documentType !== 'string') {
+            res.status(400).json({
+              success: false,
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Each extractedDocuments entry must include string documentId and documentType',
+              },
+            });
+            return;
+          }
+        }
+        extractedDocuments = rawExtracted as typeof extractedDocuments;
+      }
 
       if (!programId || !programVersion) {
         res.status(400).json({
@@ -1238,13 +1281,111 @@ export class AxiomController {
         return;
       }
 
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        // Authenticated request without a resolved tenantId is a chain-of-trust
+        // bug — auth middleware should have set req.user.tenantId. Refuse
+        // rather than fall back to an unscoped query.
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'User tenant not resolved — authentication required',
+          },
+        });
+        return;
+      }
+
+      const actor = {
+        tenantId,
+        initiatedBy: req.user?.id ?? req.user?.azureAdObjectId ?? 'unknown-user',
+        correlationId: this.createHeaderOrGeneratedValue(req, 'X-Correlation-Id', 'axiom-evaluate-correlation'),
+        idempotencyKey: this.createHeaderOrGeneratedValue(req, 'Idempotency-Key', 'axiom-evaluate-idempotency'),
+      };
+
       const evaluateInput: Parameters<typeof this.axiomService.evaluateScope>[0] = {
         scopeId,
         programId,
         programVersion,
+        actor,
       };
       if (schemaId !== undefined) evaluateInput.schemaId = schemaId;
+      if (extractedDocuments && extractedDocuments.length > 0) {
+        evaluateInput.extractedDocuments = extractedDocuments;
+      }
       const summary = await this.axiomService.evaluateScope(evaluateInput);
+
+      // Stamp order + write lifecycle event so the FE timeline + order
+      // header reflect Axiom completion. The legacy webhook path does this
+      // for pipeline-style runs; the v2 path is synchronous, so the
+      // controller is the right place to mirror that behaviour.
+      // Failures here are logged but do NOT propagate — the caller already
+      // got the run summary, and orphan-stamping is recoverable separately.
+      const v2RunStatus = summary.status; // 'processing' | 'completed' | 'failed' | 'timed_out'
+      const orderAxiomStatus: 'processing' | 'completed' | 'failed' =
+        v2RunStatus === 'completed' ? 'completed'
+        : v2RunStatus === 'processing' ? 'processing'
+        : 'failed'; // 'failed' and 'timed_out' both map here — Order schema has no 'timed_out' value
+      try {
+        const orderUpdate: Partial<{
+          axiomStatus: 'processing' | 'completed' | 'failed';
+          axiomCompletedAt: string;
+        }> = { axiomStatus: orderAxiomStatus };
+        if (orderAxiomStatus === 'completed' || orderAxiomStatus === 'failed') {
+          orderUpdate.axiomCompletedAt = new Date().toISOString();
+        }
+        await this.dbService.updateOrder(scopeId, orderUpdate);
+      } catch (stampErr) {
+        this.logger.warn('v2 evaluateScope: failed to stamp axiom status on order', {
+          scopeId,
+          error: stampErr instanceof Error ? stampErr.message : String(stampErr),
+        });
+      }
+
+      try {
+        await this.auditService.log({
+          actor: { userId: actor.initiatedBy, role: req.user?.role ?? 'system' },
+          action: AuditEventType.AXIOM_COMPLETED,
+          resource: { type: 'order', id: scopeId },
+          metadata: {
+            entryPoint: 'v2-evaluate',
+            evaluationRunId: summary.evaluationRunId,
+            programId,
+            programVersion,
+            status: v2RunStatus,
+            ...(typeof summary.totalCriteria === 'number' ? { totalCriteria: summary.totalCriteria } : {}),
+            ...(typeof summary.passed === 'number' ? { passed: summary.passed } : {}),
+            ...(typeof summary.failed === 'number' ? { failed: summary.failed } : {}),
+            ...(typeof summary.needsReview === 'number' ? { needsReview: summary.needsReview } : {}),
+            ...(typeof summary.cannotEvaluate === 'number' ? { cannotEvaluate: summary.cannotEvaluate } : {}),
+            ...(typeof summary.notApplicable === 'number' ? { notApplicable: summary.notApplicable } : {}),
+          },
+        });
+      } catch (auditErr) {
+        this.logger.warn('v2 evaluateScope: failed to write AXIOM_COMPLETED audit event', {
+          scopeId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
+
+      // Fire qc.issue.detected events for each fail/warning verdict.  The
+      // QCIssueRecorderService subscribes to that topic and upserts an
+      // aiInsights row per issue, which is what the AI Issues panel reads.
+      // The async pipeline path (fetchAndStorePipelineResults) does this
+      // already; the sync v2-evaluate path was silently leaving the panel
+      // empty for every real fail verdict.  Best-effort — publish failures
+      // are logged but don't block the response.
+      try {
+        await this.axiomService.publishIssuesFromRunResponse(summary, {
+          tenantId,
+          orderId: scopeId,
+        });
+      } catch (publishErr) {
+        this.logger.warn('v2 evaluateScope: failed to publish qc.issue.detected', {
+          scopeId,
+          error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+        });
+      }
 
       res.status(200).json({ success: true, data: summary });
     } catch (error) {
@@ -2000,6 +2141,24 @@ export class AxiomController {
           throw new Error(`Failed to stamp order from webhook for orderId=${correlationId}: ${orderUpdateResult.error ?? 'unknown error'}`);
         }
 
+        // Lifecycle event: register the Axiom completion in audit-trail so the
+        // FE order timeline can render it. Without this, the order quietly
+        // updates its axiomStatus/axiomRiskScore/axiomDecision but the user
+        // sees no trace of "Axiom finished" in the activity panel.
+        await this.auditService.log({
+          actor: { userId: 'axiom-webhook', role: 'system' },
+          action: AuditEventType.AXIOM_COMPLETED,
+          resource: { type: 'order', id: correlationId },
+          metadata: {
+            entryPoint: 'webhook',
+            status,
+            ...(pipelineJobId ? { pipelineJobId } : {}),
+            ...(typeof updateData.axiomRiskScore === 'number' ? { axiomRiskScore: updateData.axiomRiskScore } : {}),
+            ...(updateData.axiomDecision ? { axiomDecision: updateData.axiomDecision } : {}),
+            ...(updateData.axiomFlags ? { axiomFlags: updateData.axiomFlags } : {}),
+          },
+        });
+
         // For completed pipelines, fetch full criteria results and store them in aiInsights.
         // This is the authoritative path — it fires even when the SSE stream was not open
         // (e.g. server restarted between submit and completion).
@@ -2219,6 +2378,27 @@ export class AxiomController {
     try {
       await this.bulkPortfolioService.processExtractionCompletion(payload);
       res.status(200).json({ success: true, message: 'Extraction webhook processed' });
+      // Phase 14 v2 follow-up — fan out to every active autopilot recipe
+      // whose `trigger.webhookSource === 'axiom-extraction'` for the
+      // owning tenant.  Resolve tenant from the job row; if absent, skip
+      // (the primary webhook flow already responded 200, so missing-tenant
+      // is a soft-fail that goes to logs only).
+      try {
+        const tenantId = await this.resolveTenantForBulkJob(payload.jobId);
+        if (tenantId) {
+          await this.autopilotWebhookDispatcher.fire({
+            source: 'axiom-extraction',
+            tenantId,
+            sourceEventId: payload.evaluationId,
+          });
+        }
+      } catch (fanoutErr) {
+        this.logger.warn('Autopilot webhook fan-out failed for extraction event', {
+          evaluationId: payload.evaluationId,
+          jobId: payload.jobId,
+          error: fanoutErr instanceof Error ? fanoutErr.message : String(fanoutErr),
+        });
+      }
     } catch (error) {
       this.logger.error('Failed to process extraction webhook', {
         evaluationId: payload.evaluationId,
@@ -2227,6 +2407,31 @@ export class AxiomController {
         error: error instanceof Error ? error.message : String(error),
       });
       res.status(500).json({ success: false, error: 'Extraction webhook processing failed' });
+    }
+  };
+
+  /**
+   * Resolve the tenant id for a bulk-portfolio job — used by the
+   * autopilot webhook fan-out so we never trust the webhook payload to
+   * declare tenancy.  Returns null on lookup failure.
+   */
+  private resolveTenantForBulkJob = async (jobId: string): Promise<string | null> => {
+    try {
+      const container = this.dbService.getContainer('bulk-portfolio-jobs');
+      const { resources } = await container.items
+        .query<{ tenantId?: string }>({
+          query: 'SELECT TOP 1 c.tenantId FROM c WHERE c.id = @id',
+          parameters: [{ name: '@id', value: jobId }],
+        })
+        .fetchAll();
+      const t = resources[0]?.tenantId;
+      return typeof t === 'string' && t.length > 0 ? t : null;
+    } catch (err) {
+      this.logger.warn('Failed to resolve tenant for bulk job', {
+        jobId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
   };
 

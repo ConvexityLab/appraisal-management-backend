@@ -33,6 +33,8 @@ on:
         required: false
       AXIOM_SUB_CLIENT_ID:
         required: false
+      MOP_SERVICE_AUTH_TOKEN:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -92,6 +94,7 @@ jobs:
     #   BATCHDATA_KEY, GOOGLE_MAPS_API_KEY, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT
     #   GOOGLE_GEMINI_API_KEY, CENSUS_API_KEY, BRIDGE_SERVER_TOKEN, NPS_API_KEY
     #   SAMBANOVA_API_KEY, AZURE_COMMUNICATION_API_KEY
+    #   AIM_PORT_API_KEY                    – Shared secret for AIM Port inbound/outbound integration (written to KV as 'aim-port-api-key')
     env:
       BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -103,12 +106,17 @@ jobs:
       NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
       SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
       AZURE_COMMUNICATION_API_KEY: ${{ secrets.AZURE_COMMUNICATION_API_KEY }}
+      AIM_PORT_API_KEY: ${{ secrets.AIM_PORT_API_KEY }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
       AXIOM_WEBHOOK_SECRET: ${{ secrets.AXIOM_WEBHOOK_SECRET }}
       AXIOM_CLIENT_ID: ${{ secrets.AXIOM_CLIENT_ID }}
       AXIOM_SUB_CLIENT_ID: ${{ secrets.AXIOM_SUB_CLIENT_ID }}
+      # MOP service-to-service auth token — sent as X-Service-Auth from
+      # MopVendorMatchingRulesProvider. Mirror of sentinel KV secret
+      # `sentinel-mop-webhook-secret`; populated as a GH Actions secret.
+      MOP_SERVICE_AUTH_TOKEN: ${{ secrets.MOP_SERVICE_AUTH_TOKEN }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -227,7 +235,12 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+        [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
+        [ -n "$AIM_PORT_API_KEY" ] && PARAM_ARGS+=("aimPortApiKey=$AIM_PORT_API_KEY")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
+        # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("ciServicePrincipalId=$SP_OBJECT_ID")
         # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
         # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         
@@ -261,7 +274,12 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+        [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
+        [ -n "$AIM_PORT_API_KEY" ] && PARAM_ARGS+=("aimPortApiKey=$AIM_PORT_API_KEY")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
+        # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("ciServicePrincipalId=$SP_OBJECT_ID")
         # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
         # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         
@@ -419,13 +437,30 @@ jobs:
         echo "📋 Importing API swagger spec into APIM (spec exceeds Bicep 128 KB limit)..."
         RG="${{ steps.deploy.outputs.resourceGroupName }}"
         SERVICE_URL="${{ steps.deploy.outputs.appServiceUrl }}"
+        SOURCE_SPEC="infrastructure/api-swagger.json"
+        NORMALIZED_SPEC="$RUNNER_TEMP/api-swagger.apim.json"
+
+        if [[ ! -f "$SOURCE_SPEC" ]]; then
+          echo "❌ APIM swagger import failed: spec file not found at $SOURCE_SPEC"
+          exit 1
+        fi
+
+        echo "🧭 Normalizing OpenAPI paths for APIM import..."
+        jq -e '
+          .paths as $paths
+          | if (($paths | keys | all(test("^/api(/|$)"))) | not) then
+              error("api-swagger.json contains non-/api paths; refusing to import into APIM path prefix \"api\".")
+            else
+              .paths |= with_entries(.key |= sub("^/api"; ""))
+            end
+        ' "$SOURCE_SPEC" > "$NORMALIZED_SPEC"
 
         az apim api import \
           --resource-group "$RG" \
           --service-name "$APIM_NAME" \
-          --path '' \
+          --path 'api' \
           --specification-format OpenApiJson \
-          --specification-path infrastructure/api-swagger.json \
+          --specification-path "$NORMALIZED_SPEC" \
           --api-id appraisal-management-api \
           --display-name 'Appraisal Management API' \
           --protocols https \

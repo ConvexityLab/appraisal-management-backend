@@ -3,7 +3,7 @@
  *
  * Hierarchy:
  *   Engagement
- *     └── EngagementLoan
+ *     └── EngagementProperty
  *           └── ClientOrder (see client-order.types.ts)
  *                 └── VendorOrder (this file; many)
  *
@@ -60,12 +60,12 @@ export type VendorWorkType = ProductType;
 export const VENDOR_ORDER_DOC_TYPE = 'vendor-order' as const;
 
 /**
- * Legacy discriminator written by `CosmosDbService.createOrder()` today.
- * Phases 1–3 keep writing this value so all existing read queries
- * (`WHERE c.type = 'order'`) keep working unchanged. Phase 4 migration
- * rewrites every row to `VENDOR_ORDER_DOC_TYPE` and updates the read queries
- * in the same PR. Once that lands, this constant — and the union below —
- * are removed.
+ * @deprecated Pre-rewrite legacy discriminator value. Retained only as a
+ * compile-time constant so existing code that compares `resource.type !==
+ * LEGACY_VENDOR_ORDER_DOC_TYPE` continues to typecheck. New writes use
+ * `VENDOR_ORDER_DOC_TYPE`; reads (`VENDOR_ORDER_TYPE_PREDICATE`) no longer
+ * match the legacy value. Pure-dev cleanup will retire this constant once
+ * every comparison site has been updated.
  */
 export const LEGACY_VENDOR_ORDER_DOC_TYPE = 'order' as const;
 
@@ -73,25 +73,32 @@ export const LEGACY_VENDOR_ORDER_DOC_TYPE = 'order' as const;
 export const VENDOR_ORDERS_CONTAINER = 'orders' as const;
 
 /**
- * SQL predicate fragment that matches BOTH the new VendorOrder discriminator
- * AND the legacy `'order'` value. Use this in any WHERE clause that needs to
- * find VendorOrder rows.
+ * SQL predicate fragment that matches the VendorOrder discriminator.
  *
- * Phase A (today): writes use VENDOR_ORDER_DOC_TYPE. Reads tolerate both so
- * pre-migration rows (`type: 'order'`) remain queryable until they're
- * backfilled. Slice 8j+ retires the legacy half once all rows have been
- * migrated.
+ * Pure-dev cleanup (slice 8j retirement): legacy `type: 'order'` rows have
+ * been retired with the staging re-seed; only `VENDOR_ORDER_DOC_TYPE` is
+ * written and read going forward.
  *
  * Use as: `WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.id = @id`
- *
- * The predicate is hardcoded (not parameterized) because Cosmos query plans
- * cache better with literal predicates than with parameters in IN-style
- * matches, and the values are compile-time constants.
  */
 export const VENDOR_ORDER_TYPE_PREDICATE =
-    `(c.type = '${VENDOR_ORDER_DOC_TYPE}' OR c.type = '${LEGACY_VENDOR_ORDER_DOC_TYPE}')` as const;
+    `c.type = '${VENDOR_ORDER_DOC_TYPE}'` as const;
 
 // ─── Linkage fields (NEW, added by Phase 1 / Phase 4 migration) ─────────────
+
+/**
+ * VendorOrder role within its parent ClientOrder's fan-out.
+ * Per ORDER-DOMAIN-REDESIGN.md §2.1 — a single ClientOrder can decompose into
+ * multiple VendorOrders, each with a distinct role:
+ *   PRIMARY    — the lead vendor doing the main work (e.g., the appraisal)
+ *   SUPPORTING — auxiliary work supporting the primary (e.g., comps)
+ *   QC         — internal staff QC review
+ *   INSPECTION — physical property inspection (replaces InspectionAppointment
+ *                in the unification rollout; scheduling fields move under
+ *                the VendorOrder's scope/metadata)
+ *   REVIEW     — desk/field review of an existing report
+ */
+export type VendorOrderRole = 'PRIMARY' | 'SUPPORTING' | 'QC' | 'INSPECTION' | 'REVIEW';
 
 /**
  * Linkage fields VendorOrder docs gain on top of the existing Order
@@ -99,31 +106,36 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
  * Phase 4 backfills them on historical rows.
  *
  * - clientOrderId         FK to the parent ClientOrder (REQUIRED)
- * - denormalized ancestry: engagementId / engagementLoanId / clientId /
+ * - denormalized ancestry: engagementId / engagementPropertyId / clientId /
  *                          productType / propertyId — set once at client-order
  *                          time, never updated independently of the ClientOrder.
  * - vendorWorkType        what kind of work this VendorOrder represents
  *                          (= productType today).
+ * - role                  optional role within the parent ClientOrder's
+ *                          fan-out (introduced for inspection unification).
  *
- * `engagementId`, `engagementLoanId`, and `propertyId` already exist on
+ * `engagementId`, `engagementPropertyId`, and `propertyId` already exist on
  * Order as optional. They become REQUIRED on VendorOrder.
  */
 export interface VendorOrderLinkage {
-  /**
-   * Discriminator. Target value is `'vendor-order'`; today's writes still
-   * persist `'order'` (see LEGACY_VENDOR_ORDER_DOC_TYPE). Union narrows to
-   * `'vendor-order'` in Phase 4.
-   */
-  type: typeof VENDOR_ORDER_DOC_TYPE | typeof LEGACY_VENDOR_ORDER_DOC_TYPE;
+  /** Discriminator: always `'vendor-order'` (legacy `'order'` retired in slice 8j). */
+  type: typeof VENDOR_ORDER_DOC_TYPE;
   /** Partition key — REQUIRED on VendorOrder (optional on Order for legacy reasons). */
   tenantId: string;
   clientOrderId: string;
   engagementId: string;
-  engagementLoanId: string;
+  engagementPropertyId: string;
   clientId: string;
   productType: ProductType;
   propertyId: string;
   vendorWorkType: VendorWorkType;
+  /**
+   * Role within the parent ClientOrder's fan-out. Optional for back-compat
+   * with VendorOrder docs created before the role taxonomy shipped; new
+   * writes should set it. INSPECTION VendorOrders supersede the legacy
+   * InspectionAppointment doc shape during the inspection-unification rollout.
+   */
+  role?: VendorOrderRole;
   /**
    * Populated once an inspection vendor order is placed via InspectionVendorService.
    * Tracks all vendor-side state, external IDs, and blob storage paths for artifacts.
@@ -141,3 +153,57 @@ export interface VendorOrderLinkage {
  * runtime authority and `VendorOrder` as the target shape.
  */
 export type VendorOrder = Order & VendorOrderLinkage;
+
+// ─── Assignment-level scorecard ──────────────────────────────────────────────
+//
+// Rubric source of truth:
+//   l1-valuation-platform-ui/docs/screens/Appraiser_Scorecard_Definitions.htm
+// FE display constants:
+//   l1-valuation-platform-ui/src/components/vendor-scorecard/vendorScorecardRubric.ts
+//
+// Reviewer scores a VendorOrder once it reaches a terminal state. Scorecards
+// are append-only on the order doc; the latest non-superseded entry is the
+// active rating. The supersedes / supersededBy chain preserves the audit trail
+// without a separate Cosmos container.
+
+export type ScorecardCategoryKey =
+  | 'report'
+  | 'quality'
+  | 'communication'
+  | 'turnTime'
+  | 'professionalism';
+
+export type ScorecardValue = 0 | 1 | 2 | 3 | 4 | 5;
+
+export interface ScorecardCategoryEntry {
+  value: ScorecardValue;
+  /** Reviewer note. Required for 0-4 per comment policy; optional for 5. */
+  comment?: string;
+}
+
+export type ScorecardCategoryScores = Record<ScorecardCategoryKey, ScorecardCategoryEntry>;
+
+export interface VendorOrderScorecardEntry {
+  /** Stable id within the order's scorecards[] array. */
+  id: string;
+  scores: ScorecardCategoryScores;
+  /** Mean of the five category values, 0-5 with two-decimal precision. */
+  overallScore: number;
+  /** Optional reviewer comments that aren't tied to a specific category. */
+  generalComments?: string;
+  /** User who submitted the score. */
+  reviewedBy: string;
+  /** ISO datetime. */
+  reviewedAt: string;
+  /** Id of the entry this one supersedes (re-score case). */
+  supersedes?: string;
+  /** Id of the entry that has superseded this one (set when re-scored). */
+  supersededBy?: string;
+}
+
+export interface AppendVendorOrderScorecardRequest {
+  scores: ScorecardCategoryScores;
+  generalComments?: string;
+  /** Pass the existing scorecard's id when re-scoring; backend wires supersedes. */
+  supersedes?: string;
+}

@@ -45,17 +45,17 @@ Content-Type: application/json
 | Role | Permissions | Access Level |
 |------|-------------|--------------|
 | `admin` | All permissions (`*`) | Full system access |
-| `manager` | `qc_execute`, `qc_manage`, `qc_checklist_manage`, `qc_results_view` | Management operations |
-| `qc_analyst` | `qc_execute`, `qc_manage`, `qc_checklist_manage`, `qc_results_view` | QC operations |
-| `appraiser` | `qc_results_view` | Read-only access |
+| `manager` | `qc_queue:read`, `qc_review:read`, `qc_review:approve`, `qc_review:reject` | Management operations |
+| `analyst` | `qc_queue:read`, `qc_review:read`, `qc_review:create`, `qc_review:update`, `qc_review:execute` | QC operations |
+| `appraiser` | `order:read`, `order:update`, `revision:create`, `escalation:create` | Limited fulfillment access |
 
 ### JWT Token Structure
 ```json
 {
   "id": "user_id",
   "email": "user@example.com", 
-  "role": "qc_analyst",
-  "permissions": ["qc_execute", "qc_manage", "qc_results_view"]
+  "role": "analyst",
+  "permissions": ["qc_queue:read", "qc_review:execute", "revision:create"]
 }
 ```
 

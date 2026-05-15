@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PhotoResolverService
  *
  * Resolves which photos are available for an order and returns a list of
@@ -16,7 +16,7 @@
  */
 
 import { BlobStorageService } from '../blob-storage.service';
-import { ReportPhotoAsset } from '../../types/canonical-schema';
+import { ReportPhotoAsset } from '@l1/shared-types';
 import { ReportSectionConfig } from '../../types/final-report.types';
 
 const ORDERS_CONTAINER = 'orders';

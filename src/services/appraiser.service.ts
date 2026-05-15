@@ -1,6 +1,6 @@
 /**
- * Appraiser Service
- * Manages appraiser profiles, licenses, assignments, and conflict checking
+ * Vendor Service
+ * Manages Vendor profiles, licenses, assignments, and conflict checking
  */
 
 import { CosmosDbService } from './cosmos-db.service.js';
@@ -8,9 +8,11 @@ import { AzureCommunicationService } from './azure-communication.service.js';
 import { SLATrackingService } from './sla-tracking.service.js';
 import { OrderEventService } from './order-event.service.js';
 import { AuditTrailService } from './audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus } from '../types/order-status.js';
-import type { Appraiser, AppraiserAssignment, ConflictCheckResult, License } from '../types/appraiser.types.js';
+import type { Vendor, VendorLicense, AppraiserAssignment, ConflictCheckResult } from '../types/index.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 export class AppraiserService {
   private cosmosService: CosmosDbService;
@@ -23,61 +25,69 @@ export class AppraiserService {
     this.cosmosService = cosmosService || new CosmosDbService();
     this.communicationService = new AzureCommunicationService();
     this.eventService = new OrderEventService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.cosmosService);
     this.logger = new Logger('AppraiserService');
   }
 
   /**
    * Get all appraisers
    */
-  async getAllAppraisers(tenantId: string): Promise<Appraiser[]> {
+  async getAllAppraisers(tenantId: string, authorizationFilter?: QueryFilter): Promise<Vendor[]> {
     this.logger.info('getAllAppraisers called', { tenantId });
     const container = this.cosmosService.getContainer('vendors'); // Appraisers are vendors
+    let sql = 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
+    const parameters: Array<{ name: string; value: any }> = [
+      { name: '@type', value: 'Vendor' },
+      { name: '@tenantId', value: tenantId }
+    ];
+
+    if (authorizationFilter) {
+      sql += ` AND (${authorizationFilter.sql})`;
+      parameters.push(...authorizationFilter.parameters);
+    }
+
     const query = {
-      query: 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId',
-      parameters: [
-        { name: '@type', value: 'appraiser' },
-        { name: '@tenantId', value: tenantId }
-      ]
+      query: sql,
+      parameters,
     };
 
-    this.logger.info('Executing appraiser query', { query: query.query, parameters: query.parameters });
-    const { resources } = await container.items.query<Appraiser>(query).fetchAll();
+    this.logger.info('Executing Vendor query', { query: query.query, parameters: query.parameters });
+    const { resources } = await container.items.query<Vendor>(query).fetchAll();
     this.logger.info('Query results', { count: resources.length, ids: resources.map(r => r.id) });
     return resources;
   }
 
   /**
-   * Get appraiser by ID
+   * Get Vendor by ID
    */
-  async getAppraiserById(appraiserId: string, tenantId: string): Promise<Appraiser | null> {
+  async getAppraiserById(appraiserId: string, tenantId: string): Promise<Vendor | null> {
     try {
       const container = this.cosmosService.getContainer('vendors');
       // Vendors container uses 'licenseState' as partition key
-      // We need to query by id since we don't know the license state
+      // We need to query by id since we don't know the VendorLicense state
       const query = {
         query: 'SELECT * FROM c WHERE c.id = @id AND c.type = @type AND c.tenantId = @tenantId',
         parameters: [
           { name: '@id', value: appraiserId },
-          { name: '@type', value: 'appraiser' },
+          { name: '@type', value: 'Vendor' },
           { name: '@tenantId', value: tenantId }
         ]
       };
       
-      const { resources } = await container.items.query<Appraiser>(query, { maxItemCount: 1 }).fetchAll();
+      const { resources } = await container.items.query<Vendor>(query, { maxItemCount: 1 }).fetchAll();
       
       if (resources.length === 0) {
-        this.logger.info('Appraiser not found', { appraiserId, tenantId });
+        this.logger.info('Vendor not found', { appraiserId, tenantId });
         return null;
       }
       
       return resources[0] || null;
     } catch (error: any) {
       if (error.code === 404) {
-        this.logger.info('Appraiser not found', { appraiserId, tenantId });
+        this.logger.info('Vendor not found', { appraiserId, tenantId });
         return null;
       }
-      this.logger.error('Error getting appraiser', { 
+      this.logger.error('Error getting Vendor', { 
         appraiserId, 
         tenantId,
         error: error.message,
@@ -89,35 +99,35 @@ export class AppraiserService {
   }
 
   /**
-   * Create new appraiser
+   * Create new Vendor
    */
-  async createAppraiser(appraiser: Omit<Appraiser, 'id' | 'createdAt' | 'updatedAt'>): Promise<Appraiser> {
+  async createAppraiser(Vendor: Omit<Vendor, 'id' | 'createdAt' | 'updatedAt'>): Promise<Vendor> {
     const container = this.cosmosService.getContainer('vendors');
     
-    const newAppraiser: Appraiser = {
-      ...appraiser,
-      id: `appraiser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const newAppraiser: Vendor = {
+      ...Vendor,
+      id: `Vendor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
     const { resource } = await container.items.create(newAppraiser);
-    this.logger.info('Appraiser created', { appraiserId: resource?.id });
-    return resource as Appraiser;
+    this.logger.info('Vendor created', { appraiserId: resource?.id });
+    return resource as Vendor;
   }
 
   /**
-   * Update appraiser
+   * Update Vendor
    */
-  async updateAppraiser(appraiserId: string, tenantId: string, updates: Partial<Appraiser>): Promise<Appraiser> {
+  async updateAppraiser(appraiserId: string, tenantId: string, updates: Partial<Vendor>): Promise<Vendor> {
     const container = this.cosmosService.getContainer('vendors');
     const existing = await this.getAppraiserById(appraiserId, tenantId);
     
     if (!existing) {
-      throw new Error(`Appraiser not found: ${appraiserId}`);
+      throw new Error(`Vendor not found: ${appraiserId}`);
     }
 
-    const updated: Appraiser = {
+    const updated: Vendor = {
       ...existing,
       ...updates,
       id: appraiserId,
@@ -127,26 +137,26 @@ export class AppraiserService {
     // Use licenseState partition key (exists in runtime data, not in type definition)
     const partitionKey = (existing as any).licenseState || tenantId;
     const { resource } = await container.item(appraiserId, partitionKey).replace(updated);
-    this.logger.info('Appraiser updated', { appraiserId });
-    return resource as Appraiser;
+    this.logger.info('Vendor updated', { appraiserId });
+    return resource as Vendor;
   }
 
   /**
-   * Check for license expiration
+   * Check for VendorLicense expiration
    */
-  async checkLicenseExpiration(appraiserId: string, tenantId: string): Promise<License[]> {
-    const appraiser = await this.getAppraiserById(appraiserId, tenantId);
-    if (!appraiser) {
-      throw new Error(`Appraiser not found: ${appraiserId}`);
+  async checkLicenseExpiration(appraiserId: string, tenantId: string): Promise<VendorLicense[]> {
+    const Vendor = await this.getAppraiserById(appraiserId, tenantId);
+    if (!Vendor) {
+      throw new Error(`Vendor not found: ${appraiserId}`);
     }
 
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    const expiringLicenses = appraiser.licenses.filter(license => {
-      const expiration = new Date(license.expirationDate);
+    const expiringLicenses = Vendor.licenses?.filter(VendorLicense => {
+      const expiration = new Date(VendorLicense.expirationDate);
       return expiration <= thirtyDaysFromNow && expiration >= now;
-    });
+    }) ?? [];
 
     return expiringLicenses;
   }
@@ -155,15 +165,15 @@ export class AppraiserService {
    * Check for conflict of interest
    */
   async checkConflict(appraiserId: string, tenantId: string, propertyAddress: string, propertyLat?: number, propertyLng?: number): Promise<ConflictCheckResult> {
-    const appraiser = await this.getAppraiserById(appraiserId, tenantId);
-    if (!appraiser) {
-      throw new Error(`Appraiser not found: ${appraiserId}`);
+    const Vendor = await this.getAppraiserById(appraiserId, tenantId);
+    if (!Vendor) {
+      throw new Error(`Vendor not found: ${appraiserId}`);
     }
 
     const conflicts: ConflictCheckResult['conflicts'] = [];
 
     // Check conflict properties
-    for (const conflictProp of appraiser.conflictProperties) {
+    for (const conflictProp of (Vendor.conflictProperties ?? [])) {
       if (conflictProp.address.toLowerCase().includes(propertyAddress.toLowerCase()) ||
           propertyAddress.toLowerCase().includes(conflictProp.address.toLowerCase())) {
         conflicts.push({
@@ -175,16 +185,17 @@ export class AppraiserService {
     }
 
     // If coordinates provided, check distance (10-mile radius)
-    if (propertyLat && propertyLng && appraiser.serviceArea.centerPoint) {
+    const firstServiceArea = (Vendor.serviceAreas as unknown as Array<{ centerPoint?: { lat: number; lng: number } }>)?.[0];
+    if (propertyLat && propertyLng && firstServiceArea?.centerPoint) {
       const distance = this.calculateDistance(
         propertyLat, 
         propertyLng,
-        appraiser.serviceArea.centerPoint.lat,
-        appraiser.serviceArea.centerPoint.lng
+        firstServiceArea.centerPoint.lat,
+        firstServiceArea.centerPoint.lng
       );
 
-      // Check if within appraiser's typical conflict radius (10 miles)
-      for (const conflictProp of appraiser.conflictProperties) {
+      // Check if within Vendor's typical conflict radius (10 miles)
+      for (const conflictProp of (Vendor.conflictProperties ?? [])) {
         if (distance <= conflictProp.radiusMiles) {
           conflicts.push({
             type: 'distance',
@@ -202,13 +213,13 @@ export class AppraiserService {
   }
 
   /**
-   * Assign appraiser to order
+   * Assign Vendor to order
    */
   async assignAppraiser(orderId: string, appraiserId: string, assignedBy: string, tenantId: string, propertyAddress: string): Promise<AppraiserAssignment> {
     // Check for conflicts
     const conflictCheck = await this.checkConflict(appraiserId, tenantId, propertyAddress);
     if (conflictCheck.hasConflict) {
-      throw new Error(`Cannot assign appraiser due to conflict: ${conflictCheck.conflicts.map(c => c.reason).join(', ')}`);
+      throw new Error(`Cannot assign Vendor due to conflict: ${conflictCheck.conflicts.map(c => c.reason).join(', ')}`);
     }
 
     const container = this.cosmosService.getContainer('orders');
@@ -230,18 +241,18 @@ export class AppraiserService {
 
     const { resource } = await container.items.create(assignment);
     
-    // Update appraiser workload
-    const appraiser = await this.getAppraiserById(appraiserId, tenantId);
-    if (appraiser) {
+    // Update Vendor workload
+    const Vendor = await this.getAppraiserById(appraiserId, tenantId);
+    if (Vendor) {
       await this.updateAppraiser(appraiserId, tenantId, {
-        currentWorkload: appraiser.currentWorkload + 1,
+        currentWorkload: (Vendor.currentWorkload ?? 0) + 1,
         lastAssignmentAt: new Date().toISOString()
       });
       
-      // Send notification to appraiser about new assignment
+      // Send notification to Vendor about new assignment
       try {
         const subject = `New Appraisal Assignment - ${propertyAddress}`;
-        const body = `Hello ${appraiser.firstName},
+        const body = `Hello ${Vendor.firstName},
 
 You have been assigned to a new appraisal order.
 
@@ -255,7 +266,7 @@ Thank you,
 Appraisal Management Team`.trim();
         
         // Send email notification
-        if (appraiser.email) {
+        if (Vendor.email) {
           const emailClient = this.communicationService.getEmailClient();
           const emailMessage = {
             senderAddress: this.communicationService.getEmailSenderAddress(),
@@ -265,7 +276,7 @@ Appraisal Management Team`.trim();
               html: body.replace(/\n/g, '<br>')
             },
             recipients: {
-              to: [{ address: appraiser.email }]
+              to: [{ address: Vendor.email }]
             }
           };
           
@@ -274,25 +285,25 @@ Appraisal Management Team`.trim();
           
           this.logger.info('Assignment notification email sent', { 
             appraiserId, 
-            email: appraiser.email,
+            email: Vendor.email,
             assignmentId: resource?.id 
           });
         }
         
         // Send SMS notification
-        if (appraiser.phone && this.communicationService.isSmsConfigured()) {
+        if (Vendor.phone && this.communicationService.isSmsConfigured()) {
           const smsClient = this.communicationService.getSmsClient();
           const smsBody = `New appraisal assignment at ${propertyAddress}. Order: ${assignment.orderNumber}. Please log in to accept.`;
           
           await smsClient.send({
             from: this.communicationService.getSmsSenderNumber(),
-            to: [appraiser.phone],
+            to: [Vendor.phone],
             message: smsBody
           });
           
           this.logger.info('Assignment notification SMS sent', { 
             appraiserId, 
-            phone: appraiser.phone,
+            phone: Vendor.phone,
             assignmentId: resource?.id 
           });
         }
@@ -306,37 +317,37 @@ Appraisal Management Team`.trim();
       }
     }
 
-    this.logger.info('Appraiser assigned', { orderId, appraiserId, assignmentId: resource?.id });
+    this.logger.info('Vendor assigned', { orderId, appraiserId, assignmentId: resource?.id });
     return resource as AppraiserAssignment;
   }
 
   /**
    * Get available appraisers (capacity check)
    */
-  async getAvailableAppraisers(tenantId: string, specialty?: string): Promise<Appraiser[]> {
-    const allAppraisers = await this.getAllAppraisers(tenantId);
+  async getAvailableAppraisers(tenantId: string, specialty?: string, authorizationFilter?: QueryFilter): Promise<Vendor[]> {
+    const allAppraisers = await this.getAllAppraisers(tenantId, authorizationFilter);
     
-    return allAppraisers.filter(appraiser => {
+    return allAppraisers.filter(Vendor => {
       // Must be active and available
-      if (appraiser.status !== 'active' || appraiser.availability === 'on_leave') {
+      if (Vendor.status !== 'active' || Vendor.availability === 'on_leave') {
         return false;
       }
 
       // Must have capacity
-      if (appraiser.currentWorkload >= appraiser.maxCapacity) {
+      if ((Vendor.currentWorkload ?? 0) >= (Vendor.maxCapacity ?? Infinity)) {
         return false;
       }
 
       // Check specialty if specified
-      if (specialty && !appraiser.specialties.includes(specialty as any)) {
+      if (specialty && !Vendor.specialties.includes(specialty as any)) {
         return false;
       }
 
       // Check for expired licenses
-      const hasValidLicense = appraiser.licenses.some(license => {
-        const expiration = new Date(license.expirationDate);
-        return license.status === 'active' && expiration > new Date();
-      });
+      const hasValidLicense = Vendor.licenses?.some(VendorLicense => {
+        const expiration = new Date(VendorLicense.expirationDate);
+        return VendorLicense.status === 'active' && expiration > new Date();
+      }) ?? true; // no licenses defined = not license-gated
 
       return hasValidLicense;
     });
@@ -364,7 +375,7 @@ Appraisal Management Team`.trim();
   }
 
   /**
-   * Get pending assignments for appraiser
+   * Get pending assignments for Vendor
    */
   async getPendingAssignments(appraiserId: string, tenantId: string): Promise<AppraiserAssignment[]> {
     const container = this.cosmosService.getContainer('orders');
@@ -407,7 +418,7 @@ Appraisal Management Team`.trim();
     }
     
     if (assignment.appraiserId !== appraiserId) {
-      throw new Error('Assignment does not belong to this appraiser');
+      throw new Error('Assignment does not belong to this Vendor');
     }
     
     if (assignment.status !== 'pending') {
@@ -457,12 +468,12 @@ Appraisal Management Team`.trim();
           this.logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId: assignment.orderId, error: err }),
         );
         this.auditService.log({
-          actor: { userId: appraiserId, role: 'appraiser' },
-          action: 'order.status_changed',
+          actor: { userId: appraiserId, role: 'Vendor' },
+          action: AuditEventType.STATUS_CHANGED,
           resource: { type: 'order', id: assignment.orderId },
           before: { status: previousStatus },
           after: { status: 'ACCEPTED' },
-          metadata: { source: 'appraiser-assignment-accept', assignmentId, notes },
+          metadata: { source: 'Vendor-assignment-accept', assignmentId, notes },
         }).catch((err) =>
           this.logger.error('Failed to write audit log for assignment acceptance', { orderId: assignment.orderId, error: err }),
         );
@@ -496,7 +507,7 @@ Appraisal Management Team`.trim();
               proposedTerms: {
                 fee: order.fee || 0,
                 dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
-                notes: notes || 'Assignment accepted via appraiser portal'
+                notes: notes || 'Assignment accepted via Vendor portal'
               }
             }],
             maxRounds: 3,
@@ -543,9 +554,9 @@ Appraisal Management Team`.trim();
     
     // Send notification to vendor/AMC about acceptance
     try {
-      const appraiser = await this.getAppraiserById(appraiserId, tenantId);
+      const Vendor = await this.getAppraiserById(appraiserId, tenantId);
       
-      if (appraiser) {
+      if (Vendor) {
         // Get order details to find vendor
         const ordersContainer = this.cosmosService.getContainer('orders');
         const { resource: order } = await ordersContainer.item(assignment.orderId, tenantId).read();
@@ -564,8 +575,8 @@ Appraisal Management Team`.trim();
           const vendor = vendors[0];
           
           if (vendor && vendor.email) {
-            const subject = `Appraiser Accepted Assignment - ${assignment.propertyAddress}`;
-            const body = `The appraiser ${appraiser.firstName} ${appraiser.lastName} has accepted the assignment for:
+            const subject = `Vendor Accepted Assignment - ${assignment.propertyAddress}`;
+            const body = `The Vendor ${Vendor.firstName} ${Vendor.lastName} has accepted the assignment for:
 
 Order Number: ${assignment.orderNumber}
 Property Address: ${assignment.propertyAddress}
@@ -630,7 +641,7 @@ Appraisal Management Team`.trim();
     }
     
     if (assignment.appraiserId !== appraiserId) {
-      throw new Error('Assignment does not belong to this appraiser');
+      throw new Error('Assignment does not belong to this Vendor');
     }
     
     if (assignment.status !== 'pending') {
@@ -648,11 +659,11 @@ Appraisal Management Team`.trim();
     
     const { resource } = await container.item(assignmentId, tenantId).replace(updatedAssignment);
     
-    // Decrement appraiser workload
-    const appraiser = await this.getAppraiserById(appraiserId, tenantId);
-    if (appraiser && appraiser.currentWorkload > 0) {
+    // Decrement Vendor workload
+    const Vendor = await this.getAppraiserById(appraiserId, tenantId);
+    if (Vendor && (Vendor.currentWorkload ?? 0) > 0) {
       await this.updateAppraiser(appraiserId, tenantId, {
-        currentWorkload: appraiser.currentWorkload - 1
+        currentWorkload: (Vendor.currentWorkload ?? 1) - 1
       });
     }
     
@@ -734,7 +745,7 @@ Appraisal Management Team`.trim();
     
     // Send notification to vendor/AMC about rejection (needs reassignment)
     try {
-      if (appraiser) {
+      if (Vendor) {
         // Get order details to find vendor
         const ordersContainer = this.cosmosService.getContainer('orders');
         const { resource: order } = await ordersContainer.item(assignment.orderId, tenantId).read();
@@ -753,15 +764,15 @@ Appraisal Management Team`.trim();
           const vendor = vendors[0];
           
           if (vendor && vendor.email) {
-            const subject = `Appraiser Declined Assignment - ${assignment.propertyAddress}`;
-            const body = `The appraiser ${appraiser.firstName} ${appraiser.lastName} has declined the assignment for:
+            const subject = `Vendor Declined Assignment - ${assignment.propertyAddress}`;
+            const body = `The Vendor ${Vendor.firstName} ${Vendor.lastName} has declined the assignment for:
 
 Order Number: ${assignment.orderNumber}
 Property Address: ${assignment.propertyAddress}
 Declined At: ${new Date().toLocaleString()}
 Reason: ${reason}
 
-A different appraiser needs to be assigned to this order.
+A different Vendor needs to be assigned to this order.
 
 Thank you,
 Appraisal Management Team`.trim();

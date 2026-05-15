@@ -20,6 +20,7 @@ const {
   mockGetStepInputSliceById,
   mockGetLatestStepInputSliceForRun,
   mockListRuns,
+  mockGetConfig,
 } = vi.hoisted(() => ({
   mockCreateExtractionRun: vi.fn(),
   mockCreateCriteriaRun: vi.fn(),
@@ -38,6 +39,7 @@ const {
   mockGetStepInputSliceById: vi.fn(),
   mockGetLatestStepInputSliceForRun: vi.fn(),
   mockListRuns: vi.fn(),
+  mockGetConfig: vi.fn(),
 }));
 
 vi.mock('../../src/services/run-ledger.service.js', () => ({
@@ -91,12 +93,14 @@ vi.mock('../../src/services/cosmos-db.service.js', () => ({
   CosmosDbService: vi.fn().mockImplementation(() => ({
     getItem: vi.fn().mockResolvedValue({ success: true, data: { id: 'doc-1', blobName: 'orders/doc-1/report.pdf', name: 'report.pdf' } }),
     queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    getContainer: vi.fn().mockReturnValue({}),
+    findOrderById: vi.fn().mockResolvedValue({ success: false, data: null }),
   })),
 }));
 
 vi.mock('../../src/services/tenant-automation-config.service.js', () => ({
   TenantAutomationConfigService: vi.fn().mockImplementation(() => ({
-    getConfig: vi.fn().mockResolvedValue({ axiomPipelineIdExtraction: 'adaptive-document-processing', axiomPipelineIdCriteria: 'smart-criteria-evaluation', axiomPipelineIdComplete: 'complete-document-criteria-evaluation' }),
+    getConfig: mockGetConfig,
   })),
 }));
 
@@ -116,15 +120,20 @@ function buildApp() {
     };
     next();
   });
-  // Use the mocked CosmosDbService so AnalysisSubmissionService.loadDocumentById
-  // (called via resolveSubmissionSourceIdentity) gets a working queryItems.
-  app.use('/api/runs', createRunsRouter(new CosmosDbService() as any));
+  // Mocked CosmosDbService — AnalysisSubmissionService.loadDocumentById
+  // (called via resolveSubmissionSourceIdentity) gets the mock's queryItems.
+  app.use('/api/runs', createRunsRouter(dbService));
   return app;
 }
 
 describe('RunsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetConfig.mockResolvedValue({
+      axiomPipelineIdExtraction: 'adaptive-document-processing',
+      axiomPipelineIdCriteria: 'smart-criteria-evaluation',
+      axiomPipelineIdComplete: 'complete-document-criteria-evaluation',
+    });
   });
 
   it('returns 400 when Idempotency-Key is missing', async () => {

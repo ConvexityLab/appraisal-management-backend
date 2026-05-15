@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WIPBoardService } from '../src/services/wip-board.service';
 
-function createMockDbService(orders: any[] = []) {
+function createMockDbService(orders: any[] = [], clientOrders: any[] = [], propertyRecords: any[] = []) {
   const mockContainer = {
     items: {
       query: vi.fn().mockReturnValue({
@@ -14,6 +14,15 @@ function createMockDbService(orders: any[] = []) {
   };
   return {
     ordersContainer: mockContainer,
+    queryDocuments: vi.fn().mockImplementation((containerName: string) => {
+      if (containerName === 'client-orders') {
+        return Promise.resolve(clientOrders);
+      }
+      if (containerName === 'property-records') {
+        return Promise.resolve(propertyRecords);
+      }
+      return Promise.resolve([]);
+    }),
     _mockContainer: mockContainer,
   } as any;
 }
@@ -31,11 +40,11 @@ describe('WIPBoardService', () => {
 
     it('should categorize orders into correct columns', async () => {
       const orders = [
-        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyAddress: '123 Main', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '2', orderNumber: 'ORD-2', status: 'ASSIGNED', propertyAddress: '456 Oak', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '3', orderNumber: 'ORD-3', status: 'IN_PROGRESS', propertyAddress: '789 Pine', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '4', orderNumber: 'ORD-4', status: 'QC_REVIEW', propertyAddress: '101 Elm', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '5', orderNumber: 'ORD-5', status: 'COMPLETED', propertyAddress: '202 Birch', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '1', orderNumber: 'ORD-1', status: 'NEW', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '2', orderNumber: 'ORD-2', status: 'ASSIGNED', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '3', orderNumber: 'ORD-3', status: 'IN_PROGRESS', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '4', orderNumber: 'ORD-4', status: 'QC_REVIEW', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '5', orderNumber: 'ORD-5', status: 'COMPLETED', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
       ];
       const dbService = createMockDbService(orders);
       const service = new WIPBoardService(dbService);
@@ -67,12 +76,20 @@ describe('WIPBoardService', () => {
       expect(board.overdueOrders).toBe(1);
     });
 
-    it('should filter by search term', async () => {
+    it('should filter by search term using canonical property-record address', async () => {
       const orders = [
-        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyAddress: '123 Main St', borrowerName: 'Smith', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '2', orderNumber: 'ORD-2', status: 'NEW', propertyAddress: '456 Oak Ave', borrowerName: 'Jones', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyId: 'prop-1', clientOrderId: 'co-1', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '2', orderNumber: 'ORD-2', status: 'NEW', propertyId: 'prop-2', clientOrderId: 'co-2', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
       ];
-      const dbService = createMockDbService(orders);
+      const clientOrders = [
+        { id: 'co-1', propertyId: 'prop-1', propertyAddress: { streetAddress: '123 Main St', city: 'Austin', state: 'TX', zipCode: '78701' } },
+        { id: 'co-2', propertyId: 'prop-2', propertyAddress: { streetAddress: '456 Oak Ave', city: 'Dallas', state: 'TX', zipCode: '75201' } },
+      ];
+      const propertyRecords = [
+        { id: 'prop-1', address: { street: '123 Main St', city: 'Austin', state: 'TX', zip: '78701' } },
+        { id: 'prop-2', address: { street: '456 Oak Ave', city: 'Dallas', state: 'TX', zip: '75201' } },
+      ];
+      const dbService = createMockDbService(orders, clientOrders, propertyRecords);
       const service = new WIPBoardService(dbService);
       const board = await service.getBoard('tenant-1', { searchTerm: 'oak' });
 
@@ -104,6 +121,45 @@ describe('WIPBoardService', () => {
 
       expect(board.recentlyUpdated).toBe(1);
     });
+
+    it('resolves board addresses from canonical property records instead of embedded vendor-order fields', async () => {
+      const orders = [
+        {
+          id: '1',
+          orderNumber: 'ORD-1',
+          status: 'NEW',
+          propertyId: 'prop-1',
+          clientOrderId: 'co-1',
+          updatedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      const clientOrders = [
+        {
+          id: 'co-1',
+          propertyId: 'prop-1',
+          propertyAddress: { streetAddress: '123 Client Cache St', city: 'Austin', state: 'TX', zipCode: '78701' },
+        },
+      ];
+      const propertyRecords = [
+        {
+          id: 'prop-1',
+          address: { street: '123 Canonical Main St', city: 'Austin', state: 'TX', zip: '78701' },
+        },
+      ];
+
+      const dbService = createMockDbService(orders, clientOrders, propertyRecords);
+      const service = new WIPBoardService(dbService);
+      const board = await service.getBoard('tenant-1', { searchTerm: 'canonical' });
+
+      expect(board.totalOrders).toBe(1);
+      expect(board.columns[0]?.orders[0]?.propertyAddress).toBe('123 Canonical Main St');
+      expect(dbService.queryDocuments).toHaveBeenCalledWith(
+        'property-records',
+        expect.stringContaining('ARRAY_CONTAINS(@propertyIds, c.id)'),
+        expect.any(Array),
+      );
+    });
   });
 
   describe('getColumnOrders', () => {
@@ -112,6 +168,40 @@ describe('WIPBoardService', () => {
       const service = new WIPBoardService(dbService);
       const orders = await service.getColumnOrders('tenant-1', 'intake');
       expect(orders).toEqual([]);
+    });
+
+    it('resolves column order addresses from client-order/property joins when vendor orders lack embedded address fields', async () => {
+      const orders = [
+        {
+          id: '1',
+          orderNumber: 'ORD-1',
+          status: 'NEW',
+          propertyId: 'prop-1',
+          clientOrderId: 'co-1',
+          updatedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      const clientOrders = [
+        {
+          id: 'co-1',
+          propertyId: 'prop-1',
+          propertyAddress: { streetAddress: '123 Client Cache St', city: 'Austin', state: 'TX', zipCode: '78701' },
+        },
+      ];
+      const propertyRecords = [
+        {
+          id: 'prop-1',
+          address: { street: '123 Canonical Main St', city: 'Austin', state: 'TX', zip: '78701' },
+        },
+      ];
+
+      const dbService = createMockDbService(orders, clientOrders, propertyRecords);
+      const service = new WIPBoardService(dbService);
+      const result = await service.getColumnOrders('tenant-1', 'intake');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.propertyAddress).toBe('123 Canonical Main St');
     });
   });
 });

@@ -33,8 +33,14 @@ function makeOrder(overrides: Record<string, any> = {}) {
   };
 }
 
-function makeMockDbService(orders: any[] = []) {
+function makeMockDbService(orders: any[] = [], propertyRecords: any[] = []) {
   return {
+    queryDocuments: vi.fn().mockImplementation((containerName: string) => {
+      if (containerName === 'property-records') {
+        return Promise.resolve(propertyRecords);
+      }
+      return Promise.resolve([]);
+    }),
     ordersContainer: {
       items: {
         query: vi.fn().mockReturnValue({
@@ -210,6 +216,7 @@ describe('DuplicateOrderDetectionService', () => {
 
     it('does not throw on DB error (advisory only)', async () => {
       const db = {
+        queryDocuments: vi.fn().mockResolvedValue([]),
         ordersContainer: {
           items: {
             query: vi.fn().mockReturnValue({
@@ -223,6 +230,43 @@ describe('DuplicateOrderDetectionService', () => {
       const result = await service.checkForDuplicates(baseRequest);
       expect(result.hasPotentialDuplicates).toBe(false);
       expect(result.matches).toHaveLength(0);
+    });
+
+    it('prefers canonical propertyId narrowing when the address resolves to a PropertyRecord', async () => {
+      const propertyRecord = {
+        id: 'prop-123',
+        tenantId: 'tenant-1',
+        address: {
+          street: '123 Main Street',
+          city: 'Austin',
+          state: 'TX',
+          zip: '78701',
+        },
+      };
+
+      const existing = makeOrder({
+        id: 'order-777',
+        orderNumber: 'ORD-777',
+        propertyId: 'prop-123',
+        propertyAddress: undefined,
+        borrowerInformation: { firstName: 'Bob', lastName: 'Jones' },
+      });
+
+      const db = makeMockDbService([existing], [propertyRecord]);
+      service = new DuplicateOrderDetectionService(db);
+
+      const result = await service.checkForDuplicates(baseRequest);
+
+      expect(result.hasPotentialDuplicates).toBe(true);
+      expect(result.matches).toHaveLength(1);
+      expect(result.matches[0].propertyAddress).toBe('123 Main Street, Austin, TX, 78701');
+
+      const queryArg = db.ordersContainer.items.query.mock.calls[0][0];
+      expect(queryArg.query).toContain('c.propertyId = @propertyId');
+      expect(queryArg.query).not.toContain('c.propertyAddress.state = @state');
+      expect(queryArg.parameters).toEqual(
+        expect.arrayContaining([{ name: '@propertyId', value: 'prop-123' }]),
+      );
     });
   });
 });

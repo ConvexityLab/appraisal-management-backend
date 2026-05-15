@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Transaction-history → Canonical mapper
  *
  * Builds CanonicalTransactionHistory for the SUBJECT property — prior sales
@@ -22,7 +22,7 @@ import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type {
     CanonicalPriorTransfer,
     CanonicalTransactionHistory,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 
 function n(v: unknown): number | null {
     if (v == null) return null;

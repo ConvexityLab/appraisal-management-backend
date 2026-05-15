@@ -103,7 +103,7 @@ export class QCLifecycleHandler {
       // when the VendorOrder doesn't carry it.
       let ctx;
       try {
-        ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+        ctx = await this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
       } catch {
         this.logger.warn('Q-01: order not found — cannot add to QC queue', { orderId });
         return;
@@ -115,17 +115,6 @@ export class QCLifecycleHandler {
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         appraisalId: order.appraisalId ?? orderId,
-        propertyAddress:
-          typeof addr === 'string'
-            ? addr
-            : [
-                addr?.streetAddress,
-                addr?.city,
-                addr?.state,
-                addr?.zipCode,
-              ]
-                .filter(Boolean)
-                .join(', '),
         appraisedValue: order.appraisedValue ?? 0,
         orderPriority: order.priority ?? 'STANDARD',
         clientId: order.clientId ?? 'unknown',

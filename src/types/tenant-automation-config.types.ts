@@ -238,6 +238,37 @@ export interface ClientAutomationConfig {
    */
   axiomDefaultCriteriaStepKeys?: string[];
 
+  // ── Review program triggers (Phase K of DECISION_ENGINE_RULES_SURFACE.md) ─
+  //
+  // Controls which order-creation paths automatically run a review-program
+  // evaluation. Today review-program eval only fires on bulk-portfolio
+  // upload — these flags extend it to every order created on the platform.
+  //
+  // Per-tenant defaults; engagement-level overrides (engagement.reviewProgramId)
+  // take precedence when set.
+
+  /**
+   * When true, every `engagement.order.created` event with this tenant
+   * triggers a review-program evaluation against `reviewProgramIdForOrders`
+   * (or the engagement's `reviewProgramId` when present).
+   * @default false — operators opt in once they've authored a program.
+   */
+  reviewProgramOnOrderCreated?: boolean;
+
+  /**
+   * When true, runs review-program evaluation again after a document upload
+   * completes (re-evaluates with fresher extracted fields).
+   * @default false
+   */
+  reviewProgramOnDocumentUploaded?: boolean;
+
+  /**
+   * Default ReviewProgram id to evaluate against when no engagement-level
+   * `reviewProgramId` is set. When undefined and the engagement also has
+   * none, the trigger is skipped (warn log; no decision recorded).
+   */
+  reviewProgramIdForOrders?: string;
+
   // ── Metadata ──────────────────────────────────────────────────────────────
 
   updatedAt: string; // ISO
@@ -278,6 +309,10 @@ export const DEFAULT_CLIENT_AUTOMATION_CONFIG: Omit<
   requireSignedLetterBeforeProgress: false,
   axiomAutoTrigger: true,
   axiomTimeoutMinutes: 10,
+  // Phase K defaults — off so tenants without authored programs aren't
+  // surprised by review-program traces they didn't enable.
+  reviewProgramOnOrderCreated: false,
+  reviewProgramOnDocumentUploaded: false,
   entityType: 'client-config',
 };
 

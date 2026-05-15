@@ -21,6 +21,10 @@ vi.mock('../../src/services/blob-storage.service.js', () => ({
   })),
 }));
 
+vi.mock('../../src/services/axiom-execution.service.js', () => ({
+  AxiomExecutionService: vi.fn().mockImplementation(() => ({})),
+}));
+
 import { AnalysisSubmissionService } from '../../src/services/analysis-submission.service.js';
 import { EventCategory } from '../../src/types/events.js';
 import {

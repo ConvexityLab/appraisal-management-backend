@@ -20,6 +20,7 @@ import {
   type DecompositionRule,
 } from '../src/types/decomposition-rule.types';
 import { ProductType } from '../src/types/product-catalog';
+import type { AuthorizationMiddleware } from '../src/middleware/authorization.middleware';
 
 // ── Mock Cosmos ─────────────────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ function makeMockDb(): MockDb {
   return { db, coStore, vendorOrders, ruleStore, createdCalls, replacedCalls };
 }
 
-function makeApp(mock: MockDb) {
+function makeApp(mock: MockDb, authzMiddleware?: Partial<AuthorizationMiddleware>) {
   const app = express();
   app.use(express.json());
   // Inject a mock authenticated user — controller reads tenantId/id from req.user.
@@ -130,14 +131,35 @@ function makeApp(mock: MockDb) {
     };
     next();
   });
-  const controller = new ClientOrderController(mock.db);
+  const controller = new ClientOrderController(mock.db, authzMiddleware as AuthorizationMiddleware | undefined);
   app.use('/api/client-orders', controller.router);
   return app;
 }
 
+function makeAuthzStub(overrides?: {
+  authorize?: (resourceType: string, action: string) => any;
+  authorizeResource?: (resourceType: string, action: string, options?: any) => any;
+}) {
+  return {
+    loadUserProfile: () => (req: any, _res: Response, next: NextFunction) => {
+      req.userProfile = {
+        id: req.user.id,
+        email: req.user.email,
+        role: 'manager',
+        tenantId: req.user.tenantId,
+      };
+      next();
+    },
+    authorize: overrides?.authorize ?? (() => (_req: any, _res: Response, next: NextFunction) => next()),
+    authorizeResource:
+      overrides?.authorizeResource ??
+      (() => (_req: any, _res: Response, next: NextFunction) => next()),
+  } satisfies Partial<AuthorizationMiddleware>;
+}
+
 const validBody = () => ({
   engagementId: 'eng-1',
-  engagementLoanId: 'loan-1',
+  engagementPropertyId: 'loan-1',
   clientId: 'client-1',
   productType: ProductType.FULL_APPRAISAL,
   propertyDetails: {
@@ -327,5 +349,21 @@ describe('POST /api/client-orders/:id/vendor-orders', () => {
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('ClientOrderController authorization', () => {
+  it('blocks GET /:clientOrderId when authorizeResource denies access', async () => {
+    const mock = makeMockDb();
+    const authz = makeAuthzStub({
+      authorizeResource: () => (_req: any, res: Response) => {
+        res.status(403).json({ code: 'AUTHORIZATION_DENIED' });
+      },
+    });
+    const app = makeApp(mock, authz);
+
+    const res = await request(app).get('/api/client-orders/co-123');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 });

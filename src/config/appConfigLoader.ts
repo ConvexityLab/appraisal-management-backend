@@ -33,6 +33,14 @@ const KEY_TO_ENV: Record<string, string> = {
   'services.openai.endpoint': 'AZURE_OPENAI_ENDPOINT',
   'services.openai.deployment': 'AZURE_OPENAI_DEPLOYMENT',
   'services.openai.model-name': 'AZURE_OPENAI_MODEL_NAME',
+  // Phase 17b token-meter (2026-05-11): per-1k-token rates + per-tenant
+  // budget ceilings.  Override per environment via App Config push so
+  // the values are tenant-tunable without a redeploy.
+  'services.openai.cost-per-1k-input-usd': 'AZURE_OPENAI_COST_PER_1K_INPUT_USD',
+  'services.openai.cost-per-1k-output-usd': 'AZURE_OPENAI_COST_PER_1K_OUTPUT_USD',
+  'features.ai-cost.hard-limit-usd': 'AI_COST_HARD_LIMIT_USD',
+  'features.ai-cost.warn-threshold-usd': 'AI_COST_WARN_THRESHOLD_USD',
+  'features.ai-cost.period-days': 'AI_COST_PERIOD_DAYS',
   'services.sambanova.endpoint': 'SAMBANOVA_ENDPOINT',
   'services.certo.endpoint': 'CERTO_ENDPOINT',
   // Storage (account names + logical container names; SAS keys stay in KV)
@@ -43,6 +51,10 @@ const KEY_TO_ENV: Record<string, string> = {
   // Cosmos
   'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
   'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
+  // Phase 14 v2 autopilot container — follows the
+  // `services.<svc>.container.<name>` → `<SVC>_CONTAINER_<NAME>` pattern
+  // used elsewhere for storage containers.
+  'services.cosmos.container.ai-autopilot': 'COSMOS_CONTAINER_AI_AUTOPILOT',
   // Service Bus / Web PubSub / Fluid Relay
   'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
   'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',
@@ -59,6 +71,16 @@ const KEY_TO_ENV: Record<string, string> = {
   'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
+
+  // MOP vendor-matching evaluator (Phase 2 of AUTO_ASSIGNMENT_REVIEW.md).
+  // Reachable via MOP's external Container App ingress (auth-proxy on :3001).
+  // Per-consumer service auth: AMS sends `X-Service-Auth: <token>` where the
+  // token comes from KV secret `sentinel-mop-webhook-secret`; AMS bicep must
+  // reference that secret and surface it as MOP_RULES_SERVICE_AUTH_TOKEN.
+  // The App Config key `services.mop-api.external-url` should hold the
+  // external (no `.internal.`) FQDN, e.g.
+  //   https://ca-mop-dev.delightfulbush-a7c589f7.eastus2.azurecontainerapps.io
+  'services.mop-api.external-url': 'MOP_RULES_BASE_URL',
 };
 
 /**

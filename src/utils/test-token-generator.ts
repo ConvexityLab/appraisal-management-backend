@@ -6,13 +6,20 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { UserProfile, AccessScope } from '../types/authorization.types.js';
+import { UserProfile, AccessScope, Role } from '../types/authorization.types.js';
+import {
+  CANONICAL_ROLE_PERMISSION_BUNDLES,
+  type LegacyRoleAlias,
+  normalizeRoleAliasOrThrow,
+} from './auth-normalization.js';
+
+export type LegacyTestUserRole = LegacyRoleAlias;
 
 export interface TestUserProfile {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'manager' | 'qc_analyst' | 'appraiser';
+  role: Role | LegacyTestUserRole;
   tenantId: string;
   /** Platform client ID aligned with Axiom (defaults to AXIOM_CLIENT_ID env var). */
   clientId?: string;
@@ -25,6 +32,10 @@ export interface TestUserProfile {
 export class TestTokenGenerator {
   private readonly secret: string;
   private readonly expiresIn: string;
+
+  private normalizeRole(role: string): Role {
+    return normalizeRoleAliasOrThrow(role, 'test token');
+  }
 
   constructor() {
     // Enforce test token secret in production
@@ -47,6 +58,7 @@ export class TestTokenGenerator {
    * Generate a test JWT token for a user
    */
   generateToken(user: TestUserProfile): string {
+    const normalizedRole = this.normalizeRole(user.role);
     const clientId = user.clientId ?? process.env['AXIOM_CLIENT_ID'];
     if (!clientId) {
       throw new Error('clientId is required on TestUserProfile or AXIOM_CLIENT_ID must be set in environment');
@@ -60,12 +72,12 @@ export class TestTokenGenerator {
       sub: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: normalizedRole,
       tenantId: user.tenantId,
       clientId,
       subClientId,
-      accessScope: user.accessScope || this.getDefaultAccessScope(user.role),
-      permissions: user.permissions || this.getDefaultPermissions(user.role),
+      accessScope: user.accessScope || this.getDefaultAccessScope(normalizedRole),
+      permissions: user.permissions || this.getDefaultPermissions(normalizedRole),
       iss: 'appraisal-management-test',
       aud: 'appraisal-management-api',
       iat: Math.floor(Date.now() / 1000),
@@ -82,6 +94,7 @@ export class TestTokenGenerator {
   verifyToken(token: string): { valid: boolean; user?: any; error?: string } {
     try {
       const decoded = jwt.verify(token, this.secret) as any;
+      const normalizedRole = this.normalizeRole(decoded.role);
       
       // Validate it's actually a test token
       if (!decoded.isTestToken) {
@@ -106,11 +119,13 @@ export class TestTokenGenerator {
           id: decoded.sub,
           email: decoded.email,
           name: decoded.name,
-          role: decoded.role,
+          role: normalizedRole,
           tenantId: decoded.tenantId,
           clientId: decoded.clientId,
           subClientId: decoded.subClientId,
-          permissions: decoded.permissions,
+          permissions: Array.isArray(decoded.permissions) && decoded.permissions.length > 0
+            ? decoded.permissions
+            : this.getDefaultPermissions(normalizedRole),
           accessScope: decoded.accessScope
         }
       };
@@ -126,7 +141,9 @@ export class TestTokenGenerator {
    * Get default access scope for a role
    */
   private getDefaultAccessScope(role: string): AccessScope {
-    switch (role) {
+    const normalizedRole = this.normalizeRole(role);
+
+    switch (normalizedRole) {
       case 'admin':
         return {
           teamIds: ['team-all'],
@@ -155,12 +172,37 @@ export class TestTokenGenerator {
           canOverrideQC: false
         };
 
-      case 'qc_analyst':
+      case 'supervisor':
+        return {
+          teamIds: ['team-supervisors'],
+          departmentIds: ['dept-operations'],
+          managedClientIds: ['client-1', 'client-2'],
+          managedVendorIds: ['vendor-1'],
+          managedUserIds: ['user-1', 'user-2'],
+          regionIds: ['region-west'],
+          statesCovered: ['CA', 'NV'],
+          canViewAllOrders: false,
+          canViewAllVendors: false,
+          canOverrideQC: true
+        };
+
+      case 'analyst':
         return {
           teamIds: ['team-qc'],
           departmentIds: ['dept-quality'],
           regionIds: ['region-west'],
           statesCovered: ['CA', 'NV'],
+          canViewAllOrders: false,
+          canViewAllVendors: false,
+          canOverrideQC: false
+        };
+
+      case 'reviewer':
+        return {
+          teamIds: ['team-reviewers'],
+          departmentIds: ['dept-quality'],
+          regionIds: ['region-west'],
+          statesCovered: ['CA'],
           canViewAllOrders: false,
           canViewAllVendors: false,
           canOverrideQC: false
@@ -177,14 +219,6 @@ export class TestTokenGenerator {
           canOverrideQC: false
         };
 
-      default:
-        return {
-          teamIds: [],
-          departmentIds: [],
-          canViewAllOrders: false,
-          canViewAllVendors: false,
-          canOverrideQC: false
-        };
     }
   }
 
@@ -192,45 +226,7 @@ export class TestTokenGenerator {
    * Get default permissions for a role
    */
   private getDefaultPermissions(role: string): string[] {
-    switch (role) {
-      case 'admin':
-        return ['*']; // All permissions
-
-      case 'manager':
-        return [
-          'order_manage',
-          'order_view',
-          'order_update',
-          'vendor_manage',
-          'vendor_assign',
-          'analytics_view',
-          'qc_metrics',
-          'qc_validate',
-          'user_view',
-          'report_generate'
-        ];
-
-      case 'qc_analyst':
-        return [
-          'qc_validate',
-          'qc_execute',
-          'qc_metrics',
-          'order_view',
-          'revision_create',
-          'escalation_create'
-        ];
-
-      case 'appraiser':
-        return [
-          'order_view',
-          'order_update',
-          'revision_create',
-          'escalation_create'
-        ];
-
-      default:
-        return [];
-    }
+    return CANONICAL_ROLE_PERMISSION_BUNDLES[this.normalizeRole(role)];
   }
 
   /**
@@ -259,11 +255,11 @@ export class TestTokenGenerator {
         tenantId
       }),
 
-      qc_analyst: this.generateToken({
-        id: 'test-qc-analyst',
-        email: 'qc.analyst@test.local',
-        name: 'Test QC Analyst',
-        role: 'qc_analyst',
+      analyst: this.generateToken({
+        id: 'test-analyst',
+        email: 'analyst@test.local',
+        name: 'Test Analyst',
+        role: 'analyst',
         tenantId
       }),
 

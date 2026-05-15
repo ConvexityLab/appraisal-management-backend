@@ -10,6 +10,8 @@ import cors from 'cors';
 import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { createApiError } from '../utils/api-response.util.js';
+import type { Role } from '../types/authorization.types.js';
+import { CANONICAL_ROLES, normalizePrivilegedRoleAlias } from '../utils/auth-normalization.js';
 import {
   QCExecutionMode,
   QCExecutionStatus,
@@ -22,7 +24,7 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email: string;
-    role: string;
+    role: Role | string;
     permissions: string[];
     organizationId?: string;
     clientId?: string;
@@ -81,6 +83,23 @@ export class QCApiValidationMiddleware {
       },
       ...config
     };
+  }
+
+  private normalizeRole(role: string): Role | null {
+    return normalizePrivilegedRoleAlias(role);
+  }
+
+  private normalizeConfiguredRoles(roles: string[]): Role[] {
+    return roles.map((role) => {
+      const normalizedRole = this.normalizeRole(role);
+      if (!normalizedRole) {
+        throw new Error(
+          `Unsupported QC API role "${role}". Expected one of: ${CANONICAL_ROLES.join(', ')} or a supported legacy alias.`,
+        );
+      }
+
+      return normalizedRole;
+    });
   }
 
   // ============================================================================
@@ -308,7 +327,7 @@ export class QCApiValidationMiddleware {
    * Role-based authorization middleware
    */
   public requireRole(roles: string | string[]) {
-    const allowedRoles = Array.isArray(roles) ? roles : [roles];
+    const allowedRoles = this.normalizeConfiguredRoles(Array.isArray(roles) ? roles : [roles]);
 
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
       if (!req.user) {
@@ -318,10 +337,25 @@ export class QCApiValidationMiddleware {
         });
       }
 
-      if (!allowedRoles.includes(req.user.role)) {
-        this.logger.warn('Access denied - insufficient role', {
+      const normalizedRole = this.normalizeRole(req.user.role);
+      if (!normalizedRole) {
+        this.logger.warn('Access denied - invalid user role', {
           userId: req.user.id,
           userRole: req.user.role,
+          endpoint: req.originalUrl
+        });
+
+        return res.status(403).json({
+          success: false,
+          error: createApiError('INVALID_USER_ROLE', `Unsupported user role: ${req.user.role}`)
+        });
+      }
+
+      if (!allowedRoles.includes(normalizedRole)) {
+        this.logger.warn('Access denied - insufficient role', {
+          userId: req.user.id,
+          userRole: normalizedRole,
+          originalUserRole: req.user.role,
           requiredRoles: allowedRoles,
           endpoint: req.originalUrl
         });
@@ -350,14 +384,15 @@ export class QCApiValidationMiddleware {
         });
       }
 
-      const hasPermission = requiredPermissions.some(permission =>
-        req.user!.permissions.includes(permission)
+      const userPermissions = req.user.permissions ?? [];
+      const hasPermission = userPermissions.includes('*') || requiredPermissions.some(permission =>
+        userPermissions.includes(permission)
       );
 
       if (!hasPermission) {
         this.logger.warn('Access denied - insufficient permissions', {
           userId: req.user.id,
-          userPermissions: req.user.permissions,
+          userPermissions,
           requiredPermissions,
           endpoint: req.originalUrl
         });
@@ -386,9 +421,23 @@ export class QCApiValidationMiddleware {
 
       const organizationId = req.params.organizationId || req.body.organizationId || req.query.organizationId;
       const clientId = req.params.clientId || req.body.clientId || req.query.clientId;
+      const normalizedRole = this.normalizeRole(req.user.role);
 
-      // System admin has access to all organizations/clients
-      if (req.user.role === 'admin' || req.user.role === 'system') {
+      if (!normalizedRole) {
+        this.logger.warn('Access denied - invalid user role for organization access', {
+          userId: req.user.id,
+          userRole: req.user.role,
+          endpoint: req.originalUrl
+        });
+
+        return res.status(403).json({
+          success: false,
+          error: createApiError('INVALID_USER_ROLE', `Unsupported user role: ${req.user.role}`)
+        });
+      }
+
+      // Admin-equivalent users have access to all organizations/clients.
+      if (normalizedRole === 'admin') {
         return next();
       }
 
@@ -776,7 +825,7 @@ export class QCApiValidationMiddleware {
         return {
           id: 'user-123',
           email: 'user@example.com',
-          role: 'user',
+          role: 'analyst',
           permissions: ['qc:read', 'qc:execute'],
           organizationId: 'org-123',
           clientId: 'client-123'
@@ -805,7 +854,7 @@ export class QCApiValidationMiddleware {
         return {
           id: 'api-user-123',
           email: 'api@example.com',
-          role: 'api',
+          role: 'admin',
           permissions: ['qc:read', 'qc:execute', 'qc:admin'],
           organizationId: 'org-123',
           clientId: 'client-123'

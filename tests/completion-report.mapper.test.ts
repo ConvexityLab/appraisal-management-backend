@@ -12,8 +12,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CompletionReportMapper } from '../src/mappers/completion-report.mapper';
-import type { CanonicalCompletionReport } from '../src/types/canonical-completion-report';
-import { COMPLETION_REPORT_SCHEMA_VERSION } from '../src/types/canonical-completion-report';
+import type { CanonicalCompletionReport } from '@l1/shared-types';
+import { COMPLETION_REPORT_SCHEMA_VERSION } from '@l1/shared-types';
 
 // ─── Fixture builder ──────────────────────────────────────────────────────────
 

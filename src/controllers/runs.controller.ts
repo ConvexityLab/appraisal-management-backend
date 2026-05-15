@@ -203,6 +203,11 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
   });
 
   router.post('/extraction', extractionValidators, async (req: UnifiedAuthRequest, res: Response) => {
+    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'EXTRACTION'
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
+    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
+
     if (validationErrorResponse(req, res)) return;
 
     try {
@@ -240,6 +245,11 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
   });
 
   router.post('/criteria', criteriaValidators, async (req: UnifiedAuthRequest, res: Response) => {
+    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'CRITERIA'
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
+    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
+
     if (validationErrorResponse(req, res)) return;
 
     try {

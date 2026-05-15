@@ -123,16 +123,26 @@ describe('POST /api/axiom/scopes/:scopeId/evaluate (v2)', () => {
     const req: any = {
       params: { scopeId: SCOPE_ID },
       body: { programId: 'FNMA-SEL-2024', programVersion: '1.0.0' },
+      user: { id: 'u-1', tenantId: 'tenant-1' },
+      headers: {},
+      header: () => undefined,
     };
     const res = makeRes();
     await controller.evaluateScopeV2(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: summary });
-    expect(axiomServiceStub.evaluateScope).toHaveBeenCalledWith({
+    const call = axiomServiceStub.evaluateScope.mock.calls[0][0];
+    expect(call).toMatchObject({
       scopeId: SCOPE_ID,
       programId: 'FNMA-SEL-2024',
       programVersion: '1.0.0',
     });
+    expect(call.actor).toMatchObject({
+      tenantId: 'tenant-1',
+      initiatedBy: 'u-1',
+    });
+    expect(typeof call.actor.correlationId).toBe('string');
+    expect(typeof call.actor.idempotencyKey).toBe('string');
   });
 
   it('returns 400 when programId/programVersion missing', async () => {
@@ -162,12 +172,29 @@ describe('POST /api/axiom/scopes/:scopeId/evaluate (v2)', () => {
     const req: any = {
       params: { scopeId: SCOPE_ID },
       body: { programId: 'p', programVersion: 'v' },
+      user: { id: 'u-1', tenantId: 'tenant-1' },
+      headers: {},
+      header: () => undefined,
     };
     const res = makeRes();
     await controller.evaluateScopeV2(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
     const call = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(call.error.code).toBe('EVALUATION_FAILED');
+  });
+
+  it('returns 401 when authenticated user has no tenantId', async () => {
+    const { controller, axiomServiceStub } = makeController();
+    const req: any = {
+      params: { scopeId: SCOPE_ID },
+      body: { programId: 'p', programVersion: 'v' },
+      user: { id: 'u-1' },
+      headers: {},
+    };
+    const res = makeRes();
+    await controller.evaluateScopeV2(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(axiomServiceStub.evaluateScope).not.toHaveBeenCalled();
   });
 });
 

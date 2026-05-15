@@ -38,7 +38,7 @@ interface RunLedgerRecord {
   engineRunRef?: string;
   pipelineId?: string;
   statusDetails?: Record<string, unknown> & {
-    verdictCounts?: { passCount: number; warnCount: number; failCount: number; totalCount: number };
+    verdictCounts?: { passCount: number; warnCount: number; failCount: number; cannotEvaluateCount: number; totalCount: number };
   };
 }
 

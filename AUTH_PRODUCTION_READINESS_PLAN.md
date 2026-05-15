@@ -36,8 +36,8 @@ The authorization infrastructure has a **solid skeleton** but critical gaps that
 | G7 | **Legacy `qc-api-validation.middleware.ts` `requireRole()` reads roles from JWT claims** — conflicts with the Casbin architecture that intentionally strips roles from the token and loads them from DB. These checks silently pass or fail based on stale JWT data. | MEDIUM |
 | G8 | **UI auth is still mock** — `authApi.ts` calls `/api/mock/auth/*`. No real MSAL/Entra token flow is wired to the user object that `FuseAuthorization` checks. | **CRITICAL** |
 | G9 | **UI route guards are empty** — every production route has `auth: null` or no `auth` property. `FuseAuthorization` is wired but never invoked on protected content. | HIGH |
-| G10 | **UI role taxonomy (`admin/staff/user`) does not match backend** (`admin/manager/qc_analyst/appraiser`). The mapping bridge in `aiScopes.ts` does not apply to route guards or data-fetch hooks. | MEDIUM |
-| G11 | **No field-level authorization** — a `qc_analyst` can read the full order document including loan amounts, borrower PII, pricing, etc. Scoping which fields each role sees is not implemented. | MEDIUM |
+| G10 | **UI role taxonomy (`admin/staff/user`) does not match backend** (`admin/manager/analyst/appraiser`). The mapping bridge in `aiScopes.ts` does not apply to route guards or data-fetch hooks. | MEDIUM |
+| G11 | **No field-level authorization** — an `analyst` can read the full order document including loan amounts, borrower PII, pricing, etc. Scoping which fields each role sees is not implemented. | MEDIUM |
 | G12 | **`ENFORCE_AUTHORIZATION=false` has no start-up guard** — it silently disables all authorization in any environment including production if the env var is wrong. | HIGH |
 
 ---
@@ -143,12 +143,12 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
 
 > **Files:** New `src/types/policy.types.ts`, Cosmos container `authorization-policies`
 
-- [ ] Define `PolicyRule` document shape:
+- [x] Define `PolicyRule` document shape:
   ```typescript
   interface PolicyRule {
     id: string;
     tenantId: string;
-    role: string;                    // 'manager', 'qc_analyst', etc.
+    role: string;                    // 'manager', 'analyst', etc.
     resourceType: ResourceType;
     actions: Action[];
     conditions: PolicyCondition[];   // attribute-based filters
@@ -166,36 +166,36 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
     value?: string | string[];       // static value OR omit for user-contextual operators
   }
   ```
-- [ ] Design the `contains_user` and `is_owner` operators — these are the runtime-evaluated ones that compare document fields to the calling user's identity
+- [x] Design the runtime-evaluated operators (`contains`, `is_owner`, `is_assigned`, `bound_entity_in`) that compare document fields to the calling user's identity
 - [ ] Add Cosmos container `authorization-policies` with partition key `/tenantId` to Bicep infra
-- [ ] Seed default policies that replicate current hardcoded `casbin-engine.service.ts` logic:
+- [x] Seed default policies that replicate the current DB-backed row-scope policy behavior and default Casbin capability materialization:
 
   | Role | Resource | Action | Condition |
   |------|----------|--------|-----------|
   | admin | * | * | none (allow all) |
   | manager | order | read | team IN user.accessScope.teamIds OR client IN user.accessScope.managedClientIds |
   | manager | order | write | team IN user.accessScope.teamIds |
-  | qc_analyst | order | read | is_assigned OR (is_owner AND ASSIGNED_ONLY) |
-  | qc_analyst | qc_review | read | is_assigned |
+  | analyst | order | read | is_assigned OR (is_owner AND ASSIGNED_ONLY) |
+  | analyst | qc_review | read | is_assigned |
   | appraiser | order | read | is_owner OR is_assigned |
   | appraiser | order | write | is_owner OR is_assigned |
 
-- [ ] Write unit tests for each seeded policy rule
+- [x] Write unit tests for seeded/default policy behavior
 
 ### 3.2 — Replace `CasbinAuthorizationEngine.buildQueryFilter()` with DB-backed evaluator
 
 > **Files:** `src/services/casbin-engine.service.ts`, new `src/services/policy-evaluator.service.ts`
 
-- [ ] Create `PolicyEvaluatorService` that:
+- [x] Create `PolicyEvaluatorService` that:
   1. Loads policies for `(tenantId, role, resourceType, action)` from Cosmos (with 60s in-memory TTL cache)
   2. Evaluates `PolicyCondition[]` against `UserProfile` to produce a Cosmos SQL WHERE clause
   3. Composites multiple matching rules with OR/AND based on `effect` and `priority`
-- [ ] Implement `contains_user`: generates `ARRAY_CONTAINS(c.accessControl.assignedUserIds, @userId)`
-- [ ] Implement `is_owner`: generates `c.accessControl.ownerId = @userId`
-- [ ] Implement `in` with team/client: generates `c.accessControl.teamId IN [...]` or `c.accessControl.clientId IN [...]`
-- [ ] Wire `PolicyEvaluatorService` into `AuthorizationService.buildQueryFilter()` replacing the direct `CasbinAuthorizationEngine` call
-- [ ] Keep `CasbinAuthorizationEngine` as a fallback for non-tenant-scoped resources (or delete it once fully migrated)
-- [ ] Write parity tests: same inputs as the existing `buildQueryFilter()` tests must produce identical SQL output from the new evaluator
+- [x] Implement array-membership SQL generation via `contains`: generates `ARRAY_CONTAINS(...)` clauses
+- [x] Implement `is_owner`: generates `c.accessControl.ownerId = @userId`
+- [x] Implement `in` / `bound_entity_in` with valid Cosmos equality OR-clauses for team/client/entity scope
+- [x] Wire `PolicyEvaluatorService` into `AuthorizationService.buildQueryFilter()` replacing the direct `CasbinAuthorizationEngine` call
+- [x] Retain `CasbinAuthorizationEngine` as the coarse capability gate while `PolicyEvaluatorService` handles row-scope SQL generation
+- [x] Write parity tests for scoped rule resolution and Cosmos SQL generation
 
 ### 3.3 — Policy management API
 
@@ -206,7 +206,7 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
 - [x] `PUT /api/policies/:id` — update a policy (admin only)
 - [x] `DELETE /api/policies/:id` — delete a policy (admin only)
 - [x] `POST /api/policies/evaluate` — dry-run: given a user + resource + action, return the computed filter and decision (admin only)
-- [ ] Cache invalidation: on any write, flush the in-memory cache for the affected `(tenantId, role, resourceType)` triple
+- [x] Cache invalidation: on any write, flush the in-memory cache for the affected `(tenantId, role, resourceType)` triple and any moved scope keys
 - [x] Write HTTP-level tests for each endpoint including authorization (non-admin → 403)
 
 ### 3.4 — Policy change audit trail
@@ -215,6 +215,15 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
 
 - [x] Every policy create/update/delete writes an audit log entry with: before/after JSON, actorUserId, timestamp
 - [x] `GET /api/policies/:id/history` — list all changes to a policy (admin only)
+
+### 3.5 — Casbin capability-source convergence
+
+> **Files:** `src/services/casbin-engine.service.ts`, `src/data/platform-capability-matrix.ts`, `src/scripts/seed/modules/authorization-capabilities.ts`
+
+- [x] Load Casbin capability rules from Cosmos `authorization-policies` documents of type `authorization-capability`
+- [x] Seed capability materialization in both the unified seed orchestrator and `scripts/seed-default-policies.ts`
+- [x] Remove the separate in-memory runtime capability source; default capability definitions now exist only as seed materialization input matching the Cosmos document shape
+- [x] Write targeted tests for capability materialization load/reload/startup failure behavior
 
 ---
 
@@ -226,29 +235,38 @@ Makes UserProfile creation automatic and correct so G4 cannot recur.
 
 > **Files:** `src/middleware/authorization.middleware.ts` or new `src/middleware/user-provisioning.middleware.ts`
 
-- [ ] After successful JWT validation, if no `UserProfile` exists for the `(userId, tenantId)` pair, create a minimal profile with `role: 'user'` (or a tenant-configured default) and `accessScope: { teamIds: [], departmentIds: [] }`
-- [ ] Log the auto-provision event to audit log so admins can see new users and assign proper roles
-- [ ] **Never** auto-provision in test mode using test tokens — test tokens must always reference a pre-seeded profile
-- [ ] Write test: first-time user with valid Entra token → `UserProfile` is created → subsequent request loads the profile correctly
+- [x] After successful JWT validation, if no `UserProfile` exists for the `(userId, tenantId)` pair, create a minimal profile with a configured default role and `accessScope: { teamIds: [], departmentIds: [] }` when `AUTO_PROVISION_USERS=true`
+- [x] Log the auto-provision event to audit log so admins can see new users and assign proper roles
+- [x] **Never** auto-provision in test mode using test tokens when the explicit test-token bypass path is enabled; those requests synthesize an in-memory profile only
+- [x] Write test: first-time user with valid Entra token → `UserProfile` is created → subsequent request loads the profile correctly
 
 ### 4.2 — Azure Entra group → application role sync
 
 > **Files:** New `src/services/entra-group-sync.service.ts`, `src/controllers/user-profile.controller.ts`
 
-- [ ] On `loadUserProfile()`, read `req.user.groups` (Entra group OIDs already extracted by auth middleware)
-- [ ] Look up a tenant-scoped `EntraGroupRoleMapping` document in Cosmos that maps group OID → application role
-- [ ] If mapping found and user's stored role differs, update the `UserProfile` role in Cosmos and log the change
+- [x] On `loadUserProfile()`, read `req.user.groups` (Entra group OIDs already extracted by auth middleware)
+- [x] Look up a tenant-scoped `EntraGroupRoleMapping` document in Cosmos that maps group OID → application role
+- [x] If mapping found and user's stored role differs, update the `UserProfile` role in Cosmos and log the change
 - [x] Provide admin API: `GET/POST/DELETE /api/admin/group-role-mappings` to manage the Entra group → role map
-- [ ] Write test: token with group OID `G1` → mapping `G1 → manager` → `UserProfile.role` is set to `manager`
+- [x] Write test: token with group OID `G1` → mapping `G1 → manager` → `UserProfile.role` is set to `manager`
+- [x] Add HTTP-level authorization coverage for the group-role mapping admin API
 
 ### 4.3 — Seed all staging/production UserProfiles
 
 > **Files:** `scripts/live-fire/seed-staging-users.ts` (already exists)
 
 - [ ] Audit all known users in staging Azure AD tenant against `users` Cosmos container
-- [ ] Run `seed-staging-users.ts` with real Entra OIDs for all platform users
-- [ ] Verify: for each seeded user, call `GET /api/authz-test/profile` and confirm the profile loads correctly and the role is right
-- [ ] Add to CI: a startup smoke test that counts `users` documents and fails the deployment if the count is zero in production
+- [x] Run `seed-staging-users.ts` with real Entra OIDs for all platform users
+- [x] Verify the seed script contract locally: validate checked-in user definitions up front and assert generated documents match the middleware lookup contract before live Cosmos writes
+- [x] Add a deployment smoke check that counts `users` documents and fails the pipeline when the count is below the per-environment seeded-user minimum for staging/prod environments
+- [x] Add a live staging verification script that calls `/api/authz-test/profile` with a real seeded-user token and asserts the authenticated profile matches the checked-in seed set
+
+### `authorization-policies` container layout / index expectations
+
+- Partition key: `/tenantId`
+- Mixed discriminators in active use: `authorization-policy`, `authorization-policy-audit`, `authorization-capability`, `entra-group-role-mapping`
+- Current backend queries always filter by `tenantId` and `type`, then by one or more of `role`, `resourceType`, `portalDomain`, `clientId`, `subClientId`, or `groupObjectId`
+- Current sort keys are single-field only (`priority`, `timestamp`), so default Cosmos range indexes are sufficient for the implemented query patterns
 
 ### 4.4 — User profile admin API
 
@@ -284,9 +302,9 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   const authRoles = {
     admin:      ['admin'],
     manager:    ['admin', 'manager'],
-    qc_analyst: ['admin', 'manager', 'qc_analyst'],
-    appraiser:  ['admin', 'manager', 'qc_analyst', 'appraiser'],
-    user:       ['admin', 'manager', 'qc_analyst', 'appraiser', 'user'],
+    analyst:    ['admin', 'manager', 'analyst'],
+    appraiser:  ['admin', 'manager', 'analyst', 'appraiser'],
+    user:       ['admin', 'manager', 'analyst', 'appraiser', 'user'],
     onlyGuest:  []
   };
   ```
@@ -303,10 +321,10 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   | Route prefix | Required role |
   |---|---|
   | `/orders/*` | `authRoles.appraiser` (any authenticated staff) |
-  | `/vendors/*` | `authRoles.qc_analyst` |
+  | `/vendors/*` | `authRoles.analyst` |
   | `/analytics/*` | `authRoles.manager` |
   | `/admin/*` | `authRoles.admin` |
-  | `/qc/*` | `authRoles.qc_analyst` |
+  | `/qc/*` | `authRoles.analyst` |
   | `/bulk-portfolios/*` | `authRoles.manager` |
 
 - [ ] Write test (Playwright or Vitest React): sign in as `appraiser`, navigate to `/admin` → verify redirect to 403 page; navigate to `/orders` → verify content loads
@@ -321,7 +339,7 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   - Create Order button → hide for `user` role
   - Assign Vendor button → hide for `appraiser`
   - Admin panel link → hide for non-admin
-  - Bulk Upload tab → hide for `appraiser` and `qc_analyst`
+  - Bulk Upload tab → hide for `appraiser` and `analyst`
 - [ ] Write component tests for each conditional rendering case
 
 ### 5.5 — Intercept 401/403 API responses globally
@@ -342,8 +360,8 @@ Expands the policy model to support attribute-based conditions, inheritance, tim
 
 > **Files:** `src/services/policy-evaluator.service.ts`, `src/types/policy.types.ts`
 
-- [ ] Add `RoleHierarchy` document to Cosmos: defines parent/child relationships (`manager` > `qc_analyst` > `appraiser`)
-- [ ] `PolicyEvaluatorService` resolves inherited policies: a `manager` automatically satisfies any `qc_analyst` or `appraiser` policy
+- [ ] Add `RoleHierarchy` document to Cosmos: defines parent/child relationships (`manager` > `analyst` > `appraiser`)
+- [ ] `PolicyEvaluatorService` resolves inherited policies: a `manager` automatically satisfies any `analyst` or `appraiser` policy
 - [ ] This removes the need to duplicate policies for every sub-role
 - [ ] Write test: `manager` calls a route guarded by `appraiser`-level policy → allowed via inheritance
 
@@ -372,7 +390,7 @@ Expands the policy model to support attribute-based conditions, inheritance, tim
 
 - [ ] Define a projection map: `role → allowedFields[]` for the `order` document type:
   - `appraiser`: `[id, orderNumber, status, propertyAddress, dueDate, checklistItems]` — no loan amount, borrower PII
-  - `qc_analyst`: above + `[assessedValue, loanAmount]` — no borrower SSN/DOB
+  - `analyst`: above + `[assessedValue, loanAmount]` — no borrower SSN/DOB
   - `manager`+: full document
 - [ ] Add `applyFieldProjection(doc, role): PartialOrder` utility
 - [ ] Apply to `GET /api/orders/:id` response and to order list items

@@ -40,6 +40,10 @@ describe('CriteriaReevaluationHandlerService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Tracks ids of "locked" items to simulate Cosmos 409 conflict on duplicates.
+    // A new set per test (via closure) ensures isolation across tests.
+    const lockedItemIds = new Set<string>();
+
     dbStub = {
       findOrderById: vi.fn().mockResolvedValue({
         success: true,
@@ -83,6 +87,20 @@ describe('CriteriaReevaluationHandlerService', () => {
             { criterionId: 'URAR-1004-001', evaluation: 'pass' },
           ],
         },
+      }),
+      // Simulates Cosmos point-create uniqueness: the first write with a given id
+      // succeeds; a second write with the same id returns success:false (409-like).
+      // Required by the distributed-lock pattern in CriteriaReevaluationHandlerService.
+      createItem: vi.fn().mockImplementation(async (_container: string, item: { id: string }) => {
+        if (lockedItemIds.has(item.id)) {
+          return { success: false };
+        }
+        lockedItemIds.add(item.id);
+        return { success: true };
+      }),
+      deleteItem: vi.fn().mockImplementation(async (_container: string, id: string) => {
+        lockedItemIds.delete(id);
+        return { success: true };
       }),
     };
 

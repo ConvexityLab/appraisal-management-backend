@@ -8,6 +8,8 @@
 
 import express, { Request, Response } from 'express';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from '../services/order-context-loader.service.js';
+import type { PropertyAddress } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -92,6 +94,16 @@ function buildVEvent(params: {
   return lines;
 }
 
+function formatPropertyAddress(address?: PropertyAddress): string {
+  if (!address) {
+    return '';
+  }
+
+  const locality = [address.city, address.state].filter(Boolean).join(', ');
+  const trailing = [locality, address.zipCode].filter(Boolean).join(' ');
+  return [address.streetAddress, trailing].filter(Boolean).join(', ');
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 /**
@@ -121,10 +133,37 @@ router.get('/ical', async (req: Request, res: Response) => {
     logger.info('Generating iCal feed', { tenantId, lookAheadDays });
 
     const dbService = new CosmosDbService();
+    const orderContextLoader = new OrderContextLoader(dbService);
+    const orderLocationCache = new Map<string, Promise<string | undefined>>();
+
+    const resolveOrderLocation = async (orderId: string): Promise<string | undefined> => {
+      const cached = orderLocationCache.get(orderId);
+      if (cached) {
+        return cached;
+      }
+
+      const locationPromise = (async () => {
+        try {
+          const ctx = await orderContextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
+          const address = getPropertyAddress(ctx);
+          const formatted = formatPropertyAddress(address);
+          return formatted || undefined;
+        } catch (error) {
+          logger.warn('Calendar feed could not resolve canonical property address', {
+            orderId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return undefined;
+        }
+      })();
+
+      orderLocationCache.set(orderId, locationPromise);
+      return locationPromise;
+    };
 
     // ── 1. Order due dates ────────────────────────────────────────────────────
     const orderQuery = {
-      query: `SELECT c.id, c.orderNumber, c.propertyAddress, c.dueDate, c.status, c.clientName
+      query: `SELECT c.id, c.orderNumber, c.dueDate, c.status, c.clientName
               FROM c
               WHERE c.tenantId = @tenantId
                 AND c.dueDate >= @from
@@ -140,7 +179,6 @@ router.get('/ical', async (req: Request, res: Response) => {
     const orders = await dbService.queryItems<{
       id: string;
       orderNumber: string;
-      propertyAddress?: string;
       dueDate: string;
       status: string;
       clientName?: string;
@@ -148,7 +186,7 @@ router.get('/ical', async (req: Request, res: Response) => {
 
     // ── 2. Inspection dates ───────────────────────────────────────────────────
     const inspectionQuery = {
-      query: `SELECT c.id, c.orderId, c.scheduledDate, c.propertyAddress, c.appraiserName, c.status
+      query: `SELECT c.id, c.orderId, c.scheduledDate, c.appraiserName, c.status
               FROM c
               WHERE c.tenantId = @tenantId
                 AND c.scheduledDate >= @from
@@ -165,7 +203,6 @@ router.get('/ical', async (req: Request, res: Response) => {
       id: string;
       orderId: string;
       scheduledDate: string;
-      propertyAddress?: string;
       appraiserName?: string;
       status: string;
     }>('inspections', inspectionQuery.query, inspectionQuery.parameters);
@@ -181,14 +218,28 @@ router.get('/ical', async (req: Request, res: Response) => {
       'X-WR-TIMEZONE:UTC',
     ];
 
-    for (const order of (orders.data ?? [])) {
+    const orderEvents = await Promise.all(
+      (orders.data ?? []).map(async (order) => ({
+        ...order,
+        location: await resolveOrderLocation(order.id),
+      })),
+    );
+
+    const inspectionEvents = await Promise.all(
+      (inspections.data ?? []).map(async (inspection) => ({
+        ...inspection,
+        location: await resolveOrderLocation(inspection.orderId),
+      })),
+    );
+
+    for (const order of orderEvents) {
       const events = buildVEvent({
         uid: `order-due-${order.id}@visionone`,
         summary: `Appraisal Due: ${order.orderNumber ?? order.id}`,
         description: order.clientName
           ? `Client: ${order.clientName} | Status: ${order.status}`
           : `Status: ${order.status}`,
-        ...(order.propertyAddress !== undefined && { location: order.propertyAddress }),
+        ...(order.location !== undefined && { location: order.location }),
         start: order.dueDate,
         allDay: true,
         dtstamp,
@@ -196,14 +247,14 @@ router.get('/ical', async (req: Request, res: Response) => {
       lines.push(...events);
     }
 
-    for (const insp of (inspections.data ?? [])) {
+    for (const insp of inspectionEvents) {
       const events = buildVEvent({
         uid: `inspection-${insp.id}@visionone`,
         summary: `Inspection: Order ${insp.orderId}`,
         description: insp.appraiserName
           ? `Appraiser: ${insp.appraiserName} | Status: ${insp.status}`
           : `Status: ${insp.status}`,
-        ...(insp.propertyAddress !== undefined && { location: insp.propertyAddress }),
+        ...(insp.location !== undefined && { location: insp.location }),
         start: insp.scheduledDate,
         // Inspections: 2-hour block
         end: new Date(new Date(insp.scheduledDate).getTime() + 2 * 60 * 60 * 1000),

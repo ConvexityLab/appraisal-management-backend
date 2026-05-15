@@ -44,6 +44,10 @@ param statebridge_tenantId string = ''
 @secure()
 @description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
+
+@secure()
+@description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". Surfaced on the appraisal-api Container App as inline secret "mop-rules-service-auth-token" + env var MOP_RULES_SERVICE_AUTH_TOKEN consumed by MopVendorMatchingRulesProvider. Empty value disables MOP auth — pair with RULES_PROVIDER=homegrown.')
+param mopServiceAuthToken string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
@@ -94,6 +98,10 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(axiomWebhookSecret) ? [] : [{
     name: 'axiom-webhook-secret'
     value: axiomWebhookSecret
+  }],
+  empty(mopServiceAuthToken) ? [] : [{
+    name: 'mop-rules-service-auth-token'
+    value: mopServiceAuthToken
   }]
 )
 
@@ -181,7 +189,7 @@ var containerApps = [
     // at runtime via appConfigLoader.ts. The QC controllers no longer
     // instantiate at module-top-level (commit ea0b923) so loadAppConfig
     // populates process.env before any service constructor fires.
-    env: [
+    env: concat([
       {
         name: 'NODE_ENV'
         value: environment == 'prod' ? 'production' : 'development'
@@ -214,11 +222,13 @@ var containerApps = [
         name: 'APP_CONFIG_LABEL'
         value: environment
       }
+    ], empty(axiomWebhookSecret) ? [] : [
       {
         // HMAC secret for inbound Axiom webhook signature verification.
         name: 'AXIOM_WEBHOOK_SECRET'
         secretRef: 'axiom-webhook-secret'
       }
+    ], [
       {
         name: 'AZURE_OPENAI_API_KEY'
         secretRef: 'azure-openai-api-key'
@@ -239,7 +249,43 @@ var containerApps = [
         name: 'IVUEIT_SECRET'
         secretRef: 'ivueit-secret'
       }
-    ]
+      // Vendor-matching rules provider — when both vars are set, the BE
+      // sends X-Service-Auth on every MOP eval request. The provider is
+      // selected by RULES_PROVIDER (set via App Config or directly on the
+      // container app); MOP_RULES_BASE_URL comes from App Config key
+      // services.mop-api.external-url. See:
+      //   src/services/vendor-matching-rules/factory.ts
+      //   docs/AUTO_ASSIGNMENT_REVIEW.md §12
+      // Blob-sync intake worker — name of the Service Bus queue that Event Grid
+      // delivers blob-created notifications to. Requires Standard or Premium SB
+      // tier; this env var must be absent (or the worker not registered) on dev
+      // where the Basic-tier bus cannot receive Event Grid deliveries.
+      {
+        name: 'BLOB_SYNC_SERVICE_BUS_QUEUE'
+        value: 'blob-sync-events'
+      }
+      // Decision Engine background jobs — both off by default in dev,
+      // on in staging+prod. See docs/DECISION_ENGINE_RULES_SURFACE.md
+      // rev 16. FiringRulesEvaluatorJob writes one firing-decision row
+      // per (tenant, vendor, day); DecisionAnalyticsAggregationJob
+      // pre-computes per-(tenant, category, days) analytics summaries
+      // into decision-rule-analytics so /analytics serves a fresh
+      // snapshot before falling back to live compute.
+      {
+        name: 'FIRING_RULES_JOB_ENABLED'
+        value: environment == 'dev' ? 'false' : 'true'
+      }
+      {
+        name: 'DECISION_ANALYTICS_JOB_ENABLED'
+        value: environment == 'dev' ? 'false' : 'true'
+      }
+    ],
+    empty(mopServiceAuthToken) ? [] : [
+      {
+        name: 'MOP_RULES_SERVICE_AUTH_TOKEN'
+        secretRef: 'mop-rules-service-auth-token'
+      }
+    ])
     scaleRule: {
       name: 'api-http-scaling'
       http: {

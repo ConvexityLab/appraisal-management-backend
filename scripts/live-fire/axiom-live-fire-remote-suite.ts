@@ -35,11 +35,16 @@ const AXIOM_AUTH_MODE_ENVS = [
   'AXIOM_USE_DEFAULT_CREDENTIAL',
 ] as const;
 
+// `document-flow` (legacy `/api/axiom/documents` + `/evaluations/:id`) and
+// `analyze-webhook` (legacy `/api/axiom/analyze`) were retired in the
+// 2026-05-07 v2 migration. The canonical end-to-end flow is now
+// `axiom:livefire:canonical-suite` (UI submit path → v2 results) and
+// `axiom:livefire:v2-flow` (pure v2 proxy surface).
 const FLOW_COMMANDS = [
   'axiom:livefire:preflight',
   'axiom:livefire:property-intake',
-  'axiom:livefire:document-flow',
-  'axiom:livefire:analyze-webhook',
+  'axiom:livefire:canonical-suite',
+  'axiom:livefire:v2-flow',
 ] as const;
 
 async function runPnpmScript(scriptName: string): Promise<void> {

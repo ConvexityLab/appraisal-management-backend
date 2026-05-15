@@ -25,15 +25,15 @@ import {
   EngagementClientOrderStatus,
   EngagementProductType,
   EngagementType,
-  EngagementLoanStatus,
+  EngagementPropertyStatus,
 } from '../../src/types/engagement.types.js';
-import type { Engagement, EngagementLoan } from '../../src/types/engagement.types.js';
+import type { Engagement, EngagementProperty } from '../../src/types/engagement.types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeLoan(overrides: Partial<EngagementLoan> = {}): EngagementLoan {
+function makeLoan(overrides: Partial<EngagementProperty> = {}): EngagementProperty {
   return {
     id:           'loan-001',
     loanNumber:   'LN-001',
@@ -43,7 +43,7 @@ function makeLoan(overrides: Partial<EngagementLoan> = {}): EngagementLoan {
       state:   'CO',
       zipCode: '80203',
     },
-    status:   EngagementLoanStatus.PENDING,
+    status:   EngagementPropertyStatus.PENDING,
     clientOrders: [],
     ...overrides,
   };
@@ -85,9 +85,26 @@ function makeMockContainer(storedDoc: Engagement) {
   };
 }
 
-function makeDbService(container: ReturnType<typeof makeMockContainer>): CosmosDbService {
+/**
+ * `onQueryItems` lets a test stub `dbService.queryItems(containerName, query, params)`.
+ * Used by the VendorOrder-query-based read paths (removeLoan guard, getDocuments,
+ * getCommunications) which now consult the `orders` container instead of the embedded
+ * `EngagementClientOrder.vendorOrderIds` array.
+ *
+ * Default behavior (no callback): returns `{ success: true, data: [] }` — i.e. the
+ * engagement has no linked vendor orders. Tests that need linked orders provide a
+ * callback that returns rows for the right (containerName, params) combination.
+ */
+function makeDbService(
+  container: ReturnType<typeof makeMockContainer>,
+  onQueryItems?: (containerName: string, query: string, params?: { name: string; value: unknown }[]) => unknown[],
+): CosmosDbService {
   return {
     getEngagementsContainer: vi.fn().mockReturnValue(container),
+    queryItems: vi.fn().mockImplementation(async (containerName: string, query: string, params?: { name: string; value: unknown }[]) => {
+      const data = onQueryItems ? onQueryItems(containerName, query, params) : [];
+      return { success: true, data };
+    }),
   } as unknown as CosmosDbService;
 }
 
@@ -183,9 +200,51 @@ describe('createEngagement', () => {
     expect(capturedDoc!.properties[0]!.loanNumber).toBe('LN-001');
     expect(capturedDoc!.properties[0]!.borrowerName).toBe('Borrower');
     expect(capturedDoc!.properties[0]!.property.address).toBe('1 Main');
-    expect(capturedDoc!.properties[0]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(capturedDoc!.properties[0]!.status).toBe(EngagementPropertyStatus.PENDING);
     expect(capturedDoc!.properties[0]!.clientOrders).toHaveLength(1);
     expect(capturedDoc!.properties[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
+  });
+
+  it('persists a thin engagement property cache instead of copied physical property truth', async () => {
+    let capturedDoc: Engagement | undefined;
+    const container = makeMockContainer(makeEngagement());
+    container.items.create = vi.fn().mockImplementation(async (d: Engagement) => {
+      capturedDoc = d;
+      return { resource: d };
+    });
+
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
+    await svc.createEngagement(makeCreateRequest({
+      property: {
+        address: '1 Main',
+        city: 'Denver',
+        state: 'CO',
+        zipCode: '80203',
+        county: 'Denver',
+        coordinates: { latitude: 39.7392, longitude: -104.9903 },
+        propertyType: 'SINGLE_FAMILY',
+        yearBuilt: 1999,
+        squareFootage: 2200,
+        estimatedValue: 550000,
+        bedrooms: 4,
+        bathrooms: 3,
+      },
+    }));
+
+    expect(capturedDoc!.properties[0]!.property).toMatchObject({
+      address: '1 Main',
+      city: 'Denver',
+      state: 'CO',
+      zipCode: '80203',
+      county: 'Denver',
+      coordinates: { latitude: 39.7392, longitude: -104.9903 },
+      propertyType: 'SINGLE_FAMILY',
+    });
+    expect(capturedDoc!.properties[0]!.property.yearBuilt).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.squareFootage).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.estimatedValue).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.bedrooms).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.bathrooms).toBeUndefined();
   });
 
   it('sets engagementType=SINGLE when 1 loan', async () => {
@@ -226,7 +285,7 @@ describe('createEngagement', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.createEngagement({ ...makeCreateRequest(), properties: [] }),
-    ).rejects.toThrow(/At least one EngagementLoan is required/);
+    ).rejects.toThrow(/At least one EngagementProperty is required/);
   });
 });
 
@@ -433,7 +492,7 @@ describe('addLoanToEngagement', () => {
 
     expect(result.properties).toHaveLength(2);
     expect(result.properties[1]!.loanNumber).toBe('LN-NEW');
-    expect(result.properties[1]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(result.properties[1]!.status).toBe(EngagementPropertyStatus.PENDING);
     expect(result.engagementType).toBe(EngagementType.PORTFOLIO);
   });
 
@@ -484,7 +543,7 @@ describe('updateLoan', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.updateLoan('eng-test-001', 'tenant-001', 'loan-nonexistent', {}, 'user'),
-    ).rejects.toThrow(/EngagementLoan not found/);
+    ).rejects.toThrow(/EngagementProperty not found/);
   });
 });
 
@@ -502,17 +561,18 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
+    // No vendor orders in the orders container for this loan.
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
     expect(result.properties).toHaveLength(1);
     expect(result.properties[0]!.id).toBe('loan-002');
   });
 
-  it('throws when loan has linked vendor orders', async () => {
+  it('throws when loan has linked vendor orders (queried from the orders container)', async () => {
     const loanWithOrders = makeLoan({
       id: 'loan-001',
       clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-123'] },
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
       ],
     });
     const doc = makeEngagement({ properties: [loanWithOrders] });
@@ -521,10 +581,140 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
+    const dbService = makeDbService(container, (containerName, _q, params) => {
+      if (containerName !== 'orders') return [];
+      const loanIdParam = params?.find((p) => p.name === '@loanId')?.value;
+      return loanIdParam === 'loan-001' ? [{ id: 'vo-1' }] : [];
+    });
+    const svc = new EngagementService(dbService, makePropertyRecordService());
     await expect(
       svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
     ).rejects.toThrow(/Cannot remove loan/);
+  });
+
+  // Drift case A: VendorOrder docs say there ARE linked orders, but the embedded
+  // EngagementClientOrder.vendorOrderIds array is stale/empty (e.g. partial-failure on
+  // placeClientOrder, legacy data). The guard MUST trust the orders container, not the
+  // embedded array — otherwise dangerous deletes go through.
+  it('blocks removal when VendorOrder query returns rows even if embedded array is empty (drift)', async () => {
+    const loan = makeLoan({
+      id: 'loan-001',
+      clientOrders: [
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
+      ],
+    });
+    const doc = makeEngagement({ properties: [loan] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn(),
+    });
+    const dbService = makeDbService(container, (containerName) =>
+      containerName === 'orders' ? [{ id: 'vo-orphaned-by-drift' }] : [],
+    );
+    const svc = new EngagementService(dbService, makePropertyRecordService());
+    await expect(
+      svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
+    ).rejects.toThrow(/Cannot remove loan/);
+  });
+
+  // Drift case B: the embedded array claims there are linked orders, but the orders
+  // container has none for this loan (e.g. they were deleted/cancelled in another flow,
+  // or the embedded array was never cleaned up). The orders container is the source of
+  // truth — removal should be permitted.
+  it('permits removal when embedded array shows linkage but orders container has none (drift)', async () => {
+    const loan = makeLoan({
+      id: 'loan-001',
+      clientOrders: [
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ghost-vo-1', 'ghost-vo-2'] },
+      ],
+    });
+    const doc = makeEngagement({ properties: [loan, makeLoan({ id: 'loan-002', loanNumber: 'LN-002' })] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    // No orders for this loan in the orders container — the embedded array is stale.
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
+    const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
+    expect(result.properties).toHaveLength(1);
+    expect(result.properties[0]!.id).toBe('loan-002');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7b. getDocuments / getCommunications — order-id collection from VendorOrders
+// ---------------------------------------------------------------------------
+//
+// These methods aggregate sub-resources (documents / communications) from all
+// vendor orders linked to the engagement. The order-id collection step now goes
+// through getVendorOrders() (which queries the orders container by engagementId)
+// rather than walking the embedded EngagementClientOrder.vendorOrderIds arrays.
+// These tests prove the source of truth shifted by exercising drift cases.
+
+describe('getDocuments — order-id source', () => {
+  it('queries the orders container, not the embedded vendorOrderIds, when collecting linked-doc IDs (drift)', async () => {
+    // Embedded array is empty; VendorOrder query returns one. The doc query that
+    // follows MUST include vo-1 in its IN-clause params.
+    const loan = makeLoan({
+      id: 'loan-001',
+      clientOrders: [
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
+      ],
+    });
+    const doc = makeEngagement({ properties: [loan] });
+    const container = makeMockContainer(doc);
+
+    let orderDocsQueryParams: { name: string; value: unknown }[] | undefined;
+    const dbService = makeDbService(container, (containerName, _query, params) => {
+      if (containerName === 'orders') {
+        return [{ id: 'vo-1' }];
+      }
+      if (containerName === 'documents') {
+        // Capture the second documents query (the linked-orders one) — it includes @oid* params.
+        if (params?.some((p) => p.name.startsWith('@oid'))) {
+          orderDocsQueryParams = params;
+          return [{ id: 'doc-from-vo-1' }];
+        }
+        return [{ id: 'doc-engagement-level' }];
+      }
+      return [];
+    });
+    const svc = new EngagementService(dbService, makePropertyRecordService());
+    const result = await svc.getDocuments<{ id: string }>('eng-test-001', 'tenant-001');
+    expect(result.map((d) => d.id)).toEqual(expect.arrayContaining(['doc-engagement-level', 'doc-from-vo-1']));
+    expect(orderDocsQueryParams).toBeDefined();
+    expect(orderDocsQueryParams!.find((p) => p.name === '@oid0')?.value).toBe('vo-1');
+  });
+});
+
+describe('getCommunications — order-id source', () => {
+  it('queries the orders container, not the embedded vendorOrderIds, when collecting linked-comm IDs (drift)', async () => {
+    const loan = makeLoan({
+      id: 'loan-001',
+      clientOrders: [
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
+      ],
+    });
+    const doc = makeEngagement({ properties: [loan] });
+    const container = makeMockContainer(doc);
+
+    let commsQueryParams: { name: string; value: unknown }[] | undefined;
+    const dbService = makeDbService(container, (containerName, _query, params) => {
+      if (containerName === 'orders') return [{ id: 'vo-7' }];
+      if (containerName === 'communications') {
+        commsQueryParams = params;
+        return [];
+      }
+      return [];
+    });
+    const svc = new EngagementService(dbService, makePropertyRecordService());
+    await svc.getCommunications('eng-test-001', 'tenant-001');
+    expect(commsQueryParams).toBeDefined();
+    // The IN-clause should reference vo-7 from the orders container, NOT the
+    // empty embedded array on the engagement doc.
+    expect(commsQueryParams!.find((p) => p.name === '@oid0')?.value).toBe('vo-7');
   });
 });
 
@@ -533,21 +723,21 @@ describe('removeLoan', () => {
 // ---------------------------------------------------------------------------
 
 describe('changeLoanStatus', () => {
-  const VALID_LOAN_TRANSITIONS: Array<[EngagementLoanStatus, EngagementLoanStatus]> = [
-    [EngagementLoanStatus.PENDING,     EngagementLoanStatus.IN_PROGRESS],
-    [EngagementLoanStatus.PENDING,     EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.QC],
-    [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.DELIVERED],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.IN_PROGRESS],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.CANCELLED],
+  const VALID_LOAN_TRANSITIONS: Array<[EngagementPropertyStatus, EngagementPropertyStatus]> = [
+    [EngagementPropertyStatus.PENDING,     EngagementPropertyStatus.IN_PROGRESS],
+    [EngagementPropertyStatus.PENDING,     EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.QC],
+    [EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.DELIVERED],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.IN_PROGRESS],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.CANCELLED],
   ];
 
-  const INVALID_LOAN_TRANSITIONS: Array<[EngagementLoanStatus, EngagementLoanStatus]> = [
-    [EngagementLoanStatus.PENDING,   EngagementLoanStatus.QC],
-    [EngagementLoanStatus.PENDING,   EngagementLoanStatus.DELIVERED],
-    [EngagementLoanStatus.DELIVERED, EngagementLoanStatus.PENDING],
-    [EngagementLoanStatus.CANCELLED, EngagementLoanStatus.IN_PROGRESS],
+  const INVALID_LOAN_TRANSITIONS: Array<[EngagementPropertyStatus, EngagementPropertyStatus]> = [
+    [EngagementPropertyStatus.PENDING,   EngagementPropertyStatus.QC],
+    [EngagementPropertyStatus.PENDING,   EngagementPropertyStatus.DELIVERED],
+    [EngagementPropertyStatus.DELIVERED, EngagementPropertyStatus.PENDING],
+    [EngagementPropertyStatus.CANCELLED, EngagementPropertyStatus.IN_PROGRESS],
   ];
 
   for (const [from, to] of VALID_LOAN_TRANSITIONS) {
@@ -643,7 +833,7 @@ describe('addVendorOrderToClientOrder', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.addVendorOrderToClientOrder('eng-test-001', 'tenant-001', 'loan-nonexistent', 'prod-001', 'ord-xyz', 'user'),
-    ).rejects.toThrow(/EngagementLoan not found/);
+    ).rejects.toThrow(/EngagementProperty not found/);
   });
 
   it('throws a clear error when productId does not exist within the loan', async () => {
@@ -755,10 +945,10 @@ describe('createEngagement â€” enrichment wiring', () => {
 
 
 // ---------------------------------------------------------------------------
-// 11. createEngagement -> ClientOrderService bridge (Option B pipeline)
+// 11. createEngagement -> OrderPlacementOrchestrator bridge (Option B pipeline)
 // ---------------------------------------------------------------------------
 
-describe('createEngagement - ClientOrderService bridge', () => {
+describe('createEngagement - OrderPlacementOrchestrator bridge', () => {
   function makeEnrichmentService(propertyId = 'prop-test-001') {
     return {
       enrichEngagement: vi.fn().mockResolvedValue({
@@ -769,9 +959,10 @@ describe('createEngagement - ClientOrderService bridge', () => {
     };
   }
 
-  function makeClientOrderService() {
+  /** Mock orchestrator injected as 5th EngagementService constructor param. */
+  function makeOrchestrator() {
     return {
-      placeClientOrder: vi.fn(async (input: any) => ({
+      orchestrateClientOrder: vi.fn(async (input: any) => ({
         clientOrder: { id: input.clientOrderId ?? 'co-auto', tenantId: input.tenantId },
         vendorOrders: [],
       })),
@@ -794,13 +985,14 @@ describe('createEngagement - ClientOrderService bridge', () => {
     });
     const container = makeMockContainer(storedEng);
     const enrich = makeEnrichmentService();
-    const cos = makeClientOrderService();
+    const orch = makeOrchestrator();
 
     const svc = new EngagementService(
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — no longer used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement({
@@ -818,10 +1010,10 @@ describe('createEngagement - ClientOrderService bridge', () => {
       }],
     });
 
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(2));
 
     // Both calls reuse the embedded ids from the persisted engagement.
-    const calls = cos.placeClientOrder.mock.calls.map((c: any[]) => c[0]);
+    const calls = orch.orchestrateClientOrder.mock.calls.map((c: any[]) => c[0]);
     expect(calls[0].clientOrderId).toBe('co-embed-1');
     expect(calls[1].clientOrderId).toBe('co-embed-2');
     // Ancestry fields are propagated correctly. The engagementId is the
@@ -830,10 +1022,17 @@ describe('createEngagement - ClientOrderService bridge', () => {
     expect(typeof calls[0].engagementId).toBe('string');
     expect(calls[0].engagementId.length).toBeGreaterThan(0);
     expect(calls[1].engagementId).toBe(calls[0].engagementId);
-    expect(calls[0].engagementLoanId).toBe('loan-a');
+    expect(calls[0].engagementPropertyId).toBe('loan-a');
     expect(calls[0].clientId).toBe('c-001');
     expect(calls[0].tenantId).toBe('tenant-001');
     expect(calls[0].propertyId).toBe('prop-test-001');
+    expect(calls[0].propertyDetails).toBeUndefined();
+    expect(calls[0].propertyAddress).toMatchObject({
+      streetAddress: '1 Main St',
+      city: 'Denver',
+      state: 'CO',
+      zipCode: '80203',
+    });
     expect(calls[0].productType).toBe(EngagementProductType.BPO);
   });
 
@@ -857,8 +1056,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
         return { enrichmentId: 'e', propertyId: 'prop-test-001', status: 'enriched' };
       }),
     };
-    const cos = {
-      placeClientOrder: vi.fn(async () => {
+    const orch = {
+      orchestrateClientOrder: vi.fn(async () => {
         order.push('place');
         return { clientOrder: { id: 'co-x', tenantId: 't' }, vendorOrders: [] };
       }),
@@ -868,11 +1067,12 @@ describe('createEngagement - ClientOrderService bridge', () => {
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement(makeCreateRequest());
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
 
     expect(order).toEqual(['enrich-start', 'enrich-end', 'place']);
   });
@@ -891,18 +1091,19 @@ describe('createEngagement - ClientOrderService bridge', () => {
     const enrich = {
       enrichEngagement: vi.fn().mockRejectedValue(new Error('attom down')),
     };
-    const cos = makeClientOrderService();
+    const orch = makeOrchestrator();
 
     const svc = new EngagementService(
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement(makeCreateRequest());
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
-    expect(cos.placeClientOrder).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
+    expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(1);
   });
 
   it('isolates failures: one placeClientOrder rejection does not abort siblings', async () => {
@@ -920,8 +1121,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
     });
     const container = makeMockContainer(storedEng);
     const enrich = makeEnrichmentService();
-    const cos = {
-      placeClientOrder: vi.fn(async (input: any) => {
+    const orch = {
+      orchestrateClientOrder: vi.fn(async (input: any) => {
         if (input.clientOrderId === 'co-1') throw new Error('cosmos 409');
         return { clientOrder: { id: input.clientOrderId, tenantId: input.tenantId }, vendorOrders: [] };
       }),
@@ -931,7 +1132,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement({
@@ -949,6 +1151,69 @@ describe('createEngagement - ClientOrderService bridge', () => {
       }],
     });
 
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. createEngagement — skipClientOrderPlacement option
+// ---------------------------------------------------------------------------
+
+describe('createEngagement — skipClientOrderPlacement', () => {
+  it('does NOT invoke orchestrator when skipClientOrderPlacement:true (bulk worker owns placement)', async () => {
+    const storedEng = makeEngagement({
+      properties: [makeLoan({
+        id: 'loan-a',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const orch = {
+      orchestrateClientOrder: vi.fn(),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      undefined,
+      undefined,
+      orch as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest(), { skipClientOrderPlacement: true });
+
+    // Must have completed synchronously — give any potential fire-and-forget time to fire
+    await new Promise((r) => setTimeout(r, 50));
+    expect(orch.orchestrateClientOrder).not.toHaveBeenCalled();
+  });
+
+  it('DOES invoke orchestrator (default) when skipClientOrderPlacement is omitted', async () => {
+    const storedEng = makeEngagement({
+      properties: [makeLoan({
+        id: 'loan-b',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-2', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const orch = {
+      orchestrateClientOrder: vi.fn().mockResolvedValue({ clientOrder: {}, vendorOrders: [] }),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      undefined,
+      undefined,
+      orch as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest());
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
   });
 });

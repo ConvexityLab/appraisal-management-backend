@@ -1,5 +1,6 @@
 // Appraisal Management Platform - Main Infrastructure Template
 // Fully parameterized deployment for production-ready API server
+// ci-principal Cosmos RBAC included since c84a3e4
 
 targetScope = 'subscription'
 
@@ -104,6 +105,15 @@ param statebridgeClientName string = 'Statebridge'
 @description('Tenant ID for all Statebridge Cosmos documents (partition key). Set to your Statebridge tenant GUID.')
 param statebridge_tenantId string
 
+@description('Blob-sync client configurations. Each entry creates one Event Grid system topic + subscription routing that vendor\'s blob events to the shared blob-sync-events Service Bus queue. Requires Standard or Premium Service Bus (staging + prod only). Schema: [{ vendorStorageAccountId, vendorStorageAccountName, vendorType, containerName?, blobPathPrefix? }]')
+param blobSyncClients array = []
+
+@description('vendorType value stamped on events originating from the internal blob-intake storage account. Must match the inboundIdentifier of a VendorConnection document in Cosmos. Unused on dev (Basic SB tier cannot receive Event Grid).')
+param blobIntakeVendorType string = 'internal-blob-intake'
+
+@description('Object IDs of external vendor service principals / managed identities that should receive Storage Blob Data Contributor on the `received` container of the blob-intake account. Add per environment in parameters files.')
+param externalBlobIntakeClientPrincipalIds array = []
+
 // AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
 // are non-secret service-discovery values — resolved at runtime from Azure App Configuration
 // via appConfigLoader.ts. They are intentionally NOT bicep params.
@@ -111,6 +121,14 @@ param statebridge_tenantId string
 @secure()
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
+
+@secure()
+@description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". CI populates from a deploy-time secret; bicep wires it to the appraisal-api Container App as both an inline secret (mop-rules-service-auth-token) and an env var (MOP_RULES_SERVICE_AUTH_TOKEN). Empty value disables MOP auth for AMS — set RULES_PROVIDER=homegrown in that case.')
+param mopServiceAuthToken string = ''
+
+@secure()
+@description('AIM Port API key used for both inbound authentication (verifying requests AIM Port sends us) and outbound calls (authenticating requests we send to AIM Port). Stored in Key Vault as "aim-port-api-key". Pass via pipeline secret; leave empty to skip KV secret creation.')
+param aimPortApiKey string = ''
 
 // IVUEIT_API_KEY and IVUEIT_SECRET are sourced via Container App keyVaultUrl
 // secret refs — Managed Identity reads them from Key Vault at runtime. Bicep
@@ -261,6 +279,58 @@ module cosmosMatchingRfbArvContainers 'modules/cosmos-matching-rfb-arv-container
   }
 }
 
+// Cosmos DB Vendor-Matching Rule Pack Containers — Phases 3 + 5 of
+// docs/AUTO_ASSIGNMENT_REVIEW.md. Three containers:
+//   vendor-matching-rule-packs   — per-tenant immutable versioned rule packs
+//   vendor-matching-rule-audit   — append-only audit log of CRUD actions
+//   assignment-traces            — per-assignment evaluation traces
+// Already provisioned live on dev + staging via az on 2026-05-10; this
+// module entry keeps future deploys idempotent.
+module cosmosVendorMatchingRulePackContainers 'modules/cosmos-vendor-matching-rule-pack-containers.bicep' = {
+  name: 'cosmos-vendor-matching-rule-pack-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Vendor Matching Criteria Profiles — per-tenant toggleable
+// matching criteria profiles (David/Doug overlay model).
+module cosmosVendorMatchingCriteriaProfiles 'modules/cosmos-vendor-matching-criteria-profiles-container.bicep' = {
+  name: 'cosmos-vendor-matching-criteria-profiles-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Scorecard Rollup Profiles — David's algorithm parameters
+// (category weights, window, decay, gates, tier thresholds, penalties,
+// + optional JSONLogic override). Overlay BASE → CLIENT → PRODUCT →
+// CLIENT_PRODUCT × phase × version.
+module cosmosScorecardRollupProfiles 'modules/cosmos-scorecard-rollup-profiles-container.bicep' = {
+  name: 'cosmos-scorecard-rollup-profiles-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Scorecard Events — append-only ML feed. Every scorecard
+// recorded (initial or re-score) emits a row with full context for
+// future model training.
+module cosmosScorecardEvents 'modules/cosmos-scorecard-events-container.bicep' = {
+  name: 'cosmos-scorecard-events-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Engagements Container (LenderEngagement aggregate root domain)
 module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' = {
   name: 'cosmos-engagements-container-deployment'
@@ -301,8 +371,9 @@ module cosmosCompletionReportsContainer 'modules/cosmos-completion-reports-conta
   }
 }
 
-// Cosmos DB AI Assistant Containers (Phase 8 post-review)
-// Adds: ai-audit-events, ai-conversations, ai-feature-flags, ai-telemetry-events
+// Cosmos DB AI Assistant Containers (Phase 8 post-review + Phase 14 v2)
+// Adds: ai-audit-events, ai-conversations, ai-feature-flags, ai-telemetry-events,
+//       ai-autopilot (single shared container, recipes + runs, entityType discriminator).
 // Backs the frontend AI Assistant subsystem under l1-valuation-platform-ui.
 module cosmosAiAssistantContainers 'modules/cosmos-ai-assistant-containers.bicep' = {
   name: 'cosmos-ai-assistant-containers-deployment'
@@ -327,6 +398,39 @@ module cosmosPropertyRecordsContainer 'modules/cosmos-property-records-container
 // Stores per-order provider enrichment payloads for traceability/debugging.
 module cosmosPropertyEnrichmentsContainer 'modules/cosmos-property-enrichments-container.bicep' = {
   name: 'cosmos-property-enrichments-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Property Observations Container
+// Stores immutable property-domain observations for projector-driven canonical reads.
+module cosmosPropertyObservationsContainer 'modules/cosmos-property-observations-container.bicep' = {
+  name: 'cosmos-property-observations-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Property Event Outbox Container
+// Stores durable, non-authoritative integration notifications derived from committed property-domain writes.
+module cosmosPropertyEventOutboxContainer 'modules/cosmos-property-event-outbox-container.bicep' = {
+  name: 'cosmos-property-event-outbox-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Canonical Snapshots Container
+// Stores frozen order-scoped reproducibility documents separate from generic AI insight records.
+module cosmosCanonicalSnapshotsContainer 'modules/cosmos-canonical-snapshots-container.bicep' = {
+  name: 'cosmos-canonical-snapshots-container-deployment'
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName
@@ -396,6 +500,31 @@ module cosmosDecompositionRulesContainer 'modules/cosmos-decomposition-rules-con
   }
 }
 
+// Cosmos DB Vendor Marketplace Containers (Phase 4 — vendor-bids, vendor-performance-metrics, etc.)
+// Defines containers for vendor bidding and marketplace operations.
+// Partitioned by /orderId (vendor-bids) and /tenantId (others).
+module cosmosVendorMarketplaceContainers 'modules/vendor-marketplace-containers.bicep' = {
+  name: 'cosmos-vendor-marketplace-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Blob-Intake-Jobs Container
+// Stores BlobIntakeJobDocument (per-blob ingestion tracking) and BlobSyncCursorDocument
+// (per-connection cursor for Data Share delta enumeration). Partitioned by /tenantId.
+// Consumed by DataShareBlobSyncAdapter and BlobCreatedBlobSyncAdapter.
+module cosmosBlobIntakeJobsContainer 'modules/cosmos-blob-intake-jobs-container.bicep' = {
+  name: 'cosmos-blob-intake-jobs-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
@@ -457,6 +586,21 @@ module sftpStorage 'modules/storage-sftp.bicep' = {
   }
 }
 
+// Blob-intake Storage Account (vendor blob-drop zone + live-fire test target)
+// Plain StorageV2 — no HNS. External vendor clients receive Storage Blob Data
+// Contributor on the `received` container only. The appraisal-api Container App
+// reads from this account via Managed Identity (Storage Blob Data Reader).
+// Event Grid → SB wiring is provisioned below for staging + prod.
+module blobIntakeStorage 'modules/storage-blob-intake.bicep' = {
+  name: 'blob-intake-storage-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+  }
+}
+
 // Event Grid subscription: SFTP BlobCreated → sftp-order-events queue
 // Routes uploads/ blob events to the queue so the functions container app can process them.
 module sftpEventGrid 'modules/eventgrid-sftp.bicep' = {
@@ -489,6 +633,53 @@ module bulkUploadEventGrid 'modules/eventgrid-bulk-upload.bicep' = {
   ]
 }
 
+// Event Grid subscriptions: vendor blob-drop accounts → blob-sync-events Service Bus queue
+// One system topic + subscription per blob-sync client. All events route to the shared
+// blob-sync-events queue; the vendorType application property stamps the routing key.
+//
+// ⚠️  Requires Standard or Premium Service Bus. Only populate blobSyncClients in
+//    staging and prod parameters files (not dev, which uses the Basic namespace).
+//
+// Parameters file entry shape:
+//   { "vendorStorageAccountId": "/subscriptions/.../storageAccounts/<name>",
+//     "vendorStorageAccountName": "<name>",
+//     "vendorType": "<inboundIdentifier — must match VendorConnection in Cosmos>",
+//     "containerName": "received",        // optional — omit for Data Share accounts
+//     "blobPathPrefix": "" }              // optional
+module blobSyncIntegration 'modules/blob-sync-integration.bicep' = [for (client, i) in blobSyncClients: {
+  name: 'blob-sync-integration-${client.vendorType}-deployment'
+  scope: resourceGroup
+  params: {
+    vendorStorageAccountId: client.vendorStorageAccountId
+    vendorStorageAccountName: client.vendorStorageAccountName
+    vendorType: client.vendorType
+    serviceBusNamespaceName: serviceBus.outputs.namespaceName
+    serviceBusQueueName: 'blob-sync-events'
+    containerName: client.?containerName ?? ''
+    blobPathPrefix: client.?blobPathPrefix ?? ''
+    tags: tags
+  }
+}]
+
+// Event Grid subscription: internal blob-intake account → blob-sync-events queue
+// Wired for staging and prod only — dev uses Basic SB tier which cannot receive
+// Event Grid deliveries. Set blobIntakeVendorType in parameters files to match
+// the VendorConnection inboundIdentifier you create in Cosmos for this account.
+module blobSyncIntegrationInternal 'modules/blob-sync-integration.bicep' = if (environment != 'dev') {
+  name: 'blob-sync-integration-internal-deployment'
+  scope: resourceGroup
+  params: {
+    vendorStorageAccountId: blobIntakeStorage.outputs.storageAccountId
+    vendorStorageAccountName: blobIntakeStorage.outputs.storageAccountName
+    vendorType: blobIntakeVendorType
+    serviceBusNamespaceName: serviceBus.outputs.namespaceName
+    serviceBusQueueName: 'blob-sync-events'
+    containerName: 'received'
+    blobPathPrefix: ''
+    tags: tags
+  }
+}
+
 // Container Apps and Container Registry (deployed after data services)
 module appServices 'modules/app-services.bicep' = {
   name: 'app-services-deployment'
@@ -515,6 +706,7 @@ module appServices 'modules/app-services.bicep' = {
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
     axiomWebhookSecret: axiomWebhookSecret
+    mopServiceAuthToken: mopServiceAuthToken
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
@@ -557,7 +749,11 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName
-    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    // Include CI service principal so post-deploy smoke checks (verify-seeded-users)
+    // can read Cosmos via DefaultAzureCredential without a separate role assignment step.
+    containerAppPrincipalIds: empty(ciServicePrincipalId)
+      ? appServices.outputs.containerAppPrincipalIds
+      : concat(appServices.outputs.containerAppPrincipalIds, [ciServicePrincipalId])
   }
 }
 
@@ -581,6 +777,20 @@ module storageRoleAssignments 'modules/storage-role-assignments.bicep' = {
   }
 }
 
+// Blob-intake storage role assignments:
+//   • Container App MIs → Storage Blob Data Reader (account scope, all envs)
+//   • External client principals → Storage Blob Data Contributor (received container, per-env)
+module blobIntakeStorageRoleAssignments 'modules/storage-blob-intake-role-assignments.bicep' = {
+  name: 'blob-intake-storage-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    intakeStorageAccountName: blobIntakeStorage.outputs.storageAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    externalClientPrincipalIds: externalBlobIntakeClientPrincipalIds
+    developerPrincipalIds: developerPrincipalIds
+  }
+}
+
 // ACS role assignments for Container Apps (after apps exist)
 module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
   name: 'acs-role-assignments-deployment'
@@ -599,6 +809,7 @@ module serviceBusRoleAssignments 'modules/servicebus-role-assignments.bicep' = {
   params: {
     serviceBusNamespaceName: serviceBus.outputs.namespaceName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    developerPrincipalIds: developerPrincipalIds
   }
 }
 
@@ -648,6 +859,8 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     azureClientSecret: azureClientSecret
     fluidRelayTenantKey: fluidRelay.outputs.fluidRelayPrimaryKey
     axiomWebhookSecret: axiomWebhookSecret
+    mopServiceAuthToken: mopServiceAuthToken
+    aimPortApiKey: aimPortApiKey
   }
 }
 

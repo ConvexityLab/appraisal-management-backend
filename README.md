@@ -611,6 +611,7 @@ console.log('Instagram Score:', features.data.uniqueCharacteristics.instagrammab
 - **[API Documentation](docs/property-intelligence-api.md)** - Detailed API reference
 - **[Demo Examples](examples/property-intelligence-demo.ts)** - Working code examples
 - **[Type Definitions](src/types/property-intelligence.ts)** - TypeScript interfaces
+- **[Reporting System Production Plan](REPORTING_SYSTEM_PRODUCTION_PLAN.md)** - Config-driven report rendering: architecture, schema, and implementation roadmap (`@l1/shared-types`, product deltas, `DynamicReportForm`, `ReportConfigMergerService`)
 
 ## 🧪 Testing
 

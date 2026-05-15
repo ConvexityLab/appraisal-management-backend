@@ -3,6 +3,7 @@ import { SecretClient } from '@azure/keyvault-secrets';
 import { CosmosDbService } from '../cosmos-db.service.js';
 import { Logger } from '../../utils/logger.js';
 import type { VendorConnection, VendorType } from '../../types/vendor-integration.types.js';
+import { VendorConnectionConfigurationError } from './VendorIntegrationErrors.js';
 
 export class VendorConnectionService {
   private readonly logger = new Logger('VendorConnectionService');
@@ -27,26 +28,49 @@ export class VendorConnectionService {
     );
 
     if (!response.success || !response.data || response.data.length === 0) {
-      throw new Error(
-        `Active vendor connection not found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}`,
+      throw new VendorConnectionConfigurationError(
+        `No active vendor connection is configured for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}. ` +
+        'Create or activate a vendor connection before enabling this inbound integration.',
       );
     }
 
     if (response.data.length > 1) {
-      throw new Error(
-        `Multiple active vendor connections found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}. ` +
+      throw new VendorConnectionConfigurationError(
+        `Multiple active vendor connections are configured for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}. ` +
         'This must be unique.',
       );
     }
 
     const [connection] = response.data;
     if (!connection) {
-      throw new Error(
-        `Active vendor connection not found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}`,
+      throw new VendorConnectionConfigurationError(
+        `No active vendor connection is configured for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}. ` +
+        'Create or activate a vendor connection before enabling this inbound integration.',
       );
     }
 
     return connection;
+  }
+
+  /**
+   * Look up a vendor connection by its Cosmos document ID.
+   * Used by VendorOutboundDispatcher to resolve the connection from an outbox document's
+   * connectionId field, which stores the Cosmos doc ID — NOT the inboundIdentifier.
+   */
+  async getConnectionById(id: string): Promise<VendorConnection> {
+    const response = await this.db.queryItems<VendorConnection>(
+      'vendor-connections',
+      'SELECT * FROM c WHERE c.id = @id',
+      [{ name: '@id', value: id }],
+    );
+
+    if (!response.success || !response.data || response.data.length === 0 || !response.data[0]) {
+      throw new VendorConnectionConfigurationError(
+        `No vendor connection found with id=${id}. It may have been deleted.`,
+      );
+    }
+
+    return response.data[0];
   }
 
   async resolveSecret(secretName: string): Promise<string> {

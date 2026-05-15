@@ -5,6 +5,7 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import type { 
   InspectionAppointment, 
   ScheduleInspectionRequest,
@@ -13,14 +14,54 @@ import type {
   SchedulingConflict,
   TimeSlot
 } from '../types/inspection.types.js';
+import type { PropertyAddress } from '../types/index.js';
 
 export class InspectionService {
   private cosmosService: CosmosDbService;
   private logger: Logger;
+  private orderContextLoader: OrderContextLoader;
 
   constructor(cosmosService: CosmosDbService) {
     this.cosmosService = cosmosService;
     this.logger = new Logger('InspectionService');
+    this.orderContextLoader = new OrderContextLoader(this.cosmosService);
+  }
+
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
+  private async resolveInspectionPropertyAddress(order: Record<string, any>): Promise<string> {
+    const fallback = this.formatPropertyAddress(order.propertyAddress);
+
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrder(order as any, { includeProperty: true });
+      return this.formatPropertyAddress(getPropertyAddress(ctx)) || fallback;
+    } catch (error) {
+      this.logger.warn('InspectionService: canonical property lookup failed; using legacy order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
   }
 
   /**
@@ -29,9 +70,11 @@ export class InspectionService {
   async getAllInspections(tenantId: string, status?: string): Promise<InspectionAppointment[]> {
     const container = this.cosmosService.getContainer('orders');
     
-    let query = 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
+    // Phase B inspection unification: filter by VendorOrder role rather than
+    // the legacy `type: 'inspection'` discriminator. Inspections are now
+    // VendorOrders with role='INSPECTION'.
+    let query = "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.tenantId = @tenantId";
     const parameters: any[] = [
-      { name: '@type', value: 'inspection' },
       { name: '@tenantId', value: tenantId }
     ];
 
@@ -78,9 +121,9 @@ export class InspectionService {
     const container = this.cosmosService.getContainer('orders');
     
     const { resources } = await container.items.query<InspectionAppointment>({
-      query: 'SELECT * FROM c WHERE c.type = @type AND c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.createdAt DESC',
+      // Phase B inspection unification: filter by VendorOrder role.
+      query: "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.createdAt DESC",
       parameters: [
-        { name: '@type', value: 'inspection' },
         { name: '@orderId', value: orderId },
         { name: '@tenantId', value: tenantId }
       ]
@@ -95,9 +138,9 @@ export class InspectionService {
   async getInspectionsByAppraiserId(appraiserId: string, tenantId: string = 'test-tenant-123', status?: string): Promise<InspectionAppointment[]> {
     const container = this.cosmosService.getContainer('orders');
     
-    let query = 'SELECT * FROM c WHERE c.type = @type AND c.appraiserId = @appraiserId AND c.tenantId = @tenantId';
+    // Phase B inspection unification: filter by VendorOrder role.
+    let query = "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.appraiserId = @appraiserId AND c.tenantId = @tenantId";
     const parameters: any[] = [
-      { name: '@type', value: 'inspection' },
       { name: '@appraiserId', value: appraiserId },
       { name: '@tenantId', value: tenantId }
     ];
@@ -140,18 +183,56 @@ export class InspectionService {
       throw new Error('Appraiser not found');
     }
 
+    // Phase B step 9: inherit engagement linkage from the parent VendorOrder
+    // and validate before write. The Inspection appointment shares the
+    // `orders` container with VendorOrders but uses its own discriminator
+    // (`type: 'inspection'`); a follow-up should unify under
+    // VendorOrder(role='INSPECTION') per ORDER-DOMAIN-REDESIGN.md §2.1.
+    // For now, stamping the linkage prevents orphan creation through this
+    // path — same gap class fixed by the SFTP linkage guard (step 8).
+    const parentOrder = order as { engagementId?: string; engagementPropertyId?: string; engagementClientOrderId?: string; orderNumber?: string; propertyAddress?: unknown; propertyType?: string };
+    const linkageErrors: string[] = [];
+    if (!parentOrder.engagementId) linkageErrors.push('missing engagementId');
+    if (!parentOrder.engagementPropertyId) linkageErrors.push('missing engagementPropertyId');
+    if (!parentOrder.engagementClientOrderId) linkageErrors.push('missing engagementClientOrderId');
+    if (linkageErrors.length > 0) {
+      throw new Error(
+        `Engagement-primacy: cannot schedule inspection — parent order ${request.orderId} ${linkageErrors.join(', ')}`,
+      );
+    }
+
     const now = new Date().toISOString();
-    const inspection: InspectionAppointment = {
+    // Phase B inspection unification (partial): write the InspectionAppointment
+    // as a VendorOrder with `role: 'INSPECTION'` per ORDER-DOMAIN-REDESIGN.md
+    // §2.1. The inspection-specific scheduling fields (scheduledSlot,
+    // alternateSlots, propertyAccess, etc.) ride along on the same doc since
+    // VendorOrder is `Order & VendorOrderLinkage` and accepts extra fields.
+    //
+    // Type discriminator and role:
+    //   - type: 'vendor-order' (was 'inspection')
+    //   - role: 'INSPECTION'  (new field on VendorOrderLinkage)
+    //
+    // Read-path query update (this file lines 32, 81, 98) must filter
+    // `c.type = 'vendor-order' AND c.role = 'INSPECTION'` instead of
+    // `c.type = 'inspection'`. Done in lockstep below.
+    const inspectionPropertyAddress = await this.resolveInspectionPropertyAddress(order as Record<string, any>);
+
+    const inspection: InspectionAppointment & { role?: string } = {
       id: `inspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: 'inspection',
+      type: 'vendor-order' as never,
+      role: 'INSPECTION',
       appointmentType: request.appointmentType ?? 'property_inspection',
       tenantId,
       orderId: request.orderId,
       orderNumber: order.orderNumber,
+      // Engagement linkage (inherited from parent VendorOrder)
+      engagementId: parentOrder.engagementId!,
+      engagementPropertyId: parentOrder.engagementPropertyId!,
+      engagementClientOrderId: parentOrder.engagementClientOrderId!,
       appraiserId: request.appraiserId,
       appraiserName: `${appraiser.firstName} ${appraiser.lastName}`,
       appraiserPhone: appraiser.phone,
-      propertyAddress: order.propertyAddress,
+      propertyAddress: inspectionPropertyAddress,
       propertyType: order.propertyType,
       propertyAccess: request.propertyAccess,
       status: 'scheduled',
@@ -162,7 +243,7 @@ export class InspectionService {
       createdAt: now,
       updatedAt: now,
       createdBy: userId
-    };
+    } as InspectionAppointment;
 
     await ordersContainer.items.create(inspection);
     this.logger.info('Inspection scheduled', { inspectionId: inspection.id, orderId: request.orderId });

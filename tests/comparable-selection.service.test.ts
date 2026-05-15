@@ -20,7 +20,7 @@ import {
   scoreBedBathMatch,
   mapAttomTypeToRecordType,
 } from '../src/services/comparable-selection.service';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import { PropertyRecordType } from '@l1/shared-types';
 import type { SelectionSubjectSummary, CompCandidate, RankingWeights } from '../src/types/comparable-selection.types';
 import type { PropertyDataCacheEntry } from '../src/services/property-data-cache.service';
 
@@ -318,6 +318,7 @@ describe('ComparableSelectionService', () => {
   function makeMockCosmosService() {
     return {
       upsertItem: vi.fn().mockResolvedValue({ success: true }),
+      queryDocuments: vi.fn().mockResolvedValue([]),
     };
   }
 
@@ -354,6 +355,26 @@ describe('ComparableSelectionService', () => {
     expect(result.selected.length).toBeLessThanOrEqual(3);
     expect(result.orderId).toBe('order-1');
     expect(result.productType).toBe('BPO');
+  });
+
+  it('loads subject observations before building the canonical subject summary', async () => {
+    const cosmos = makeMockCosmosService();
+    const service = new ComparableSelectionService(
+      cosmos as any,
+      makeMockPropertyRecordService(subjectRecord) as any,
+      makeMockPropertyDataCacheService([]) as any,
+    );
+
+    await service.selectForOrder('order-1', 'tenant-1', 'BPO', 'prop-subject-001');
+
+    expect(cosmos.queryDocuments).toHaveBeenCalledWith(
+      'property-observations',
+      expect.stringContaining('SELECT * FROM c'),
+      expect.arrayContaining([
+        expect.objectContaining({ name: '@tenantId', value: 'tenant-1' }),
+        expect.objectContaining({ name: '@propertyId', value: 'prop-subject-001' }),
+      ]),
+    );
   });
 
   it('throws if product type has no config', async () => {

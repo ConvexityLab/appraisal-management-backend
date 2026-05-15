@@ -75,7 +75,8 @@ type PublishableVerdict = CriterionEvaluation['evaluation'] | undefined;
 export class CriteriaReevaluationHandlerService {
   private readonly logger = new Logger('CriteriaReevaluationHandlerService');
   private readonly subscriber: ServiceBusEventSubscriber;
-  private readonly inflightByKey = new Map<string, Promise<void>>();
+  /** Cosmos container that stores ephemeral reevaluation-lock documents. */
+  private readonly LOCK_CONTAINER = 'run-ledger' as const;
   private isStarted = false;
 
   constructor(
@@ -125,13 +126,20 @@ export class CriteriaReevaluationHandlerService {
     }
 
     const dedupeKey = `${orderId}:${this.normalizeToken(triggeringFieldName)}:${JSON.stringify(data.triggeringFieldNewValue ?? null)}`;
-    const existing = this.inflightByKey.get(dedupeKey);
-    if (existing) {
-      this.logger.info('Duplicate criteria reevaluation request ignored while one is already in flight', {
+    // Truncate to 255 chars to satisfy Cosmos id constraints.
+    const lockId = `reeval-lock:${dedupeKey}`.slice(0, 255);
+
+    const lockResult = await this.dbService.createItem<{ id: string; type: string; tenantId: string; dedupeKey: string; createdAt: string }>(
+      this.LOCK_CONTAINER,
+      { id: lockId, type: 'reevaluation-lock', tenantId, dedupeKey, createdAt: new Date().toISOString() },
+    );
+    if (!lockResult.success) {
+      this.logger.info('Duplicate criteria reevaluation request ignored — another instance holds the distributed lock', {
         orderId,
         triggeringFieldName,
+        lockId,
       });
-      return existing;
+      return;
     }
 
     const requestInput: Required<Pick<CriteriaReevaluationRequestedData, 'orderId' | 'tenantId' | 'triggeringFieldName'>> & CriteriaReevaluationRequestedData = {
@@ -142,12 +150,13 @@ export class CriteriaReevaluationHandlerService {
       ...(typeof data.triggeredBy === 'string' ? { triggeredBy: data.triggeredBy } : {}),
     };
 
-    const job = this.processReevaluation(requestInput).finally(() => {
-      this.inflightByKey.delete(dedupeKey);
-    });
-
-    this.inflightByKey.set(dedupeKey, job);
-    return job;
+    try {
+      await this.processReevaluation(requestInput);
+    } finally {
+      await this.dbService.deleteItem(this.LOCK_CONTAINER, lockId, tenantId).catch((err: unknown) => {
+        this.logger.warn('Failed to release reevaluation distributed lock', { lockId, error: err instanceof Error ? err.message : String(err) });
+      });
+    }
   }
 
   private async processReevaluation(input: Required<Pick<CriteriaReevaluationRequestedData, 'orderId' | 'tenantId' | 'triggeringFieldName'>> & CriteriaReevaluationRequestedData): Promise<void> {

@@ -8,11 +8,13 @@ import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { VendorCertificationService } from '../services/vendor-certification.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
-import { 
+import {
   CertificationStatus,
   CertificationType,
-  VendorCertification 
+  VendorCertification
 } from '../types/certification.types.js';
+import { stripConfidentialFieldsDeep } from '../utils/confidential-fields.js';
+import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 const logger = new Logger();
 
@@ -114,7 +116,7 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: true,
-          data: certifications,
+          data: stripConfidentialFieldsDeep(certifications, (req as UnifiedAuthRequest).user),
           summary,
           count: certifications.length
         });
@@ -155,7 +157,7 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: true,
-          data: expiring,
+          data: stripConfidentialFieldsDeep(expiring, (req as UnifiedAuthRequest).user),
           count: expiring.length,
           daysThreshold: days
         });
@@ -199,7 +201,7 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: true,
-          data: certification
+          data: stripConfidentialFieldsDeep(certification, (req as UnifiedAuthRequest).user)
         });
 
       } catch (error) {
@@ -254,7 +256,7 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: true,
-          data: result,
+          data: stripConfidentialFieldsDeep(result, (req as UnifiedAuthRequest).user),
           message: 'Document uploaded successfully'
         });
 
@@ -368,8 +370,8 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: result.success,
-          data: result,
-          message: result.success 
+          data: stripConfidentialFieldsDeep(result, (req as UnifiedAuthRequest).user),
+          message: result.success
             ? 'License verified with state board' 
             : 'License verification failed'
         });
@@ -396,7 +398,7 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
 
         res.json({
           success: true,
-          data: alerts,
+          data: stripConfidentialFieldsDeep(alerts, (req as UnifiedAuthRequest).user),
           count: alerts.length,
           summary: {
             critical: alerts.filter(a => a.alertLevel === 'CRITICAL').length,

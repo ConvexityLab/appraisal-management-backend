@@ -7,6 +7,7 @@ import { VendorConnectionService } from './VendorConnectionService.js';
 import { VendorEventOutboxService } from './VendorEventOutboxService.js';
 import { VendorOrderReferenceService } from './VendorOrderReferenceService.js';
 import type { AdapterInboundResult, VendorConnection, VendorDomainEvent, VendorType } from '../../types/vendor-integration.types.js';
+import type { VendorAssignmentTrigger } from './VendorOrderReferenceService.js';
 
 export interface VendorInboundProcessingResult extends AdapterInboundResult {
   connection: VendorConnection;
@@ -40,9 +41,12 @@ export class VendorIntegrationService {
     adapters?: VendorAdapter[],
     orderReferenceService?: VendorOrderReferenceService,
     outboxService?: VendorEventOutboxService,
+    /** Lazy getter for the auto-assignment orchestrator — threaded into VendorOrderReferenceService. */
+    orchestratorRef?: () => VendorAssignmentTrigger | undefined,
   ) {
     this.connectionService = connectionService ?? new VendorConnectionService();
-    this.orderReferenceService = orderReferenceService ?? new VendorOrderReferenceService();
+    this.orderReferenceService =
+      orderReferenceService ?? new VendorOrderReferenceService(undefined, undefined, undefined, orchestratorRef);
     this.outboxService = outboxService ?? new VendorEventOutboxService();
     this.adapters = adapters ?? [new AimPortAdapter(), new ClassValuationWebhookAdapter()];
   }

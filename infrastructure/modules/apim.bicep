@@ -110,15 +110,17 @@ resource functionBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-pr
 // API: Main API
 // The full swagger spec is imported post-deploy via 'az apim api import' in infrastructure.yml
 // because api-swagger.json exceeds Bicep's 128 KB loadTextContent() limit (BCP184).
-// This resource creates the API shell with correct serviceUrl and subscriptionRequired settings;
-// the import step overlays the full operation list without touching these properties.
+// The imported OpenAPI document is normalized to strip the leading '/api' from
+// every path, then APIM publishes this API at path 'api'. That avoids the empty
+// API path catching vendor-specific routes like /api/v1/integrations/aim-port
+// before the dedicated vendor APIs get a chance to match.
 resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
   parent: apim
   name: apiName
   properties: {
     displayName: 'Appraisal Management API'
     description: 'Main REST API for appraisal management operations'
-    path: ''
+    path: 'api'
     protocols: ['https']
     subscriptionRequired: false
     serviceUrl: 'https://${apiContainerAppFqdn}'
@@ -145,13 +147,17 @@ resource apiAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-p
   }
 }
 
-// API Policy: No rewrite needed - paths in swagger already have /api prefix
+// API Policy: Explicitly rewrite to the full incoming /api/* backend path.
+// The API container app mounts routes under /api/*, while APIM operation
+// templates for this API are rooted below the API path ('api'). Without this
+// rewrite, APIM can forward /v1/... to the backend, which the Express app does
+// not serve. Preserve the original /api-prefixed path when proxying.
 resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: api
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><rewrite-uri template="@{ return &quot;/api&quot; + context.Request.Url.Path; }" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -238,14 +244,16 @@ resource aimPortApiPostInbound 'Microsoft.ApiManagement/service/apis/operations@
   }
 }
 
-// Policy: backend selection + CORS. Path is preserved end-to-end (no rewrite)
-// because the Express controller mounts at /api/v1/integrations/aim-port.
+// Policy: backend selection + CORS. APIM strips the API path
+// (`api/v1/integrations/aim-port`) before forwarding the operation template to
+// the backend, so we must rewrite the backend URI back to the Express mount
+// path. Without this, APIM forwards POST /inbound and the backend returns 404.
 resource aimPortApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: aimPortApi
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><set-header name="X-APIM-Forwarded" exists-action="override"><value>true</value></set-header><rewrite-uri template="/api/v1/integrations/aim-port/inbound" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 

@@ -17,6 +17,8 @@ export interface CreateUserProfileRequest {
   boundEntityIds: string[];
   isInternal?: boolean;
   tenantId: string;
+  clientId?: string;
+  subClientId?: string;
   accessScope?: Partial<AccessScope>;
 }
 
@@ -32,6 +34,8 @@ export interface UpdateAccessScopeRequest {
   canViewAllVendors?: boolean;
   canOverrideQC?: boolean;
 }
+
+export type UserLifecycleStatus = 'active' | 'inactive';
 
 export class UserProfileService {
   private logger: Logger;
@@ -76,6 +80,8 @@ export class UserProfileService {
         name: request.name,
         azureAdObjectId: request.azureAdObjectId,
         tenantId: request.tenantId,
+        ...(request.clientId !== undefined ? { clientId: request.clientId } : {}),
+        ...(request.subClientId !== undefined ? { subClientId: request.subClientId } : {}),
         role: request.role,
         portalDomain: request.portalDomain,
         boundEntityIds: request.boundEntityIds,
@@ -388,6 +394,48 @@ export class UserProfileService {
       return profile;
     } catch (error) {
       this.logger.error('Failed to reactivate user', { userId, tenantId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update a user's lifecycle status through a normalized endpoint.
+   */
+  async updateActiveStatus(
+    userId: string,
+    tenantId: string,
+    status: UserLifecycleStatus,
+  ): Promise<UserProfile | null> {
+    try {
+      const profile = await this.dbService.getDocument<UserProfile>(
+        this.CONTAINER_NAME,
+        userId,
+        tenantId,
+      );
+
+      if (!profile) {
+        this.logger.warn('User profile not found for status update', { userId, tenantId, status });
+        return null;
+      }
+
+      const updated: UserProfile = {
+        ...profile,
+        isActive: status === 'active',
+        updatedAt: new Date(),
+      };
+
+      await this.dbService.upsertDocument(this.CONTAINER_NAME, updated);
+
+      this.logger.info('User lifecycle status updated', {
+        userId,
+        tenantId,
+        previousStatus: profile.isActive ? 'active' : 'inactive',
+        newStatus: status,
+      });
+
+      return updated;
+    } catch (error) {
+      this.logger.error('Failed to update user lifecycle status', { userId, tenantId, status, error });
       throw error;
     }
   }

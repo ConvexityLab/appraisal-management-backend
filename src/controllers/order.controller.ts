@@ -81,6 +81,12 @@ import { PropertyEnrichmentService } from '../services/property-enrichment.servi
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
 import { AccessControlHelper } from '../services/access-control-helper.service.js';
+import { ClientOrderService, type VendorOrderSpec } from '../services/client-order.service.js';
+import {
+  VendorOrderScorecardService,
+  ScorecardError,
+} from '../services/vendor-order-scorecard.service.js';
+import { VendorOrderScorecardSuggester } from '../services/vendor-order-scorecard-suggester.service.js';
 
 const logger = new Logger('OrderController');
 const accessControlHelper = new AccessControlHelper();
@@ -132,6 +138,46 @@ function buildOrderFields(
   );
 }
 
+/**
+ * Format any address-ish value (string or object with street/city/state/zip)
+ * into a single human-readable string. Used when projecting a canonical
+ * PropertyAddress onto downstream consumers (QC queue, search results) that
+ * expect a flat string.
+ */
+function formatPropertyAddressValue(address: unknown): string {
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (!address || typeof address !== 'object') {
+    return '';
+  }
+
+  const candidate = address as Record<string, unknown>;
+  const street = typeof candidate['streetAddress'] === 'string'
+    ? candidate['streetAddress']
+    : typeof candidate['street'] === 'string'
+      ? candidate['street']
+      : '';
+  const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+  const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+  const zipCode = typeof candidate['zipCode'] === 'string'
+    ? candidate['zipCode']
+    : typeof candidate['zip'] === 'string'
+      ? candidate['zip']
+      : '';
+  const locality = [city, state].filter(Boolean).join(', ');
+  const trailing = [locality, zipCode].filter(Boolean).join(' ');
+  return [street, trailing].filter(Boolean).join(', ');
+}
+
+type CanonicalAddressParts = {
+  fullAddress: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+};
+
 export class OrderController {
   public router: Router;
   private dbService: CosmosDbService;
@@ -149,6 +195,9 @@ export class OrderController {
   private complianceService: ComplianceService;
   private enrichmentService: PropertyEnrichmentService;
   private contextLoader: OrderContextLoader;
+  private clientOrderService: ClientOrderService;
+  private scorecardService: VendorOrderScorecardService;
+  private scorecardSuggester: VendorOrderScorecardSuggester;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -170,7 +219,7 @@ export class OrderController {
       new AddressServiceGeocoder(),
     );
     this.eventService = new OrderEventService(this.enrichmentService);
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(dbService);
     this.slaService = new SLATrackingService();
     this.qcQueueService = new QCReviewQueueService();
     this.axiomService = new AxiomService(dbService);
@@ -182,7 +231,116 @@ export class OrderController {
     this.waiverScreening = new WaiverScreeningService(dbService);
       this.complianceService = new ComplianceService(dbService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.clientOrderService = new ClientOrderService(dbService);
+    this.scorecardService = new VendorOrderScorecardService(
+      dbService,
+      new AuditTrailService(dbService),
+    );
+    this.scorecardSuggester = new VendorOrderScorecardSuggester(dbService);
     this.setupRoutes(authzMiddleware);
+  }
+
+  /**
+   * Resolve the canonical PropertyAddress for an order via the
+   * OrderContextLoader, with safe fallback to the order's embedded
+   * propertyAddress when the canonical join fails. Returns a normalized
+   * shape callers can drop into downstream APIs.
+   */
+  private async loadCanonicalAddressParts(order: Order): Promise<CanonicalAddressParts> {
+    const fallbackAddress = (order as any).propertyAddress as unknown;
+    const fallbackCity = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['city'] as string | undefined
+      : undefined;
+    const fallbackState = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['state'] as string | undefined
+      : undefined;
+    const fallbackZipCode = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['zipCode'] as string | undefined
+      : undefined;
+    const fallback: CanonicalAddressParts = {
+      fullAddress: formatPropertyAddressValue(fallbackAddress),
+      ...(fallbackCity ? { city: fallbackCity } : {}),
+      ...(fallbackState ? { state: fallbackState } : {}),
+      ...(fallbackZipCode ? { zipCode: fallbackZipCode } : {}),
+    };
+
+    try {
+      const ctx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
+      const address = getPropertyAddress(ctx);
+      if (!address) {
+        return fallback;
+      }
+
+      return {
+        fullAddress: formatPropertyAddressValue(address) || fallback.fullAddress,
+        city: address.city ?? fallback.city,
+        state: address.state ?? fallback.state,
+        zipCode: address.zipCode ?? fallback.zipCode,
+      };
+    } catch (error) {
+      logger.warn('OrderController could not resolve canonical property address; using embedded order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
+  }
+
+  /**
+   * Apply canonical-property-aware filtering to a candidate batch of orders.
+   * Canonical (PropertyRecord-backed) reads can disagree with the order's
+   * embedded propertyAddress copy — this method joins each candidate to the
+   * canonical address before applying user filters so search results match
+   * what the user actually sees in the UI.
+   */
+  private async applyCanonicalPropertyFilters(
+    orders: Order[],
+    filters: { textQuery?: string; propertyAddress?: { city?: string; state?: string; zipCode?: string } },
+  ): Promise<Order[]> {
+    const normalizedTextQuery = typeof filters.textQuery === 'string' ? filters.textQuery.trim().toLowerCase() : '';
+    const desiredCity = filters.propertyAddress?.city?.trim().toLowerCase();
+    const desiredState = filters.propertyAddress?.state?.trim().toLowerCase();
+    const desiredZip = filters.propertyAddress?.zipCode?.trim();
+
+    const enriched = await Promise.all(
+      orders.map(async (order) => ({
+        order,
+        address: await this.loadCanonicalAddressParts(order),
+      })),
+    );
+
+    return enriched
+      .filter(({ order, address }) => {
+        if (desiredCity && address.city?.toLowerCase() !== desiredCity) {
+          return false;
+        }
+        if (desiredState && address.state?.toLowerCase() !== desiredState) {
+          return false;
+        }
+        if (desiredZip && address.zipCode !== desiredZip) {
+          return false;
+        }
+
+        if (!normalizedTextQuery) {
+          return true;
+        }
+
+        const searchable = [
+          order.orderNumber,
+          address.fullAddress,
+          address.city,
+          address.state,
+          address.zipCode,
+          order.clientId,
+          (order as any).specialInstructions,
+        ]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .join(' ')
+          .toLowerCase();
+
+        return searchable.includes(normalizedTextQuery);
+      })
+      .map(({ order }) => order);
   }
 
   private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
@@ -250,6 +408,14 @@ export class OrderController {
     this.router.post('/:orderId/vendor-bid/:bidId/accept',  ...approveRes, this.acceptVendorBid.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/decline', ...rejectRes,  this.declineVendorBid.bind(this));
     this.router.post('/:orderId/acknowledge-attention',     ...updateRes,  this.acknowledgeAttention.bind(this));
+    // Scorecard re-score / history (Phase A standalone routes). The primary
+    // scorecard write path is the QC decision endpoint; this exists for
+    // re-scoring after release and for the vendor-detail history view.
+    this.router.post('/:orderId/scorecards',                ...updateRes,  this.appendOrderScorecard.bind(this));
+    this.router.get('/:orderId/scorecards',                 ...readRes,    this.listOrderScorecards.bind(this));
+    // Phase D — data-driven suggested scores (read-only). The QC dialog
+    // pre-fills the rubric form from this so reviewers start from defaults.
+    this.router.get('/:orderId/scorecard-suggestions',      ...readRes,    this.getScorecardSuggestions.bind(this));
     this.router.get('/:orderId/property-enrichment',        ...readRes,    this.getOrderPropertyEnrichment.bind(this));
     this.router.post('/:orderId/property-enrichment/refresh', ...execRes,  this.refreshOrderPropertyEnrichment.bind(this));
     this.router.get('/:orderId/property-record',             ...readRes,    this.getOrderPropertyRecord.bind(this));
@@ -346,12 +512,35 @@ export class OrderController {
         logger.warn('Duplicate order check failed — proceeding with order creation', { error: dupErr });
       }
 
-      const result = await this.dbService.createOrder(orderData);
+      // Phase B step 4: route through ClientOrderService.addVendorOrders so
+      // every VendorOrder is parented by an EngagementClientOrder. A caller
+      // MUST supply clientOrderId in the request body.
+      const clientOrderId = typeof requestBody.clientOrderId === 'string' && requestBody.clientOrderId.trim().length > 0
+        ? requestBody.clientOrderId.trim()
+        : undefined;
+      if (!clientOrderId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'CLIENT_ORDER_REQUIRED',
+            message: 'clientOrderId is required when creating a VendorOrder. Phase B engagement-primacy.',
+          },
+        });
+        return;
+      }
 
-      if (result.success) {
-        // Fire-and-forget: event bus + audit trail
-        const created = result.data as Order;
+      const productType = typeof requestBody.productType === 'string' ? requestBody.productType : (typeof requestBody.orderType === 'string' ? requestBody.orderType : 'FULL_APPRAISAL');
+      const vendorWorkSpecs: VendorOrderSpec[] = [{ vendorWorkType: productType as any }];
 
+      const createdOrders = await this.clientOrderService.addVendorOrders(
+        clientOrderId,
+        req.user!.tenantId,
+        vendorWorkSpecs,
+        orderData,
+      );
+      const created = createdOrders[0] as Order;
+
+      {
         if (intakeDraftId) {
           const documentAssociationResult = await this.documentService.associateEntityDocumentsToOrder({
             tenantId: req.user!.tenantId,
@@ -392,15 +581,24 @@ export class OrderController {
 
         // If this order belongs to an engagement, fire the engagement.order.created event
         // so the AutoAssignmentOrchestratorService can kick off automated vendor selection.
+        // Use canonical context loader so downstream consumers get enriched property/loan data.
         const engagementId: string | undefined = (created as any).engagementId;
         if (engagementId) {
-          const addr = (created as any).propertyAddress;
-          const addrString: string =
-            typeof addr === 'string'
-              ? addr
-              : addr?.streetAddress
-                  ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
-                  : '';
+          const ctx = await this.contextLoader.loadByVendorOrder(created).catch(() => null);
+          const canonicalAddr = ctx ? getPropertyAddress(ctx) : null;
+          const canonicalLoan = ctx ? getLoanInformation(ctx) : null;
+          const addrString: string = canonicalAddr?.streetAddress
+            ? `${canonicalAddr.streetAddress}, ${canonicalAddr.city ?? ''}, ${canonicalAddr.state ?? ''} ${canonicalAddr.zipCode ?? ''}`.trim()
+            : (() => {
+                const addr = (created as any).propertyAddress;
+                return typeof addr === 'string'
+                  ? addr
+                  : addr?.streetAddress
+                      ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
+                      : '';
+              })();
+          const propertyState: string = canonicalAddr?.state ?? (created as any).propertyAddress?.state ?? '';
+          const loanAmount: number = canonicalLoan?.loanAmount ?? (created as any).loanInformation?.loanAmount ?? 0;
           const orderPriority: string = (created as any).priority ?? 'STANDARD';
           const priority: EventPriority =
             orderPriority === 'EMERGENCY' ? EventPriority.CRITICAL
@@ -421,11 +619,12 @@ export class OrderController {
               tenantId: req.user!.tenantId,
               productType: (created as any).productType ?? (created as any).orderType ?? '',
               propertyAddress: addrString,
-              propertyState: (created as any).propertyAddress?.state ?? '',
+              propertyState,
               clientId: (created as any).clientId ?? '',
-              loanAmount: (created as any).loanInformation?.loanAmount ?? 0,
+              loanAmount,
               priority,
               dueDate: (created as any).dueDate ? new Date((created as any).dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              ...((created as any).productId ? { productId: (created as any).productId as string } : {})
             },
           }).catch((err) =>
             logger.error('Failed to publish engagement.order.created event', {
@@ -437,22 +636,16 @@ export class OrderController {
         }
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.created',
+          action: 'ORDER_CREATED',
           resource: { type: 'order', id: created?.id || 'unknown' },
           after: { status: OrderStatus.NEW, priority: orderData.priority },
         }).catch((err) =>
           logger.error('Failed to write audit log for order creation', { error: err }),
         );
         res.status(201).json(duplicateWarning
-          ? { ...result.data as object, duplicateWarning }
-          : result.data,
+          ? { ...created as object, duplicateWarning }
+          : created,
         );
-      } else {
-        res.status(500).json({
-          error: 'Order creation failed',
-          code: 'ORDER_CREATION_ERROR',
-          details: result.error,
-        });
       }
     } catch (error) {
       res.status(500).json({
@@ -783,12 +976,13 @@ export class OrderController {
         // Auto-route to QC queue when order is SUBMITTED
         if (newStatus === OrderStatus.SUBMITTED) {
           const order = result.data!;
+          const canonicalAddress = await this.loadCanonicalAddressParts(order as Order);
 
           this.qcQueueService.addToQueue({
             orderId,
             orderNumber: (order as any).orderNumber || orderId,
             appraisalId: (order as any).appraisalId || orderId,
-            propertyAddress: (order as any).propertyAddress || (order as any).property?.address || '',
+            propertyAddress: canonicalAddress.fullAddress,
             appraisedValue: (order as any).appraisedValue || (order as any).orderValue || (order as any).fee || 0,
             orderPriority: (order as any).priority || (order as any).urgency || 'ROUTINE',
             clientId: (order as any).clientId || '',
@@ -1266,12 +1460,23 @@ export class OrderController {
         offset = 0,
       } = req.body;
 
+      // Text + property-address filters are evaluated against the canonical
+      // PropertyRecord, not the order's embedded propertyAddress copy. When
+      // the user has supplied any of those filters we skip the corresponding
+      // SQL predicates and re-apply them in JS after joining canonical addresses.
+      const requiresCanonicalPropertyFiltering = Boolean(
+        (typeof textQuery === 'string' && textQuery.trim())
+        || propertyAddress?.city
+        || propertyAddress?.state
+        || propertyAddress?.zipCode,
+      );
+
       // Build a dynamic Cosmos SQL query
       const conditions: string[] = ['c.id != null'];
       const parameters: { name: string; value: any }[] = [];
 
       // Full-text search across key fields
-      if (textQuery && typeof textQuery === 'string' && textQuery.trim()) {
+      if (!requiresCanonicalPropertyFiltering && textQuery && typeof textQuery === 'string' && textQuery.trim()) {
         const searchTerm = textQuery.trim().toLowerCase();
         conditions.push(
           `(CONTAINS(LOWER(c.orderNumber ?? ""), @textQuery) ` +
@@ -1320,16 +1525,18 @@ export class OrderController {
         parameters.push({ name: '@dueTo', value: dueDateRange.end });
       }
 
-      // Property address filters
-      if (propertyAddress?.city) {
+      // Property address filters — only applied to the SQL when we are
+      // NOT routing through canonical filtering; otherwise the JS post-filter
+      // handles them against the canonical address.
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.city) {
         conditions.push(`LOWER(c.propertyAddress.city) = @pCity`);
         parameters.push({ name: '@pCity', value: propertyAddress.city.toLowerCase() });
       }
-      if (propertyAddress?.state) {
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.state) {
         conditions.push(`LOWER(c.propertyAddress.state) = @pState`);
         parameters.push({ name: '@pState', value: propertyAddress.state.toLowerCase() });
       }
-      if (propertyAddress?.zipCode) {
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.zipCode) {
         conditions.push(`c.propertyAddress.zipCode = @pZip`);
         parameters.push({ name: '@pZip', value: propertyAddress.zipCode });
       }
@@ -1347,24 +1554,41 @@ export class OrderController {
       const safeLimit = Math.min(Math.max(1, Number(limit)), 100);
       const safeOffset = Math.max(0, Number(offset));
 
-      // Count query
-      const countSpec = this.dbService.buildOrdersQuerySpec(
-        `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
-        parameters,
-        req.authorizationFilter,
-      );
-      const countResult = await this.dbService.queryDocuments<number>('orders', countSpec.query, countSpec.parameters);
-      const total = countResult[0] ?? 0;
+      let total: number;
+      let orders: Order[];
 
-      // Data query
-      const dataSpec = this.dbService.buildOrdersQuerySpec(
-        `SELECT * FROM c WHERE ${whereClause} ` +
-        `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
-        `OFFSET ${safeOffset} LIMIT ${safeLimit}`,
-        parameters,
-        req.authorizationFilter,
-      );
-      const orders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+      if (requiresCanonicalPropertyFiltering) {
+        // Canonical join can't run in Cosmos SQL — pull the candidate set,
+        // filter against canonical addresses in JS, then paginate the result.
+        const dataSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT * FROM c WHERE ${whereClause} ORDER BY c.${safeSortBy} ${safeSortOrder}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        const candidateOrders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+        const filteredOrders = await this.applyCanonicalPropertyFilters(candidateOrders, { textQuery, propertyAddress });
+        total = filteredOrders.length;
+        orders = filteredOrders.slice(safeOffset, safeOffset + safeLimit);
+      } else {
+        // Count query
+        const countSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        const countResult = await this.dbService.queryDocuments<number>('orders', countSpec.query, countSpec.parameters);
+        total = countResult[0] ?? 0;
+
+        // Data query
+        const dataSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT * FROM c WHERE ${whereClause} ` +
+          `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
+          `OFFSET ${safeOffset} LIMIT ${safeLimit}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        orders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+      }
 
       // Compute simple aggregations from the returned page
       const byStatus: Record<string, number> = {};
@@ -2081,6 +2305,22 @@ export class OrderController {
             ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
             : '';
 
+      // Merge requiredCapabilities: order-level wins; fall back to product.requiredCapabilities
+      // so capabilities defined at the product level are automatically enforced during matching
+      // without requiring the order creator to re-specify them on every order.
+      const orderCaps: string[] = Array.isArray(order.requiredCapabilities) ? order.requiredCapabilities as string[] : [];
+      let effectiveCaps: string[] = orderCaps;
+      if (effectiveCaps.length === 0 && order.productId) {
+        try {
+          const productResult = await this.dbService.findProductById(order.productId as string, tenantId);
+          if (productResult.success && Array.isArray(productResult.data?.requiredCapabilities) && productResult.data.requiredCapabilities.length > 0) {
+            effectiveCaps = productResult.data.requiredCapabilities as string[];
+          }
+        } catch (productErr) {
+          logger.warn('Failed to load product for requiredCapabilities merge — proceeding without them', { productId: order.productId, error: productErr });
+        }
+      }
+
       await this.orchestrator.triggerVendorAssignment({
         orderId: order.id,
         orderNumber: order.orderNumber ?? '',
@@ -2095,9 +2335,7 @@ export class OrderController {
         dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         // Eligibility gates — carried from the order record into the event envelope
         ...(order.productId ? { productId: order.productId as string } : {}),
-        ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
-          ? { requiredCapabilities: order.requiredCapabilities as string[] }
-          : {}),
+        ...(effectiveCaps.length ? { requiredCapabilities: effectiveCaps } : {}),
       });
 
       res.json({ success: true, message: 'Auto-assignment triggered — vendor ranking and bid dispatch initiated' });
@@ -2427,32 +2665,112 @@ export class OrderController {
         return;
       }
 
-      const orderResult = await this.dbService.findOrderById(orderId);
-      if (!orderResult.success || !orderResult.data) {
-        res.status(404).json({ error: 'Order not found' });
-        return;
-      }
-
-      const propertyId: string | undefined = (orderResult.data as any).propertyId;
-      if (!propertyId) {
+      const ctx = await this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
+      if (!ctx.property) {
         res.status(404).json({ error: 'Order has no linked property record' });
         return;
       }
 
-      const container = this.dbService.getContainer('property-records');
-      const { resource } = await container.item(propertyId, tenantId).read();
-      if (!resource) {
-        res.status(404).json({ error: `Property record ${propertyId} not found` });
+      res.json(ctx.property);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('not found')) {
+        res.status(404).json({ error: 'Order not found' });
         return;
       }
-
-      res.json(resource);
-    } catch (err) {
       logger.error('getOrderPropertyRecord failed', {
         orderId: req.params.orderId,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
       res.status(500).json({ error: 'Failed to retrieve property record' });
+    }
+  }
+
+  // ─── Scorecard routes ────────────────────────────────────────────────────
+  //
+  // The QC decision endpoint is still the primary write path for scoring on
+  // approval (it gates the COMPLETED transition). These standalone routes
+  // exist for two cases that aren't part of the QC approval flow:
+  //   1. RE-SCORING after release. Pass `supersedes` with the prior entry id;
+  //      the service marks the old one supersededBy and appends a new entry.
+  //   2. History view. The vendor-detail "Scorecards" tab reads from
+  //      GET /api/orders/:id/scorecards to assemble the rollup.
+
+  public async appendOrderScorecard(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    const userId = req.user?.id ?? 'unknown';
+    const body = (req.body ?? {}) as {
+      scores?: unknown;
+      generalComments?: string;
+      supersedes?: string;
+    };
+
+    if (!body.scores || typeof body.scores !== 'object') {
+      res.status(400).json({
+        success: false,
+        error: 'Request body must include a `scores` object with all five categories.',
+        code: 'SCORECARD_REQUIRED',
+      });
+      return;
+    }
+
+    try {
+      const entry = await this.scorecardService.appendScorecard(
+        orderId,
+        {
+          scores: body.scores as never,
+          ...(body.generalComments ? { generalComments: body.generalComments } : {}),
+          ...(body.supersedes ? { supersedes: body.supersedes } : {}),
+        },
+        userId,
+      );
+      res.status(201).json({ success: true, data: entry });
+    } catch (err) {
+      if (err instanceof ScorecardError) {
+        res.status(err.statusCode).json({
+          success: false,
+          error: err.message,
+          code: err.statusCode === 400 ? 'SCORECARD_INVALID' : 'SCORECARD_REJECTED',
+        });
+        return;
+      }
+      logger.error('appendOrderScorecard failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to append scorecard' });
+    }
+  }
+
+  public async listOrderScorecards(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    try {
+      const scorecards = await this.scorecardService.listScorecards(orderId);
+      res.json({ success: true, data: scorecards });
+    } catch (err) {
+      if (err instanceof ScorecardError) {
+        res.status(err.statusCode).json({ success: false, error: err.message });
+        return;
+      }
+      logger.error('listOrderScorecards failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to list scorecards' });
+    }
+  }
+
+  public async getScorecardSuggestions(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    try {
+      const suggestions = await this.scorecardSuggester.suggestForOrder(orderId);
+      res.json({ success: true, data: suggestions });
+    } catch (err) {
+      logger.error('getScorecardSuggestions failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to compute scorecard suggestions' });
     }
   }
 }

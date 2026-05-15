@@ -10,7 +10,14 @@ import type {
 } from '../types/review-preparation.types.js';
 import type { ReviewContext } from '../types/review-context.types.js';
 
+// Must include EVERY value of `PreparedInputSourceType` — the canonical
+// projection used to be silently omitted here, which made the
+// prepared-dispatch provenance summary's `sourceTypesUsed` always report
+// "no canonical bindings" even when criteria did consume canonical data.
+// Same class of bug as the canonicalData drop in
+// review-context-assembly.service.ts (commit f12fc18).
 const PREPARED_INPUT_SOURCE_TYPES: PreparedInputSourceType[] = [
+  'canonical',
   'subjectProperty',
   'extraction',
   'providerData',

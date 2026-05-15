@@ -42,6 +42,44 @@ interface JobResponse {
   status?: string;
 }
 
+interface JobSummary {
+  id?: string;
+  clientId?: string;
+  status?: string;
+}
+
+interface FailureListResponse {
+  jobId?: string;
+  total?: number;
+  items?: Array<{
+    itemId?: string;
+    failureCode?: string;
+    retryable?: boolean;
+  }>;
+}
+
+async function assertCsvFailureExport(
+  baseUrl: string,
+  authHeader: string,
+  tenantId: string,
+  jobId: string,
+): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/bulk-ingestion/${encodeURIComponent(jobId)}/failures/export`, {
+    headers: {
+      Authorization: authHeader,
+      'x-tenant-id': tenantId,
+    },
+  });
+
+  const body = await response.text();
+  assertStatus(response.status, [200], 'bulk ingestion failures export', body);
+
+  const disposition = response.headers.get('content-disposition') ?? '';
+  if (!disposition.includes(jobId) || !disposition.includes('.csv')) {
+    throw new Error(`Bulk failures export content-disposition did not include expected jobId/extension. Got: ${disposition}`);
+  }
+}
+
 async function main(): Promise<void> {
   const context = await loadLiveFireContext();
   const adapterKey = required('AXIOM_LIVE_BULK_ADAPTER_KEY');
@@ -132,8 +170,49 @@ async function main(): Promise<void> {
     await sleep(pollIntervalMs);
   }
 
+  logSection('Step 3: GET /api/bulk-ingestion?clientId=...');
+  const listRes = await getJson<JobSummary[]>(
+    `${context.baseUrl}/api/bulk-ingestion?clientId=${encodeURIComponent(context.clientId)}`,
+    {
+      Authorization: context.authHeader.Authorization,
+      'x-tenant-id': context.tenantId,
+    },
+  );
+  assertStatus(listRes.status, [200], 'bulk ingestion job list', listRes.data);
+  const jobInList = Array.isArray(listRes.data)
+    ? listRes.data.find((job) => job.id === jobId)
+    : undefined;
+  if (!jobInList) {
+    throw new Error(`Submitted bulk ingestion job '${jobId}' did not appear in GET /api/bulk-ingestion?clientId=${context.clientId}`);
+  }
+  console.log(`✓ job listed for clientId=${context.clientId}`);
+
+  logSection('Step 4: GET /api/bulk-ingestion/:jobId/failures');
+  const failuresRes = await getJson<FailureListResponse>(
+    `${context.baseUrl}/api/bulk-ingestion/${encodeURIComponent(jobId)}/failures`,
+    {
+      Authorization: context.authHeader.Authorization,
+      'x-tenant-id': context.tenantId,
+    },
+  );
+  assertStatus(failuresRes.status, [200], 'bulk ingestion failures list', failuresRes.data);
+  if (failuresRes.data?.jobId !== jobId) {
+    throw new Error(`Failures list returned unexpected jobId. Expected '${jobId}', got '${failuresRes.data?.jobId ?? 'undefined'}'.`);
+  }
+  console.log(`✓ failures endpoint reachable (total=${failuresRes.data?.total ?? 0})`);
+
+  logSection('Step 5: GET /api/bulk-ingestion/:jobId/failures/export');
+  await assertCsvFailureExport(
+    context.baseUrl,
+    context.authHeader.Authorization,
+    context.tenantId,
+    jobId,
+  );
+  console.log('✓ failures export endpoint reachable');
+
   logSection('Result');
   console.log(`✓ bulk submission path is live and persisted (jobId=${jobId}, status=${lastStatus})`);
+  console.log(`✓ bulk client surfaces are live (list + failures + failures/export)`);
   console.log('\n✅ Axiom live-fire bulk submit passed.');
 }
 

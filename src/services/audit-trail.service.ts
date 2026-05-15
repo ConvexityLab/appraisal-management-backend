@@ -6,6 +6,7 @@
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { getCorrelationId } from '../middleware/correlation-id.middleware.js';
+import { AuditEventType } from '../types/audit-events.js';
 
 export interface AuditEvent {
   id: string;
@@ -38,9 +39,17 @@ export class AuditTrailService {
   private dbService: CosmosDbService;
   private readonly containerName = 'audit-trail';
 
-  constructor() {
+  /**
+   * Takes an already-initialised `CosmosDbService` from the caller. Earlier
+   * versions of this service constructed a fresh `new CosmosDbService()`
+   * inline, which the runtime never `connect()`-ed — so every `log()` call
+   * failed silently with `Database not initialized` (the catch block below
+   * logs the error but doesn't throw, so the symptom was an empty
+   * audit-trail container, not a request failure).
+   */
+  constructor(dbService: CosmosDbService) {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService;
   }
 
   /**
@@ -85,7 +94,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'order.created',
+      action: AuditEventType.ORDER_CREATED,
       resource: { type: 'order', id: orderId },
       after: orderData,
     });
@@ -101,7 +110,7 @@ export class AuditTrailService {
     
     await this.log({
       actor,
-      action: 'order.updated',
+      action: AuditEventType.ORDER_UPDATED,
       resource: { type: 'order', id: orderId },
       before,
       after,
@@ -117,7 +126,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'order.assigned',
+      action: AuditEventType.VENDOR_ASSIGNED,
       resource: { type: 'order', id: orderId },
       metadata: {
         newAppraiserId: appraiserId,
@@ -134,7 +143,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'order.status_changed',
+      action: AuditEventType.STATUS_CHANGED,
       resource: { type: 'order', id: orderId },
       changes: [{
         field: 'status',
@@ -151,7 +160,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'order.deleted',
+      action: AuditEventType.ORDER_DELETED,
       resource: { type: 'order', id: orderId },
       before: orderData,
     });
@@ -167,7 +176,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: success ? 'user.login.success' : 'user.login.failed',
+      action: success ? AuditEventType.USER_LOGIN_SUCCESS : AuditEventType.USER_LOGIN_FAILED,
       resource: { type: 'user', id: actor.userId },
     });
   }
@@ -180,7 +189,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'user.permissions_changed',
+      action: AuditEventType.USER_PERMISSIONS_CHANGED,
       resource: { type: 'user', id: targetUserId },
       before: { permissions: permissionsBefore },
       after: { permissions: permissionsAfter },
@@ -199,7 +208,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: `document.${action}`,
+      action: action === 'view' ? AuditEventType.DOCUMENT_VIEWED : AuditEventType.DOCUMENT_DOWNLOADED,
       resource: { type: 'document', id: documentId, name: documentName },
     });
   }
@@ -212,7 +221,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'document.uploaded',
+      action: AuditEventType.DOCUMENT_UPLOADED,
       resource: { type: 'document', id: documentId, name: documentName },
       metadata: { fileSize },
     });
@@ -225,7 +234,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'document.deleted',
+      action: AuditEventType.DOCUMENT_DELETED,
       resource: { type: 'document', id: documentId, name: documentName },
     });
   }
@@ -242,7 +251,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'document.reassociated_to_order',
+      action: AuditEventType.DOCUMENT_REASSOCIATED_TO_ORDER,
       resource: { type: 'document', id: params.documentId, name: params.documentName },
       metadata: {
         orderId: params.orderId,
@@ -263,7 +272,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'qc.review_created',
+      action: AuditEventType.QC_REVIEW_CREATED,
       resource: { type: 'qc_review', id: reviewId },
       metadata: { orderId },
     });
@@ -277,7 +286,7 @@ export class AuditTrailService {
   ): Promise<void> {
     await this.log({
       actor,
-      action: 'qc.review_completed',
+      action: AuditEventType.QC_REVIEW_COMPLETED,
       resource: { type: 'qc_review', id: reviewId },
       metadata: { result, deficiencies },
     });

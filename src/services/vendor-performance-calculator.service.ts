@@ -4,18 +4,50 @@
  */
 
 import type { VendorOrder as Order } from "../types/vendor-order.types.js";
+import type { VendorOrderScorecardEntry } from '../types/vendor-order.types.js';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { 
-  VendorPerformanceMetrics, 
+import { ScorecardRollupProfileService } from './scorecard-rollup-profile.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
+import {
+  VendorPerformanceMetrics,
   VendorTier,
-  GeographicArea 
+  GeographicArea
 } from '../types/vendor-marketplace.types.js';
 import { OrderStatus } from '../types';
+
+/**
+ * Per Doug's meeting note: rate vendors on a TRAILING window of recent
+ * deliveries rather than all-time. 25 is the agreed default. NOW SUPERSEDED
+ * by ScorecardRollupProfile.window.size when a profile is in force; kept as
+ * the unprofiled-tenant fallback so behaviour is unchanged for clients that
+ * haven't authored a profile yet.
+ */
+const SCORECARD_WINDOW_SIZE = 25;
+
+/**
+ * Scorecard contribution to the blended overallScore (0..1). 0.5 = 50/50.
+ * Also superseded by ScorecardRollupProfile.derivedSignalBlendWeight when
+ * resolved at compute time.
+ */
+const SCORECARD_BLEND_WEIGHT = 0.5;
 
 export class VendorPerformanceCalculatorService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  /**
+   * Rollup-profile service. calculateVendorMetrics resolves the active
+   * per-tenant profile through this and uses its category weights, window,
+   * blend ratio, gates, penalties, and tier thresholds. Default-constructed
+   * so every call site picks up David's algorithm automatically; tests can
+   * substitute via setRollupProfileService.
+   *
+   * For unprofiled tenants the resolver returns DEFAULT_BASE_PROFILE — the
+   * legacy hard-coded constants (SCORECARD_WINDOW_SIZE / SCORECARD_BLEND_WEIGHT
+   * / TIER_THRESHOLDS) are retained below only as a paranoia fallback for the
+   * narrow case where resolve itself throws.
+   */
+  private rollupProfileService: ScorecardRollupProfileService;
 
   // Scoring weights (must sum to 1.0)
   private readonly WEIGHTS = {
@@ -37,6 +69,18 @@ export class VendorPerformanceCalculatorService {
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+    this.rollupProfileService = new ScorecardRollupProfileService(
+      this.dbService,
+      new AuditTrailService(this.dbService),
+    );
+  }
+
+  /**
+   * Override the rollup profile service — used by tests to substitute a stub.
+   * Production code should rely on the default-constructed instance.
+   */
+  public setRollupProfileService(svc: ScorecardRollupProfileService): void {
+    this.rollupProfileService = svc;
   }
 
   /**
@@ -44,11 +88,37 @@ export class VendorPerformanceCalculatorService {
    */
   async calculateVendorMetrics(
     vendorId: string,
-    tenantId: string
+    tenantId: string,
+    /**
+     * Optional resolution context — when the calculator is invoked for a
+     * specific order (or product/client), pass these so the rollup-profile
+     * resolver can pick the right overlay. Without them the resolver returns
+     * the BASE profile (tenant-wide default).
+     */
+    profileInput?: { clientId?: string; productType?: string; phase?: 'ORIGINAL' | 'REVIEW' },
   ): Promise<VendorPerformanceMetrics> {
     this.logger.info('Calculating vendor performance metrics', { vendorId, tenantId });
 
     try {
+      // Resolve David's rollup profile. resolveProfile always returns at
+      // least the in-memory DEFAULT_BASE_PROFILE — undefined only when the
+      // resolve call itself throws (Cosmos outage etc.), in which case we
+      // fall back to the legacy hard-coded constants further down.
+      const profile = await this.rollupProfileService
+        .resolveProfile({
+          tenantId,
+          ...(profileInput?.clientId ? { clientId: profileInput.clientId } : {}),
+          ...(profileInput?.productType ? { productType: profileInput.productType } : {}),
+          ...(profileInput?.phase ? { phase: profileInput.phase } : {}),
+        })
+        .catch((err) => {
+          this.logger.warn('Rollup profile resolve failed; using defaults', {
+            vendorId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return undefined;
+        });
+
       // Fetch all completed orders for this vendor
       const orders = await this.getVendorOrders(vendorId, tenantId);
 
@@ -64,16 +134,45 @@ export class VendorPerformanceCalculatorService {
       const volumeMetrics = this.calculateVolumeMetrics(orders);
       const financialMetrics = this.calculateFinancialMetrics(orders);
 
-      // Calculate overall weighted score
-      const overallScore = this.calculateOverallScore({
+      // Calculate overall weighted score from derived signals
+      const derivedOverallScore = this.calculateOverallScore({
         quality: qualityMetrics.qualityScore,
         speed: speedMetrics.avgTurnaroundTime,
         reliability: reliabilityMetrics.completionRate,
         communication: communicationMetrics.communicationScore
       });
 
-      // Determine tier
-      const tier = this.calculateTier(overallScore);
+      // Scorecard blend — uses the profile's category weights + window size
+      // when a profile is in force; falls back to equal-weight + 25-window
+      // when not. Returns null when no scorecards exist yet.
+      const scorecardBlend = this.computeScorecardBlend(orders, profile);
+      const blendWeight = profile?.derivedSignalBlendWeight ?? SCORECARD_BLEND_WEIGHT;
+      let overallScore = scorecardBlend
+        ? Math.round(
+            derivedOverallScore * (1 - blendWeight) +
+              scorecardBlend.overallOnHundredScale * blendWeight,
+          )
+        : derivedOverallScore;
+
+      // Apply penalties from the profile (revisions, late deliveries, reassignments).
+      // Each penalty shaves perUnit × signal-count, capped at penalty.cap.
+      if (profile?.penalties && profile.penalties.length > 0 && scorecardBlend) {
+        for (const penalty of profile.penalties) {
+          const signalValue = this.measurePenaltySignal(penalty.signal, orders);
+          const deduction = penalty.cap !== undefined
+            ? Math.min(penalty.perUnit * signalValue, penalty.cap)
+            : penalty.perUnit * signalValue;
+          overallScore = Math.max(0, overallScore - deduction);
+        }
+      }
+
+      // Determine tier via the profile's thresholds (falls back to hard-coded
+      // defaults). Gates evaluated separately — they can CLAMP the tier down
+      // if a critical category score is too low.
+      let tier = this.calculateTier(overallScore, profile?.tierThresholds);
+      if (profile?.gates && profile.gates.length > 0 && scorecardBlend) {
+        tier = this.applyGates(tier, profile.gates, scorecardBlend.categoryAverages);
+      }
 
       // Get certifications and coverage areas
       const vendor = await this.getVendorProfile(vendorId, tenantId);
@@ -350,14 +449,94 @@ export class VendorPerformanceCalculatorService {
   }
 
   /**
-   * Determine vendor tier based on score
+   * Determine vendor tier based on score. Accepts an optional override from
+   * the resolved rollup profile; falls back to the hard-coded defaults for
+   * unprofiled tenants.
    */
-  private calculateTier(score: number): VendorTier {
-    if (score >= this.TIER_THRESHOLDS.PLATINUM) return 'PLATINUM';
-    if (score >= this.TIER_THRESHOLDS.GOLD) return 'GOLD';
-    if (score >= this.TIER_THRESHOLDS.SILVER) return 'SILVER';
-    if (score >= this.TIER_THRESHOLDS.BRONZE) return 'BRONZE';
+  private calculateTier(
+    score: number,
+    overrideThresholds?: { PLATINUM: number; GOLD: number; SILVER: number; BRONZE: number },
+  ): VendorTier {
+    const t = overrideThresholds ?? this.TIER_THRESHOLDS;
+    if (score >= t.PLATINUM) return 'PLATINUM';
+    if (score >= t.GOLD) return 'GOLD';
+    if (score >= t.SILVER) return 'SILVER';
+    if (score >= t.BRONZE) return 'BRONZE';
     return 'PROBATION';
+  }
+
+  /**
+   * Apply HARD-GATE constraints from the resolved profile. Each gate says
+   * "if the vendor's avg in category X is below minScore, clamp their tier
+   * to at most clampToTier." Used for things like "fail PLATINUM if Quality
+   * < 4" — prevents a vendor with one good aspect from masking a critical
+   * weakness.
+   */
+  private applyGates(
+    currentTier: VendorTier,
+    gates: Array<{
+      type: 'min_in_category';
+      category: import('../types/vendor-marketplace.types.js').ScorecardCategoryKey;
+      minScore: number;
+      clampToTier: VendorTier;
+    }>,
+    categoryAverages: Record<string, number | null>,
+  ): VendorTier {
+    const tierOrder: Record<VendorTier, number> = {
+      PROBATION: 0,
+      BRONZE: 1,
+      SILVER: 2,
+      GOLD: 3,
+      PLATINUM: 4,
+    };
+    let resolved = currentTier;
+    for (const gate of gates) {
+      if (gate.type !== 'min_in_category') continue;
+      const avg = categoryAverages[gate.category];
+      if (typeof avg !== 'number') continue; // no signal yet — skip
+      if (avg < gate.minScore) {
+        // Clamp DOWN only, never up.
+        if (tierOrder[gate.clampToTier] < tierOrder[resolved]) {
+          resolved = gate.clampToTier;
+        }
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Measure a single penalty signal across the order list. Returns the
+   * count or magnitude the penalty should multiply against.
+   */
+  private measurePenaltySignal(
+    signal: 'revision_count' | 'late_delivery_days' | 'reassignment_count',
+    orders: Order[],
+  ): number {
+    if (signal === 'revision_count') {
+      return orders.reduce(
+        (sum, o) => sum + ((o as { revisionCount?: number }).revisionCount ?? 0),
+        0,
+      );
+    }
+    if (signal === 'late_delivery_days') {
+      let total = 0;
+      for (const o of orders) {
+        const due = (o as { dueDate?: string | Date }).dueDate;
+        const delivered = (o as { deliveredDate?: string | Date }).deliveredDate;
+        if (!due || !delivered) continue;
+        const dueMs = typeof due === 'string' ? new Date(due).getTime() : due.getTime();
+        const delMs =
+          typeof delivered === 'string' ? new Date(delivered).getTime() : delivered.getTime();
+        const days = (delMs - dueMs) / (1000 * 60 * 60 * 24);
+        if (days > 0) total += days;
+      }
+      return Math.round(total);
+    }
+    // reassignment_count
+    return orders.reduce(
+      (sum, o) => sum + ((o as { reassignmentCount?: number }).reassignmentCount ?? 0),
+      0,
+    );
   }
 
   /**
@@ -637,5 +816,122 @@ export class VendorPerformanceCalculatorService {
     ) as any;
 
     return (result.resources || []) as { id: string }[];
+  }
+
+  /**
+   * Blend the human reviewer scorecards into a single 0-100 signal.
+   *
+   * Honours the resolved rollup profile when provided:
+   *   - window.size sets the trailing order count (falls back to 25)
+   *   - window.minSampleSize gates whether enough data exists to score
+   *   - categoryWeights re-weight the five category averages (falls back to
+   *     equal weight = mean of overallScore)
+   *   - timeDecay (when enabled) weights each scorecard by
+   *     0.5 ^ (age_days / halfLifeDays)
+   *
+   * Returns `null` when:
+   *   - no qualifying scorecards exist, OR
+   *   - sampleCount < window.minSampleSize (caller falls back to derived score)
+   */
+  private computeScorecardBlend(
+    orders: Order[],
+    profile?: import('../types/vendor-marketplace.types.js').ResolvedScorecardRollupProfile,
+  ): {
+    overallOnHundredScale: number;
+    sampleCount: number;
+    categoryAverages: Record<string, number | null>;
+  } | null {
+    const windowSize = profile?.window.size ?? SCORECARD_WINDOW_SIZE;
+    const minSampleSize = profile?.window.minSampleSize ?? 1;
+
+    const completed = orders
+      .filter((o) => o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED)
+      .sort((a, b) => {
+        const aTime = new Date(
+          (a as any).completedAt ?? (a as any).deliveredAt ?? a.updatedAt ?? a.createdAt,
+        ).getTime();
+        const bTime = new Date(
+          (b as any).completedAt ?? (b as any).deliveredAt ?? b.updatedAt ?? b.createdAt,
+        ).getTime();
+        return bTime - aTime; // newest first
+      })
+      .slice(0, windowSize);
+
+    // Collect each order's active scorecard with its age in days.
+    const samples: Array<{ entry: VendorOrderScorecardEntry; ageDays: number }> = [];
+    const now = Date.now();
+    for (const order of completed) {
+      const scorecards = (order.scorecards ?? []) as VendorOrderScorecardEntry[];
+      if (scorecards.length === 0) continue;
+      let active: VendorOrderScorecardEntry | null = null;
+      for (let i = scorecards.length - 1; i >= 0; i--) {
+        const entry = scorecards[i];
+        if (entry && !entry.supersededBy) {
+          active = entry;
+          break;
+        }
+      }
+      if (!active) continue;
+      const ageMs = now - new Date(active.reviewedAt).getTime();
+      samples.push({ entry: active, ageDays: Math.max(0, ageMs / (1000 * 60 * 60 * 24)) });
+    }
+
+    if (samples.length < minSampleSize) return null;
+
+    // Per-sample weight = 1 (or time-decayed when enabled).
+    const decayEnabled = !!profile?.timeDecay.enabled;
+    const halfLifeDays = profile?.timeDecay.halfLifeDays ?? 180;
+    const sampleWeight = (ageDays: number): number =>
+      decayEnabled ? Math.pow(0.5, ageDays / halfLifeDays) : 1;
+
+    // Per-category weighted means (0-5 scale).
+    const cats = ['report', 'quality', 'communication', 'turnTime', 'professionalism'] as const;
+    const categoryAverages: Record<string, number | null> = {};
+    const perCategory0to5: Record<(typeof cats)[number], number> = {
+      report: 0,
+      quality: 0,
+      communication: 0,
+      turnTime: 0,
+      professionalism: 0,
+    };
+    let totalWeight = 0;
+    for (const { entry, ageDays } of samples) totalWeight += sampleWeight(ageDays);
+    if (totalWeight <= 0) totalWeight = samples.length;
+
+    for (const cat of cats) {
+      let sum = 0;
+      let n = 0;
+      for (const { entry, ageDays } of samples) {
+        const v = entry.scores?.[cat]?.value;
+        if (typeof v !== 'number') continue;
+        const w = sampleWeight(ageDays);
+        sum += v * w;
+        n += w;
+      }
+      const avg = n > 0 ? sum / n : null;
+      perCategory0to5[cat] = avg ?? 0;
+      categoryAverages[cat] = avg;
+    }
+
+    // Apply category weights from the resolved profile (or equal weight as fallback).
+    const weights = profile?.categoryWeights ?? {
+      report: 0.2,
+      quality: 0.2,
+      communication: 0.2,
+      turnTime: 0.2,
+      professionalism: 0.2,
+    };
+    const weighted0to5 =
+      perCategory0to5.report * weights.report +
+      perCategory0to5.quality * weights.quality +
+      perCategory0to5.communication * weights.communication +
+      perCategory0to5.turnTime * weights.turnTime +
+      perCategory0to5.professionalism * weights.professionalism;
+
+    return {
+      overallOnHundredScale: Math.round(weighted0to5 * 20),
+      sampleCount: samples.length,
+      categoryAverages,
+    };
   }
 }

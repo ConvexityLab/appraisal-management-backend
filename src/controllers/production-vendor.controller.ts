@@ -12,18 +12,33 @@ import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
+import {
+  stripConfidentialVendorFields,
+  stripConfidentialFieldsFromVendorList,
+  stripConfidentialFieldsDeep,
+} from '../utils/confidential-fields.js';
+import { VendorScorecardsRollupService } from '../services/vendor-scorecards-rollup.service.js';
+import { AuditTrailService } from '../services/audit-trail.service.js';
+import { InAppNotificationService } from '../services/in-app-notification.service.js';
 
 export class VendorController {
   public router: Router;
   private dbService: CosmosDbService;
   private logger: Logger;
 
+  private scorecardsRollup: VendorScorecardsRollupService;
+  private auditTrail: AuditTrailService;
+  private notificationService: InAppNotificationService;
+
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.dbService = dbService;
     this.logger = new Logger('VendorController');
+    this.scorecardsRollup = new VendorScorecardsRollupService(dbService);
+    this.auditTrail = new AuditTrailService(dbService);
+    this.notificationService = new InAppNotificationService();
     this.initializeRoutes(authzMiddleware);
   }
 
@@ -36,22 +51,44 @@ export class VendorController {
     // loadUserProfile() followed by action-specific authorize().
     // If authzMiddleware is absent, arrays are empty (auth-only mode).
     const lp = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
-    const read     = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'read')]   : [];
+    const readQuery = authzMiddleware ? [...lp, authzMiddleware.authorizeQuery('vendor', 'read')] : [];
+    const readResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'read', { resourceIdParam: 'vendorId' })]
+      : [];
     const create   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'create')] : [];
-    const update   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'update')] : [];
-    const del      = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'delete')] : [];
+    const update = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor', 'update')] : [];
+    const updateResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'update', { resourceIdParam: 'vendorId' })]
+      : [];
+    const deleteResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'delete', { resourceIdParam: 'vendorId' })]
+      : [];
     const analytics = authzMiddleware ? [...lp, authzMiddleware.authorize('analytics', 'read')]   : [];
+    const analyticsForVendor = authzMiddleware ? [...analytics, authzMiddleware.authorizeResource('vendor', 'read', { resourceIdParam: 'vendorId' })] : [];
+    const updateOrderResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderId' })]
+      : [];
 
     // Order matters: specific paths before parameterized paths
-    this.router.get('/performance/:vendorId', ...analytics,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
-    this.router.post('/assign/:orderId',       ...update,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
+    this.router.get('/performance/:vendorId', ...analyticsForVendor,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
+    // Per-vendor scorecards rollup (trailing-25 with per-category averages
+    // and the contributing scorecards). Distinct from /performance which
+    // returns the BLENDED metrics that feed the matcher.
+    this.router.get('/:vendorId/scorecards',   ...readResource,    ...this.validateVendorIdParam(), this.getVendorScorecards.bind(this));
+    // Audit trail for the vendor — surfaces who changed trustedVendor /
+    // confidentialClassifications / status / contact info. The metadata
+    // payload is run through stripConfidentialFieldsDeep so callers without
+    // confidential:read don't learn the secret-flag transitions.
+    this.router.get('/:vendorId/audit-trail',  ...readResource,    ...this.validateVendorIdParam(), this.getVendorAuditTrail.bind(this));
+    this.router.post('/assign/:orderId',       ...updateOrderResource,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
 
-    this.router.get('/',                       ...read,    this.getVendors.bind(this));
-    this.router.get('/:vendorId',              ...read,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
+    this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
+    this.router.get('/:vendorId',              ...readResource,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
     this.router.post('/',                      ...create,  ...this.validateVendorCreation(), this.createVendor.bind(this));
-    this.router.patch('/:vendorId/availability', ...update, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
-    this.router.put('/:vendorId',              ...update,  ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
-    this.router.delete('/:vendorId',           ...del,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
+    this.router.patch('/:vendorId/availability',         ...updateResource, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(),       this.setVendorAvailability.bind(this));
+    this.router.patch('/:vendorId/product-eligibility',  ...updateResource, ...this.validateVendorIdParam(), ...this.validateProductEligibilityUpdate(), this.setProductEligibility.bind(this));
+    this.router.put('/:vendorId',                        ...updateResource, ...this.validateVendorIdParam(), ...this.validateVendorUpdate(),               this.updateVendor.bind(this));
+    this.router.delete('/:vendorId',           ...deleteResource,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
   }
 
   // ---------------------------------------------------------------------------
@@ -117,6 +154,34 @@ export class VendorController {
     ];
   }
 
+  private validateProductEligibilityUpdate() {
+    return [
+      body('eligibleProductIds')
+        .isArray().withMessage('eligibleProductIds must be an array')
+        .custom((ids: unknown[]) => {
+          if (!ids.every(id => typeof id === 'string' && id.trim().length > 0)) {
+            throw new Error('eligibleProductIds must be an array of non-empty strings');
+          }
+          return true;
+        }),
+      body('productGrades')
+        .isArray().withMessage('productGrades must be an array')
+        .custom((grades: unknown[]) => {
+          for (const g of grades as Array<Record<string, unknown>>) {
+            if (typeof g.productId !== 'string' || !g.productId.trim()) {
+              throw new Error('each productGrade must have a non-empty productId string');
+            }
+            // grade key validity is data-driven per product — validate only that it is a non-empty string
+            if (typeof g.grade !== 'string' || !g.grade.trim()) {
+              throw new Error('each productGrade must have a non-empty grade string');
+            }
+          }
+          return true;
+        }),
+      this.handleValidationErrors.bind(this)
+    ];
+  }
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
@@ -126,7 +191,7 @@ export class VendorController {
    * List vendors with optional status/specialty filters.
    * Returns VendorProfile[] (unwrapped array) for frontend compatibility.
    */
-  private async getVendors(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getVendors(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       // Phase 8 / A5: optional full-text search via ?q=X.  When the
       // query param is present and non-trivial, route through the
@@ -134,14 +199,19 @@ export class VendorController {
       // original findAllVendors behaviour so existing callers are
       // unaffected.
       const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const authzOptions = req.authorizationFilter
+        ? { authorizationFilter: req.authorizationFilter }
+        : undefined;
       const result =
         rawQ.length > 0
-          ? await this.dbService.searchVendors(rawQ.slice(0, 100))
-          : await this.dbService.findAllVendors();
+          ? await this.dbService.searchVendors(rawQ.slice(0, 100), 50, authzOptions)
+          : await this.dbService.findAllVendors(authzOptions);
 
       if (result.success && result.data) {
         const vendorProfiles = result.data.map(v => this.transformVendorToProfile(v));
-        res.json(vendorProfiles);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialFieldsFromVendorList(vendorProfiles, req.user);
+        res.json(visible);
       } else {
         res.status(500).json({
           error: 'Failed to retrieve vendors',
@@ -170,7 +240,9 @@ export class VendorController {
 
       if (result.success && result.data) {
         const vendorProfile = this.transformVendorToProfile(result.data);
-        res.json(vendorProfile);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(vendorProfile, req.user);
+        res.json(visible);
       } else if (result.success && !result.data) {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -211,7 +283,9 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor created', { vendorId: result.data.id });
         const profile = this.transformVendorToProfile(result.data);
-        res.status(201).json(profile);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.status(201).json(visible);
       } else {
         res.status(500).json({
           error: 'Vendor creation failed',
@@ -236,6 +310,15 @@ export class VendorController {
   private async updateVendor(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const vendorId = req.params.vendorId!; // validated by middleware
+
+      // Capture the "before" state for the audit trail. Compare against the
+      // post-update snapshot so the audit row carries a per-field diff —
+      // especially important for trustedVendor / confidentialClassifications
+      // since those have outsized assignment-decision impact and operators
+      // need a paper trail for who flipped them and when.
+      const beforeResp = await this.dbService.findVendorById(vendorId);
+      const before = (beforeResp.success && beforeResp.data) ? beforeResp.data : null;
+
       const updateData = {
         ...req.body,
         updatedBy: req.user?.id,
@@ -247,7 +330,56 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor updated', { vendorId });
         const profile = this.transformVendorToProfile(result.data);
-        res.json(profile);
+
+        // Audit the change. Compute changed fields up front so the audit row
+        // is self-describing; future "who changed Vendor X's trustedVendor?"
+        // queries don't need a separate before/after lookup.
+        const changes = before
+          ? diffVendorFields(
+              before as unknown as Record<string, unknown>,
+              result.data as unknown as Record<string, unknown>,
+              req.body,
+            )
+          : [];
+        if (changes.length > 0) {
+          await this.auditTrail.log({
+            actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email ? { email: req.user.email } : {}) },
+            action: 'vendor.update',
+            resource: { type: 'vendor', id: vendorId, name: (result.data as { businessName?: string }).businessName ?? vendorId },
+            changes,
+            metadata: {
+              touchedConfidential: changes.some((c) =>
+                c.field === 'trustedVendor' || c.field === 'confidentialClassifications',
+              ),
+            },
+          }).catch((err) => {
+            this.logger.warn('Audit log failed for vendor update', {
+              vendorId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+
+        // Notify every confidential:read holder in this tenant whenever the
+        // trustedVendor flag flips. Doug specifically asked to know when
+        // David flipped it (and vice versa) — the in-app inbox is the path
+        // of least friction. Best-effort: never blocks the response.
+        const trustedChange = changes.find((c) => c.field === 'trustedVendor');
+        if (trustedChange && req.user?.tenantId) {
+          void this.notifyConfidentialReadHolders({
+            tenantId: req.user.tenantId,
+            actorId: req.user.id ?? 'unknown',
+            actorEmail: req.user.email,
+            vendorId,
+            vendorName: (result.data as { businessName?: string }).businessName ?? vendorId,
+            oldValue: trustedChange.oldValue,
+            newValue: trustedChange.newValue,
+          });
+        }
+
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
       } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -293,7 +425,8 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor availability updated', { vendorId, isBusy, vacationStartDate, vacationEndDate });
         const profile = this.transformVendorToProfile(result.data);
-        res.json(profile);
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
       } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -310,6 +443,43 @@ export class VendorController {
         code: 'AVAILABILITY_UPDATE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  }
+
+  /**
+   * PATCH /api/vendors/:vendorId/product-eligibility
+   * Replace the full eligibleProductIds list and productGrades for a vendor.
+   * This is the canonical write path for the matching engine's hard gate and
+   * proficiency bonus.  Sends the complete desired state — not a delta.
+   */
+  private async setProductEligibility(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const { eligibleProductIds, productGrades } = req.body as {
+        eligibleProductIds: string[];
+        productGrades: import('../types/index.js').ProductGrade[];
+      };
+
+      const result = await this.dbService.updateVendor(vendorId, {
+        eligibleProductIds,
+        productGrades,
+        updatedBy: req.user?.id,
+        updatedAt: new Date(),
+      } as any);
+
+      if (result.success && result.data) {
+        this.logger.info('Vendor product eligibility updated', { vendorId, productCount: eligibleProductIds.length });
+        const profile = this.transformVendorToProfile(result.data);
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
+      } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
+        res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
+      } else {
+        res.status(500).json({ error: 'Product eligibility update failed', details: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Failed to update vendor product eligibility', { error, vendorId: req.params.vendorId });
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -392,9 +562,14 @@ export class VendorController {
       } as any);
 
       if (updateResult.success) {
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const assignedVendor = stripConfidentialVendorFields(
+          this.transformVendorToProfile(selectedVendor),
+          req.user,
+        );
         res.json({
           orderId,
-          assignedVendor: this.transformVendorToProfile(selectedVendor),
+          assignedVendor,
           assignmentScore: 95.5,
           assignedAt: new Date()
         });
@@ -411,6 +586,46 @@ export class VendorController {
         error: 'Vendor assignment failed',
         code: 'VENDOR_ASSIGNMENT_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * GET /api/vendors/:vendorId/scorecards
+   * Per-vendor scorecards rollup: trailing-25 active scorecards with per-
+   * category averages plus the contributing entries (newest first).
+   */
+  private async getVendorScorecards(req: AuthorizedRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const tenantId =
+        req.user?.tenantId ?? (req.headers['x-tenant-id'] as string | undefined);
+      if (!tenantId) {
+        res.status(400).json({
+          error: 'tenantId is required (x-tenant-id header).',
+          code: 'TENANT_REQUIRED',
+        });
+        return;
+      }
+      // ABAC: pass the auth-middleware-supplied filter so order-rows the
+      // caller can't see don't leak through the rollup. authorizeResource
+      // (vendor read) gates entry; this filter narrows visible orders by
+      // ownership / assignment / team.
+      const rollup = await this.scorecardsRollup.buildRollup(
+        vendorId,
+        tenantId,
+        req.authorizationFilter,
+      );
+      res.json({ success: true, data: rollup });
+    } catch (error) {
+      this.logger.error('Failed to build vendor scorecards rollup', {
+        error,
+        vendorId: req.params.vendorId,
+      });
+      res.status(500).json({
+        error: 'Failed to build vendor scorecards rollup',
+        code: 'VENDOR_SCORECARDS_ROLLUP_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -520,8 +735,133 @@ export class VendorController {
       workSchedule: vendor.workSchedule,
       geographicCoverage: vendor.geographicCoverage,
       capabilities: vendor.capabilities,
+      capabilityTags: vendor.capabilityTags,
       eligibleProductIds: vendor.eligibleProductIds,
       productGrades: vendor.productGrades
     };
   }
+
+  /**
+   * Fan out an in-app notification to every user with confidential:read in
+   * this tenant when a trustedVendor flag flips. Queries the users container
+   * by accessScope.extraScopes membership. Excludes the actor themselves
+   * (they obviously know what they just did).
+   */
+  private async notifyConfidentialReadHolders(opts: {
+    tenantId: string;
+    actorId: string;
+    actorEmail?: string;
+    vendorId: string;
+    vendorName: string;
+    oldValue: unknown;
+    newValue: unknown;
+  }): Promise<void> {
+    try {
+      const usersContainer = this.dbService.getContainer('users');
+      const { resources: recipients } = await usersContainer.items.query<{
+        id: string;
+        accessScope?: { extraScopes?: string[] };
+      }>({
+        query: `SELECT c.id, c.accessScope FROM c WHERE c.tenantId = @tid AND c.isActive = true AND ARRAY_CONTAINS(c.accessScope.extraScopes, 'confidential:read')`,
+        parameters: [{ name: '@tid', value: opts.tenantId }],
+      }).fetchAll();
+
+      const transition = `${opts.oldValue === true ? 'true' : 'false'} → ${opts.newValue === true ? 'true' : 'false'}`;
+      await Promise.all(
+        recipients
+          .filter((r) => r.id && r.id !== opts.actorId)
+          .map((r) =>
+            this.notificationService.createNotification({
+              tenantId: opts.tenantId,
+              userId: r.id,
+              title: `Trusted-vendor flag changed: ${opts.vendorName}`,
+              message: `${opts.actorEmail ?? opts.actorId} flipped trustedVendor ${transition} on ${opts.vendorName}.`,
+              category: 'vendor' as never,
+              priority: 'normal',
+              actionUrl: `/vendors/${opts.vendorId}`,
+              metadata: {
+                vendorId: opts.vendorId,
+                field: 'trustedVendor',
+                oldValue: opts.oldValue,
+                newValue: opts.newValue,
+              },
+              sourceEventType: 'vendor.trustedVendor.changed',
+            }).catch((err) => {
+              this.logger.warn('Trusted-vendor notification dispatch failed', {
+                recipientId: r.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }),
+          ),
+      );
+    } catch (err) {
+      this.logger.warn('notifyConfidentialReadHolders failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * GET /api/vendors/:vendorId/audit-trail
+   * Recent audit events touching this vendor. The audit-trail container
+   * carries per-field diffs (changes[]) so the FE can render a row like
+   * "Doug Reid flipped trustedVendor false → true at 2026-05-13 10:42:11".
+   * Metadata + changes are run through stripConfidentialFieldsDeep for
+   * callers without confidential:read so they don't learn what they
+   * shouldn't from the audit log either.
+   */
+  private async getVendorAuditTrail(req: AuthorizedRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const limit = Math.min(Number(req.query['limit'] ?? '50') || 50, 200);
+      const container = this.dbService.getContainer('audit-trail');
+      const querySpec = {
+        query:
+          'SELECT TOP @lim * FROM c WHERE c.resource.type = @type AND c.resource.id = @id ORDER BY c.timestamp DESC',
+        parameters: [
+          { name: '@lim', value: limit },
+          { name: '@type', value: 'vendor' },
+          { name: '@id', value: vendorId },
+        ],
+      };
+      const { resources } = await container.items.query(querySpec).fetchAll();
+      const safe = stripConfidentialFieldsDeep(resources, req.user);
+      res.json({ success: true, data: safe, count: Array.isArray(safe) ? safe.length : 0 });
+    } catch (error) {
+      this.logger.error('Failed to fetch vendor audit trail', {
+        error,
+        vendorId: req.params.vendorId,
+      });
+      res.status(500).json({
+        error: 'Failed to fetch vendor audit trail',
+        code: 'VENDOR_AUDIT_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+}
+
+/**
+ * Diff the persisted vendor "before" and "after" snapshots into the
+ * AuditTrailService.changes[] shape. Limited to fields a human-edit can
+ * touch (skips Cosmos system fields, performance metrics computed by
+ * other services, etc.). Body-only filter ensures we don't flag fields
+ * that the system mutated incidentally (`updatedAt`, `updatedBy`).
+ */
+function diffVendorFields(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Array<{ field: string; oldValue: unknown; newValue: unknown }> {
+  const out: Array<{ field: string; oldValue: unknown; newValue: unknown }> = [];
+  const skip = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', 'updatedAt', 'updatedBy']);
+  for (const key of Object.keys(body)) {
+    if (skip.has(key)) continue;
+    const oldVal = before[key];
+    const newVal = after[key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      out.push({ field: key, oldValue: oldVal, newValue: newVal });
+    }
+  }
+  return out;
 }

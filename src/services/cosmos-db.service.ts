@@ -9,13 +9,26 @@ import {
   ApiResponse
 } from '../types/index.js';
 import type { QueryFilter } from '../types/authorization.types.js';
-import {
-  PropertySummary,
-  CreatePropertySummaryRequest
-} from '../types/property-enhanced.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
+
+/**
+ * Module-level shared client + database — every `new CosmosDbService()`
+ * picks these up so services that construct their own instance (e.g.
+ * UserProfileService, AutopilotRecipeRepository) inherit the connection
+ * established by api-server.ts's initialize() at boot.
+ *
+ * Pre-fix: services constructing `new CosmosDbService()` got an instance
+ * with `database = null`.  First call to getContainer/getDocument threw
+ * "Database not initialized" — a real production bug surfaced by
+ * live-fire test 5 (sponsor lookup hit it).  Sharing at the module
+ * level matches the singleton spirit without requiring every service
+ * to accept an injected cosmos param.
+ */
+let sharedClient: CosmosClient | null = null;
+let sharedDatabase: Database | null = null;
+let sharedConnected: boolean = false;
 
 /**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform
@@ -33,7 +46,6 @@ export class CosmosDbService {
   private vendorsContainer: Container | null = null;
   private usersContainer: Container | null = null;
   private propertiesContainer: Container | null = null;
-  private propertySummariesContainer: Container | null = null;
   private qcReviewsContainer: Container | null = null;
   private qcResultsContainer: Container | null = null;
   private qcChecklistsContainer: Container | null = null;
@@ -77,7 +89,6 @@ export class CosmosDbService {
     vendors: 'vendors',
     users: 'users',
     properties: 'properties',
-    propertySummaries: 'property-summaries',
     qcReviews: 'qc-reviews',           // Master QC Review records
     qcResults: 'results',              // QC execution results (legacy/detailed)
     qcChecklists: 'criteria',          // QC checklist templates
@@ -126,12 +137,60 @@ export class CosmosDbService {
     private endpoint: string = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || ''
   ) {
     this.logger = new Logger();
-    
+
     if (!this.endpoint) {
       throw new Error(
         'Cosmos DB endpoint is required. ' +
         'Set COSMOS_ENDPOINT (or AZURE_COSMOS_ENDPOINT) to your production CosmosDB endpoint.'
       );
+    }
+
+    // Inherit the module-level shared client + database if a sibling
+    // instance has already been initialized.  Lets services that
+    // construct their own CosmosDbService (UserProfileService,
+    // autopilot repos, etc.) work without forcing every caller to
+    // thread the singleton manually.
+    if (sharedClient && sharedDatabase) {
+      this.client = sharedClient;
+      this.database = sharedDatabase;
+      this.isConnected = sharedConnected;
+      // Synchronously bind all container references so getXxxContainer()
+      // guards don't throw "not initialized" on a freshly-constructed sibling.
+      // database.container() is a pure reference — no network call.
+      this.ordersContainer = sharedDatabase.container(this.containers.orders);
+      this.vendorsContainer = sharedDatabase.container(this.containers.vendors);
+      this.usersContainer = sharedDatabase.container(this.containers.users);
+      this.propertiesContainer = sharedDatabase.container(this.containers.properties);
+      this.qcReviewsContainer = sharedDatabase.container(this.containers.qcReviews);
+      this.qcResultsContainer = sharedDatabase.container(this.containers.qcResults);
+      this.qcChecklistsContainer = sharedDatabase.container(this.containers.qcChecklists);
+      this.qcExecutionsContainer = sharedDatabase.container(this.containers.qcExecutions);
+      this.qcSessionsContainer = sharedDatabase.container(this.containers.qcSessions);
+      this.qcTemplatesContainer = sharedDatabase.container(this.containers.qcTemplates);
+      this.analyticsContainer = sharedDatabase.container(this.containers.analytics);
+      this.rovRequestsContainer = sharedDatabase.container(this.containers.rovRequests);
+      this.templatesContainer = sharedDatabase.container(this.containers.documentTemplates);
+      this.reviewsContainer = sharedDatabase.container(this.containers.reviews);
+      this.comparableAnalysesContainer = sharedDatabase.container(this.containers.comparableAnalyses);
+      this.documentsContainer = sharedDatabase.container(this.containers.documents);
+      this.communicationsContainer = sharedDatabase.container(this.containers.communications);
+      this.clientsContainer = sharedDatabase.container(this.containers.clients);
+      this.productsContainer = sharedDatabase.container(this.containers.products);
+      this.bulkPortfolioJobsContainer = sharedDatabase.container(this.containers.bulkPortfolioJobs);
+      this.matchingCriteriaSetsContainer = sharedDatabase.container(this.containers.matchingCriteriaSets);
+      this.rfbRequestsContainer = sharedDatabase.container(this.containers.rfbRequests);
+      this.arvAnalysesContainer = sharedDatabase.container(this.containers.arvAnalyses);
+      this.engagementsContainer = sharedDatabase.container(this.containers.engagements);
+      this.reviewProgramsContainer = sharedDatabase.container(this.containers.reviewPrograms);
+      this.reviewResultsContainer = sharedDatabase.container(this.containers.reviewResults);
+      this.constructionLoansContainer = sharedDatabase.container(this.containers.constructionLoans);
+      this.drawsContainer = sharedDatabase.container(this.containers.draws);
+      this.contractorsContainer = sharedDatabase.container(this.containers.contractors);
+      this.appraisalDraftsContainer = sharedDatabase.container(this.containers.appraisalDrafts);
+      this.propertyRecordsContainer = sharedDatabase.container(this.containers.propertyRecords);
+      this.comparableSalesContainer = sharedDatabase.container(this.containers.comparableSales);
+      this.propertyDataCacheContainer = sharedDatabase.container(this.containers.propertyDataCache);
+      this.attomDataContainer = sharedDatabase.container(this.containers.attomData);
     }
   }
 
@@ -202,12 +261,19 @@ export class CosmosDbService {
       // Connect to existing database (provisioned via Bicep)
       this.database = this.client.database(this.databaseId);
 
+      // Publish to the module-level cache so sibling `new CosmosDbService()`
+      // instances (UserProfileService, autopilot repos, etc.) pick up the
+      // initialized client/database without needing their own initialize()
+      // call.  Real bug from live-fire — was returning "Database not
+      // initialized" on every POST /api/users on staging.
+      sharedClient = this.client;
+      sharedDatabase = this.database;
+
       // Connect to existing containers (provisioned via Bicep)
       this.ordersContainer = this.database.container(this.containers.orders);
       this.vendorsContainer = this.database.container(this.containers.vendors);
       this.usersContainer = this.database.container(this.containers.users);
       this.propertiesContainer = this.database.container(this.containers.properties);
-      this.propertySummariesContainer = this.database.container(this.containers.propertySummaries);
       this.qcReviewsContainer = this.database.container(this.containers.qcReviews);
       this.qcResultsContainer = this.database.container(this.containers.qcResults);
       this.qcChecklistsContainer = this.database.container(this.containers.qcChecklists);
@@ -245,6 +311,7 @@ export class CosmosDbService {
       this.attomDataContainer = this.database.container(this.containers.attomData);
 
       this.isConnected = true;
+      sharedConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
         databaseId: this.databaseId,
         endpoint: this.endpoint
@@ -302,9 +369,10 @@ export class CosmosDbService {
    *
    * This method remains as a low-level Cosmos helper used internally by
    * VendorOrderService. Direct callers (`order.controller`,
-   * `production-order.controller`, `bulk-portfolio.service`,
-   * `bulk-ingestion-order-creation-worker`, `ai-action-dispatcher.service`)
-   * are scheduled to migrate in slices 8e–8g per ORDER-DOMAIN-REDESIGN.md §4.
+   * `bulk-portfolio.service`, `bulk-ingestion-order-creation-worker`,
+   * `ai-action-dispatcher.service`) are scheduled to migrate in slices 8e–8g
+   * per ORDER-DOMAIN-REDESIGN.md §4 (the `production-order.controller` direct
+   * caller was deleted in Phase B step B2 — never mounted, no live consumers).
    *
    * Slice 8f (`feat/discriminator-flip`) will additionally rename `type: 'order'`
    * → `type: 'vendor-order'` here in lockstep with all read queries.
@@ -326,8 +394,16 @@ export class CosmosDbService {
       // VENDOR_ORDER_TYPE_PREDICATE; backfilling them to a system-default
       // engagement is a one-off migration (deferred to slice 8j or a
       // dedicated PR).
-      if (!order.engagementId || (typeof order.engagementId === 'string' && order.engagementId.trim() === '')) {
-        this.logger.error('createOrder rejected — missing engagementId (slice 8g engagement-primacy guard)', {
+      // Phase B step 10: full strict engagement-primacy. After all Phase B
+      // caller migrations (steps 4-9), every legitimate write path supplies
+      // engagementId + engagementPropertyId + engagementClientOrderId. Anything
+      // missing them is a bug — reject loudly here instead of silently
+      // creating an orphan VendorOrder.
+      const isLinkageMissing = (v: unknown): boolean =>
+        v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+
+      if (isLinkageMissing(order.engagementId)) {
+        this.logger.error('createOrder rejected — missing engagementId (engagement-primacy guard)', {
           clientId: order.clientId,
           tenantId: order.tenantId,
           productType: order.productType,
@@ -337,7 +413,40 @@ export class CosmosDbService {
           error: createApiError(
             ErrorCodes.ORDER_CREATE_FAILED,
             'engagementId is required to create an order. Route through ClientOrderService.placeClientOrder() ' +
-            'or VendorOrderService.createVendorOrder() — both enforce engagement parenting. Slice 8g.',
+            'or ClientOrderService.addVendorOrders() — both enforce full engagement parenting.',
+          ),
+        };
+      }
+      if (isLinkageMissing(order.engagementPropertyId)) {
+        this.logger.error('createOrder rejected — missing engagementPropertyId (engagement-primacy guard)', {
+          clientId: order.clientId,
+          tenantId: order.tenantId,
+          engagementId: order.engagementId,
+          productType: order.productType,
+        });
+        return {
+          success: false,
+          error: createApiError(
+            ErrorCodes.ORDER_CREATE_FAILED,
+            'engagementPropertyId is required. Every VendorOrder must identify its parent ' +
+            'EngagementProperty. Route through addVendorOrders() / placeClientOrder().',
+          ),
+        };
+      }
+      if (isLinkageMissing(order.engagementClientOrderId)) {
+        this.logger.error('createOrder rejected — missing engagementClientOrderId (engagement-primacy guard)', {
+          clientId: order.clientId,
+          tenantId: order.tenantId,
+          engagementId: order.engagementId,
+          engagementPropertyId: order.engagementPropertyId,
+          productType: order.productType,
+        });
+        return {
+          success: false,
+          error: createApiError(
+            ErrorCodes.ORDER_CREATE_FAILED,
+            'engagementClientOrderId is required. Every VendorOrder must identify its parent ' +
+            'EngagementClientOrder. Route through addVendorOrders() / placeClientOrder().',
           ),
         };
       }
@@ -691,13 +800,21 @@ export class CosmosDbService {
     return { success: true, data: resource as unknown as import('../types/index.js').Client };
   }
 
-  async findClients(tenantId: string, status?: string): Promise<ApiResponse<import('../types/index.js').Client[]>> {
+  async findClients(
+    tenantId: string,
+    status?: string,
+    authorizationFilter?: import('../types/authorization.types.js').QueryFilter,
+  ): Promise<ApiResponse<import('../types/index.js').Client[]>> {
     if (!this.clientsContainer) throw new Error('Clients container not initialized');
     let query = 'SELECT * FROM c WHERE c.tenantId = @tenantId';
-    const params: { name: string; value: string }[] = [{ name: '@tenantId', value: tenantId }];
+    const params: NonNullable<SqlQuerySpec['parameters']> = [{ name: '@tenantId', value: tenantId }];
     if (status) {
       query += ' AND c.status = @status';
       params.push({ name: '@status', value: status });
+    }
+    if (authorizationFilter) {
+      query += ` AND (${authorizationFilter.sql})`;
+      params.push(...authorizationFilter.parameters);
     }
     query += ' ORDER BY c.clientName ASC';
     const { resources } = await this.clientsContainer.items
@@ -766,6 +883,9 @@ export class CosmosDbService {
       ...(product.techFee !== undefined && { techFee: product.techFee }),
       ...(product.feeSplitPercent !== undefined && { feeSplitPercent: product.feeSplitPercent }),
       ...(product.rushTurnTimeDays !== undefined && { rushTurnTimeDays: product.rushTurnTimeDays }),
+      ...(product.gradeLevels !== undefined && { gradeLevels: product.gradeLevels }),
+      ...(product.matchingCriteriaSets !== undefined && { matchingCriteriaSets: product.matchingCriteriaSets }),
+      ...(product.autoAwardFirstBid !== undefined && { autoAwardFirstBid: product.autoAwardFirstBid }),
     } satisfies import('../types/index.js').Product;
     const { resource } = await this.productsContainer.items.create(doc);
     return { success: true, data: resource as unknown as import('../types/index.js').Product };
@@ -776,6 +896,21 @@ export class CosmosDbService {
     const { resources } = await this.productsContainer.items
       .query<import('../types/index.js').Product>({
         query: 'SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c.name ASC',
+        parameters: [{ name: '@tenantId', value: tenantId }],
+      })
+      .fetchAll();
+    return { success: true, data: resources };
+  }
+
+  /** Returns only platform-default products (clientId IS NULL or not defined). */
+  async findPlatformProducts(tenantId: string): Promise<ApiResponse<import('../types/index.js').Product[]>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const { resources } = await this.productsContainer.items
+      .query<import('../types/index.js').Product>({
+        query:
+          'SELECT * FROM c WHERE c.tenantId = @tenantId ' +
+          'AND (NOT IS_DEFINED(c.clientId) OR c.clientId = null) ' +
+          'ORDER BY c.name ASC',
         parameters: [{ name: '@tenantId', value: tenantId }],
       })
       .fetchAll();
@@ -869,161 +1004,9 @@ export class CosmosDbService {
     if (!existing.success || !existing.data) {
       return { success: false, error: createApiError('PRODUCT_NOT_FOUND', `Product ${id} not found`) };
     }
-    await this.updateProduct(id, tenantId, { status: 'INACTIVE' });
+    const deactivated = await this.updateProduct(id, tenantId, { status: 'INACTIVE' });
+    if (!deactivated.success) return { success: false, ...(deactivated.error !== undefined && { error: deactivated.error }) };
     return { success: true, data: undefined };
-  }
-
-  // ===============================
-  // Property Operations
-  // ===============================
-
-  async createPropertySummary(property: CreatePropertySummaryRequest): Promise<ApiResponse<PropertySummary>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      const propertyWithId: PropertySummary = {
-        ...property,
-        id: this.generateId(),
-        building: property.building || {},
-        valuation: property.valuation || {},
-        owner: {
-          fullName: '',
-          ownerOccupied: false
-        },
-        quickLists: {
-          vacant: false,
-          ownerOccupied: false,
-          freeAndClear: false,
-          highEquity: false,
-          activeForSale: false,
-          recentlySold: false
-        },
-        lastUpdated: new Date(),
-        dataSource: 'internal'
-      };
-
-      const { resource } = await this.propertySummariesContainer.items.create(propertyWithId);
-      
-      this.logger.info('Property summary created successfully', { propertyId: resource?.id });
-
-      return {
-        success: true,
-        data: resource as PropertySummary
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to create property summary', { error });
-      return {
-        success: false,
-        error: createApiError(ErrorCodes.PROPERTY_CREATE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
-  }
-
-  async findPropertySummaryById(id: string): Promise<ApiResponse<PropertySummary | null>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      const querySpec = {
-        query: 'SELECT * FROM c WHERE c.id = @id',
-        parameters: [{ name: '@id', value: id }]
-      };
-
-      const { resources } = await this.propertySummariesContainer.items.query<PropertySummary>(querySpec).fetchAll();
-      const property = resources.length > 0 ? resources[0] : null;
-
-      return {
-        success: true,
-        data: property as PropertySummary | null
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to find property summary', { error, id });
-      return {
-        success: false,
-        data: null,
-        error: createApiError('FIND_PROPERTY_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
-  }
-
-  async searchPropertySummaries(filters: any, offset: number = 0, limit: number = 50): Promise<ApiResponse<PropertySummary[]>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      let query = 'SELECT * FROM c WHERE 1=1';
-      const parameters: any[] = [];
-
-      // Handle property type - support both array and string formats
-      if (filters.propertyType) {
-        if (Array.isArray(filters.propertyType) && filters.propertyType.length > 0) {
-          query += ' AND c.propertyType IN (' + filters.propertyType.map((_: any, index: number) => `@type${index}`).join(', ') + ')';
-          filters.propertyType.forEach((type: any, index: number) => {
-            parameters.push({ name: `@type${index}`, value: type });
-          });
-        } else if (typeof filters.propertyType === 'string') {
-          query += ' AND c.propertyType = @propertyType';
-          parameters.push({ name: '@propertyType', value: filters.propertyType });
-        }
-      }
-
-      // Handle state - support both nested and flat structures
-      const state = filters.state || filters.address?.state;
-      if (state) {
-        query += ' AND c.address.state = @state';
-        parameters.push({ name: '@state', value: state });
-      }
-
-      // Handle city - support both nested and flat structures
-      const city = filters.city || filters.address?.city;
-      if (city) {
-        query += ' AND c.address.city = @city';
-        parameters.push({ name: '@city', value: city });
-      }
-
-      // Handle value range - support both nested and flat structures
-      const minValue = filters.minValue || filters.priceRange?.min;
-      const maxValue = filters.maxValue || filters.priceRange?.max;
-      
-      if (minValue) {
-        query += ' AND c.valuation.estimatedValue >= @minPrice';
-        parameters.push({ name: '@minPrice', value: minValue });
-      }
-      
-      if (maxValue) {
-        query += ' AND c.valuation.estimatedValue <= @maxPrice';
-        parameters.push({ name: '@maxPrice', value: maxValue });
-      }
-
-      query += ' ORDER BY c.lastUpdated DESC';
-      query += ` OFFSET ${offset} LIMIT ${limit}`;
-
-      const querySpec = { query, parameters };
-      const { resources } = await this.propertySummariesContainer.items.query<PropertySummary>(querySpec).fetchAll();
-
-      return {
-        success: true,
-        data: resources,
-        metadata: { total: resources.length, offset, limit }
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to search property summaries', { error, filters });
-      return {
-        success: false,
-        data: [],
-        error: createApiError('SEARCH_PROPERTIES_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
   }
 
   // ===============================
@@ -1508,15 +1491,35 @@ export class CosmosDbService {
   // Enhanced Vendor Operations
   // ===============================
 
-  async findAllVendors(): Promise<ApiResponse<Vendor[]>> {
+  async findAllVendors(options?: { authorizationFilter?: QueryFilter }): Promise<ApiResponse<Vendor[]>> {
     try {
       if (!this.vendorsContainer) {
         throw new Error('Vendors container not initialized');
       }
 
-      // Exclude appraiser records that share the same container
-      const querySpec = {
-        query: 'SELECT * FROM c WHERE NOT IS_DEFINED(c.type) OR c.type != \'appraiser\' ORDER BY c.onboardingDate DESC'
+      // Exclude appraiser records that share the same container, and require
+      // a well-formed vendor (businessName + tenantId present) so malformed
+      // test fixtures or partially-written docs don't show up in the list.
+      // Otherwise the FE shows a vendor it can't navigate to (the detail
+      // endpoint's ABAC check rejects docs without proper access envelopes,
+      // producing a confusing 404 after the click).
+      let query =
+        "SELECT * FROM c " +
+        "WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser') " +
+        "AND IS_DEFINED(c.businessName) AND c.businessName != '' " +
+        "AND IS_DEFINED(c.tenantId) AND c.tenantId != ''";
+      const parameters: NonNullable<SqlQuerySpec['parameters']> = [];
+
+      if (options?.authorizationFilter) {
+        query += ` AND (${options.authorizationFilter.sql})`;
+        parameters.push(...options.authorizationFilter.parameters);
+      }
+
+      query += ' ORDER BY c.onboardingDate DESC';
+
+      const querySpec: SqlQuerySpec = {
+        query,
+        parameters,
       };
 
       const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
@@ -1546,14 +1549,17 @@ export class CosmosDbService {
    * parameterised to avoid injection; callers should still trim and
    * length-cap input at the controller.
    */
-  async searchVendors(q: string, limit: number = 50): Promise<ApiResponse<Vendor[]>> {
+  async searchVendors(
+    q: string,
+    limit: number = 50,
+    options?: { authorizationFilter?: QueryFilter },
+  ): Promise<ApiResponse<Vendor[]>> {
     try {
       if (!this.vendorsContainer) {
         throw new Error('Vendors container not initialized');
       }
       const safeLimit = Math.min(Math.max(limit, 1), 200);
-      const querySpec = {
-        query: `SELECT TOP ${safeLimit} * FROM c
+      let query = `SELECT TOP ${safeLimit} * FROM c
           WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser')
           AND (
             CONTAINS(c.businessName, @q, true)
@@ -1561,9 +1567,19 @@ export class CosmosDbService {
             OR CONTAINS(c.primaryContactName, @q, true)
             OR CONTAINS(c.email, @q, true)
             OR CONTAINS(c.phone, @q, true)
-          )
-          ORDER BY c.onboardingDate DESC`,
-        parameters: [{ name: '@q', value: q }],
+          )`;
+      const parameters: NonNullable<SqlQuerySpec['parameters']> = [{ name: '@q', value: q }];
+
+      if (options?.authorizationFilter) {
+        query += ` AND (${options.authorizationFilter.sql})`;
+        parameters.push(...options.authorizationFilter.parameters);
+      }
+
+      query += ' ORDER BY c.onboardingDate DESC';
+
+      const querySpec: SqlQuerySpec = {
+        query,
+        parameters,
       };
 
       const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
@@ -3068,8 +3084,8 @@ export class CosmosDbService {
         throw new Error('Reviews container not initialized');
       }
 
-      // Read existing document
-      const { resource: existing } = await this.reviewsContainer.item(reviewId, reviewId).read();
+      // Cross-partition lookup: revisions container PK is /orderId, not /id
+      const existing = await this.findReviewById(reviewId);
       
       if (!existing) {
         throw new Error(`Review not found: ${reviewId}`);
@@ -3086,8 +3102,8 @@ export class CosmosDbService {
         }
       };
 
-      // Replace document
-      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).replace(updated);
+      // Point-replace using actual partition key (orderId)
+      const { resource } = await this.reviewsContainer.item(reviewId, existing.orderId).replace(updated);
       this.logger.info('Appraisal review updated', { reviewId, status: resource?.status });
       return resource;
     } catch (error) {
@@ -3105,12 +3121,14 @@ export class CosmosDbService {
         throw new Error('Reviews container not initialized');
       }
 
-      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).read();
-      return resource || null;
+      // Cross-partition query: revisions container PK is /orderId, not /id
+      const querySpec = {
+        query: 'SELECT * FROM c WHERE c.id = @reviewId',
+        parameters: [{ name: '@reviewId', value: reviewId }]
+      };
+      const { resources } = await this.reviewsContainer.items.query(querySpec).fetchAll();
+      return resources[0] ?? null;
     } catch (error: any) {
-      if (error.code === 404) {
-        return null;
-      }
       this.logger.error('Failed to find appraisal review', { error, reviewId });
       throw error;
     }

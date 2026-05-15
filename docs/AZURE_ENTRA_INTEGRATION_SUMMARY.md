@@ -44,9 +44,11 @@ Azure AD Group          → API Role      → Permissions
 ─────────────────────────────────────────────────────
 Appraisal-Admins       → admin         → All (*)
 Appraisal-Managers     → manager       → order_manage, vendor_manage, analytics_view
-Appraisal-QC-Analysts  → qc_analyst    → qc_validate, qc_execute, qc_metrics
+Appraisal-QC-Analysts  → analyst       → qc_validate, qc_execute, qc_metrics
 Appraisal-Appraisers   → appraiser     → order_view, order_update
 ```
+
+Legacy Azure group and environment variable names may still say `QC_ANALYST`, but they normalize to the canonical backend role `analyst`.
 
 ### Development Experience
 - **Dev Mode**: `BYPASS_AUTH=true` - No tokens required

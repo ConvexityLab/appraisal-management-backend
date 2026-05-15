@@ -6,6 +6,7 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { DocumentService } from './document.service.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import { RevisionSeverity, RevisionStatus, type RevisionRequest } from '../types/qc-workflow.js';
 import type { InspectionAppointment } from '../types/inspection.types.js';
 import type {
@@ -18,6 +19,7 @@ import type {
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
+import type { VendorDomainEvent } from '../types/vendor-integration.types.js';
 import type {
   VendorInspectionRequestedBy,
   VendorEventType,
@@ -68,6 +70,7 @@ const SUBSCRIBED_VENDOR_EVENTS: VendorEventType[] = [
   'vendor.revision.requested',
   'vendor.loan_number.updated',
   'vendor.fha_case_number.updated',
+  'vendor.order.stalled',
 ];
 
 // TODO(Phase 8 of Order-relocation): when VendorOrder no longer carries
@@ -115,20 +118,29 @@ function inferMimeType(filename: string): string {
   }
 }
 
+export interface OutboundVendorDispatcher {
+  dispatch(event: VendorDomainEvent, connectionId: string): Promise<void>;
+}
+
 export class VendorIntegrationEventConsumerService {
   private readonly logger = new Logger('VendorIntegrationEventConsumerService');
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: EventPublisher;
   private readonly filePersistor: VendorFilePersistor;
+  private readonly contextLoader: OrderContextLoader;
+  private readonly outboundDispatcher: OutboundVendorDispatcher | undefined;
   private documentService: DocumentService | null = null;
   private isStarted = false;
 
   constructor(
-    private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem'> = new CosmosDbService(),
+    private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem' | 'getContainer'> = new CosmosDbService(),
     publisher?: EventPublisher,
     filePersistor?: VendorFilePersistor,
+    outboundDispatcher?: OutboundVendorDispatcher,
   ) {
+    this.outboundDispatcher = outboundDispatcher;
     this.publisher = publisher ?? new ServiceBusEventPublisher();
+    this.contextLoader = new OrderContextLoader(this.dbService as CosmosDbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -167,8 +179,63 @@ export class VendorIntegrationEventConsumerService {
     this.logger.info('VendorIntegrationEventConsumerService stopped');
   }
 
+  private toVendorDomainEvent(event: VendorIntegrationEvent): VendorDomainEvent {
+    return {
+      id: event.id,
+      eventType: event.type,
+      vendorType: event.data.vendorType,
+      vendorOrderId: event.data.vendorOrderId,
+      ourOrderId: event.data.ourOrderId,
+      lenderId: event.data.lenderId,
+      tenantId: event.data.tenantId,
+      occurredAt: event.data.occurredAt,
+      payload: event.data.payload,
+    };
+  }
+
+  private tryDispatchOutbound(event: VendorIntegrationEvent): void {
+    if (!this.outboundDispatcher || !event.data.connectionId) return;
+    const domainEvent = this.toVendorDomainEvent(event);
+    this.outboundDispatcher.dispatch(domainEvent, event.data.connectionId).catch((err) => {
+      this.logger.warn('Outbound vendor callback failed — not retrying synchronously', {
+        eventType: event.type,
+        vendorOrderId: event.data.vendorOrderId,
+        connectionId: event.data.connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   private async onVendorEvent(event: VendorIntegrationEvent): Promise<void> {
+    // vendor.order.stalled uses a non-standard data shape (published by
+    // VendorOrderStuckCheckerJob, not the normal vendor push pipeline).
+    // Handle it before the ourOrderId guard.
+    if (event.type === 'vendor.order.stalled') {
+      await this.handleVendorOrderStalled(event);
+      return;
+    }
+
+    // vendor.products.listed is fired when AIM-Port requests our product
+    // catalogue. It has ourOrderId: null (no order context). Log for audit
+    // and return — no Cosmos write needed.
+    if (event.type === 'vendor.products.listed') {
+      const count = (event.data.payload as { products?: unknown[] }).products?.length ?? 0;
+      this.logger.info('Vendor product list served', {
+        tenantId: event.data.tenantId,
+        vendorType: event.data.vendorType,
+        connectionId: event.data.connectionId,
+        productCount: count,
+      });
+      return;
+    }
+
     const { ourOrderId, tenantId } = event.data;
+
+    // Fire-and-forget: mirror the normalised inbound event back to the vendor's
+    // outbound endpoint (e.g. AIM-Port OrderAssignedRequest / OrderFilesRequest).
+    // The dispatcher returns null for event types it has no mapping for, so
+    // calling it unconditionally is safe.
+    this.tryDispatchOutbound(event);
 
     if (!ourOrderId) {
       this.logger.warn('Vendor event has no mapped internal order id; skipping downstream consumer work', {
@@ -332,6 +399,84 @@ export class VendorIntegrationEventConsumerService {
     }
   }
 
+  /**
+   * Handles `vendor.order.stalled` alert events published by VendorOrderStuckCheckerJob.
+   * These use a non-standard data shape (orderId/tenantId directly rather than
+   * ourOrderId/tenantId) so they cannot go through the normal updateOrderFields path.
+   *
+   * Records an operator-visible timeline entry in the communications container so the
+   * stall surfaces in the UI order detail view.
+   */
+  private async handleVendorOrderStalled(event: VendorIntegrationEvent): Promise<void> {
+    // The stalled event is published as `any` by VendorOrderStuckCheckerJob and uses
+    // data.orderId instead of data.ourOrderId.
+    const d = event.data as unknown as {
+      orderId?: string;
+      orderNumber?: string;
+      tenantId?: string;
+      clientId?: string;
+      currentStatus?: string;
+      stuckPhase?: string;
+      lastUpdatedAt?: string;
+    };
+
+    if (!d.orderId || !d.tenantId) {
+      this.logger.warn('vendor.order.stalled: missing orderId or tenantId — skipping', {
+        eventId: event.id,
+      });
+      return;
+    }
+
+    this.logger.warn('vendor.order.stalled — recording operator alert on order', {
+      orderId: d.orderId,
+      orderNumber: d.orderNumber,
+      currentStatus: d.currentStatus,
+      stuckPhase: d.stuckPhase,
+      lastUpdatedAt: d.lastUpdatedAt,
+    });
+
+    const stalledNote = {
+      id: `stalled-alert:${event.id}`,
+      tenantId: d.tenantId,
+      type: 'communication' as const,
+      primaryEntity: { type: 'order' as const, id: d.orderId },
+      channel: 'in_app' as const,
+      direction: 'inbound' as const,
+      from: { id: 'system', name: 'Vendor Order Monitor', role: 'system' },
+      to: [{ id: d.clientId ?? 'unknown', name: d.clientId ?? 'unknown', role: 'lender' }],
+      subject: `Vendor order stalled — ${d.stuckPhase ?? 'unknown phase'}`,
+      body: [
+        `Order ${d.orderNumber ?? d.orderId} is stuck in phase "${d.stuckPhase ?? 'unknown'}"`,
+        `(current status: ${d.currentStatus ?? 'unknown'}).`,
+        `Last activity: ${d.lastUpdatedAt ?? 'unknown'}.`,
+        'AIM-Port push callbacks may have stopped. Manual follow-up required.',
+      ].join(' '),
+      bodyFormat: 'text' as const,
+      status: 'delivered' as const,
+      deliveredAt: event.timestamp,
+      category: 'order_discussion' as const,
+      priority: 'high' as const,
+      tags: ['vendor-integration', 'stalled-order', `phase:${d.stuckPhase ?? 'unknown'}`],
+      createdAt: event.timestamp,
+      metadata: {
+        vendorStallAlert: {
+          stuckPhase: d.stuckPhase,
+          currentStatus: d.currentStatus,
+          lastUpdatedAt: d.lastUpdatedAt,
+          alertEventId: event.id,
+        },
+      },
+    };
+
+    const writeResult = await this.dbService.upsertItem('communications', stalledNote);
+    if (!writeResult.success) {
+      throw new Error(
+        writeResult.error?.message ??
+        `Failed to record stalled-order alert for order ${d.orderId}`,
+      );
+    }
+  }
+
   private async publishOrderCreated(
     event: VendorIntegrationEvent,
     orderId: string,
@@ -355,7 +500,7 @@ export class VendorIntegrationEventConsumerService {
       data: {
         orderId,
         clientId: order.clientId ?? event.data.lenderId,
-        propertyAddress: formatPropertyAddress(order),
+        propertyAddress: await this.resolvePropertyAddress(order),
         appraisalType: String(order.productType ?? payload.orderType ?? 'vendor_order'),
         priority: payload.rush ? EventPriority.HIGH : EventPriority.NORMAL,
         dueDate: new Date(order.dueDate ?? payload.dueDate ?? event.data.occurredAt),
@@ -661,7 +806,7 @@ export class VendorIntegrationEventConsumerService {
       appraiserId: payload.appraiserId,
       appraiserName: `${appraiser.firstName} ${appraiser.lastName}`.trim(),
       appraiserPhone: String(appraiser.phone ?? ''),
-      propertyAddress: formatPropertyAddress(order),
+      propertyAddress: await this.resolvePropertyAddress(order),
       propertyType: String(order.propertyType ?? order.productType ?? 'unknown'),
       propertyAccess: payload.propertyAccess,
       status: 'scheduled',
@@ -686,6 +831,30 @@ export class VendorIntegrationEventConsumerService {
     if (!result.success) {
       throw new Error(result.error?.message ?? `Failed to persist inspection artifact for vendor event ${event.id}`);
     }
+  }
+
+  private async resolvePropertyAddress(order: OrderSnapshot): Promise<string> {
+    try {
+      const ctx = await this.contextLoader.loadByVendorOrder(order as any, { includeProperty: true });
+      const canonicalAddress = getPropertyAddress(ctx);
+      if (canonicalAddress) {
+        const formatted = [
+          canonicalAddress.streetAddress,
+          canonicalAddress.city,
+          canonicalAddress.state,
+        ].filter(Boolean).join(', ');
+        if (formatted) {
+          return formatted;
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Vendor integration could not resolve canonical property address; using embedded order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return formatPropertyAddress(order);
   }
 
   private async persistVendorFiles(params: {

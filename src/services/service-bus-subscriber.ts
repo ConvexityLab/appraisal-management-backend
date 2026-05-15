@@ -229,7 +229,13 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
 
   private async handleMessage(message: ServiceBusReceivedMessage): Promise<void> {
     try {
-      const event: AppEvent = JSON.parse(message.body as string);
+      const raw = JSON.parse(message.body as string);
+      // JSON serialization converts Date → ISO string.  Revive timestamp so
+      // handlers can call .getTime() and other Date methods without TypeError.
+      const event: AppEvent = {
+        ...raw,
+        timestamp: raw.timestamp ? new Date(raw.timestamp) : new Date(),
+      };
       await this.processEvent(event);
     } catch (error) {
       this.logger.error('Failed to process message', { 

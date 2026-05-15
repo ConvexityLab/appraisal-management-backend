@@ -16,7 +16,7 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 $requiredVars = @(
     "TEST_JWT_ADMIN",
     "TEST_JWT_MANAGER",
-    "TEST_JWT_QC_ANALYST",
+    "TEST_JWT_ANALYST",
     "TEST_JWT_APPRAISER"
 )
 
@@ -25,6 +25,10 @@ foreach ($var in $requiredVars) {
     if (-not (Get-ChildItem env: | Where-Object Name -eq $var)) {
         $missingVars += $var
     }
+}
+
+if (-not (Get-ChildItem env: | Where-Object Name -eq 'TEST_JWT_ANALYST') -and (Get-ChildItem env: | Where-Object Name -eq 'TEST_JWT_QC_ANALYST')) {
+    $env:TEST_JWT_ANALYST = $env:TEST_JWT_QC_ANALYST
 }
 
 if ($missingVars.Count -gt 0) {
@@ -69,8 +73,8 @@ if ($TestQueries) {
             Color = "Blue"
         },
         @{
-            Name = "QC Analyst"
-            Token = $env:TEST_JWT_QC_ANALYST
+            Name = "Analyst"
+            Token = $env:TEST_JWT_ANALYST
             Color = "Cyan"
         },
         @{

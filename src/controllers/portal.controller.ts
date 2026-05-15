@@ -22,14 +22,58 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from '../services/order-context-loader.service.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
+import type { PropertyAddress } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 
 const ORDERS_CONTAINER   = 'orders';
 const CONSENT_CONTAINER  = 'orders';   // stored alongside orders
 
+type PortalOrderRecord = VendorOrder & {
+  effectiveDueDate?: string;
+  submittedAt?: string;
+  completedAt?: string;
+  deliveredAt?: string;
+  borrowerName?: string;
+  loanNumber?: string;
+  propertyDetails?: { fullAddress?: string };
+};
+
+function normalizePortalPropertyAddress(address: unknown): PropertyAddress | undefined {
+  if (!address) {
+    return undefined;
+  }
+
+  if (typeof address === 'object') {
+    return address as PropertyAddress;
+  }
+
+  if (typeof address !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = address.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parts = trimmed.split(',').map((part) => part.trim()).filter(Boolean);
+  const [streetAddress, city, stateZip] = parts;
+  const stateZipMatch = stateZip?.match(/^([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+
+  return {
+    streetAddress: streetAddress ?? trimmed,
+    ...(city ? { city } : {}),
+    ...(stateZipMatch?.[1] ? { state: stateZipMatch[1].toUpperCase() } : {}),
+    ...(stateZipMatch?.[2] ? { zipCode: stateZipMatch[2] } : {}),
+  } as PropertyAddress;
+}
+
 export function createPortalRouter(db: CosmosDbService): Router {
   const router = Router();
   const logger = new Logger('PortalController');
+  const orderContextLoader = new OrderContextLoader(db);
 
   // ─── GET /orders/:orderId — order status ─────────────────────────────────
   router.get('/orders/:orderId', async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
@@ -42,41 +86,43 @@ export function createPortalRouter(db: CosmosDbService): Router {
     const orderId = req.params['orderId'] as string;
 
     try {
-      const container = db.getContainer(ORDERS_CONTAINER);
-      type Param = { name: string; value: string | number | boolean | null };
-      const parameters: Param[] = [
-        { name: '@id',       value: orderId },
-        { name: '@tenantId', value: tenantId },
-      ];
-      const { resources } = await container.items.query({
-        query: `SELECT c.id, c.status, c.orderType, c.propertyAddress,
-                       c.effectiveDueDate, c.submittedAt, c.completedAt, c.deliveredAt,
-                       c.borrowerName, c.loanNumber
-                FROM c
-                WHERE c.id = @id AND c.tenantId = @tenantId`,
-        parameters,
-      }).fetchAll();
+      const orderResponse = await db.findOrderById(orderId);
+      if (!orderResponse.success) {
+        throw new Error(orderResponse.error?.message ?? `Failed to load order ${orderId}`);
+      }
 
-      if (!resources.length) {
+      const order = orderResponse.data as PortalOrderRecord | null;
+      if (!order || order.tenantId !== tenantId) {
         res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `Order ${orderId} not found` } });
         return;
       }
 
+      let propertyAddress = normalizePortalPropertyAddress(order.propertyAddress ?? order.propertyDetails?.fullAddress);
+      try {
+        const ctx = await orderContextLoader.loadByVendorOrder(order as VendorOrder, { includeProperty: true });
+        propertyAddress = getPropertyAddress(ctx) ?? propertyAddress;
+      } catch (error) {
+        logger.warn('Portal order lookup could not resolve canonical property address; falling back to embedded address', {
+          orderId,
+          tenantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       // Return only portal-safe fields — never internal notes or appraiser data
-      const order = resources[0] as Record<string, unknown>;
       res.json({
         success: true,
         data: {
-          id:              order['id'],
-          status:          order['status'],
-          orderType:       order['orderType'],
-          propertyAddress: order['propertyAddress'],
-          effectiveDueDate: order['effectiveDueDate'],
-          submittedAt:     order['submittedAt'],
-          completedAt:     order['completedAt'],
-          deliveredAt:     order['deliveredAt'],
-          borrowerName:    order['borrowerName'],
-          loanNumber:      order['loanNumber'],
+          id:              order.id,
+          status:          order.status,
+          orderType:       order.orderType,
+          propertyAddress,
+          effectiveDueDate: order.effectiveDueDate,
+          submittedAt:     order.submittedAt,
+          completedAt:     order.completedAt,
+          deliveredAt:     order.deliveredAt,
+          borrowerName:    order.borrowerName,
+          loanNumber:      order.loanNumber,
         },
       });
     } catch (err) {

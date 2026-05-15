@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BlobStorageService } from '../services/blob-storage.service';
@@ -7,7 +7,7 @@ import { AxiomService } from '../services/axiom.service';
 import { AxiomExecutionService } from '../services/axiom-execution.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 
 /**
  * Maps a backend DocumentMetadata record to the shape the frontend expects.
@@ -70,6 +70,73 @@ export class DocumentController {
   private axiomService: AxiomService;
   private axiomExecutionService: AxiomExecutionService;
 
+  private readonly loadExecutionOrderParam = async (
+    req: AuthorizedRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const executionId = req.params.executionId;
+      if (!executionId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'EXECUTION_ID_REQUIRED',
+            message: 'executionId parameter is required',
+          },
+        });
+        return;
+      }
+
+      const execution = await this.resolveStreamExecution(executionId);
+      if (!execution || execution.tenantId !== req.userProfile?.tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'EXECUTION_NOT_FOUND',
+            message: `Execution '${executionId}' was not found`,
+          },
+        });
+        return;
+      }
+
+      let orderId = execution.orderId;
+      const firstDocumentId = execution.documentIds[0];
+      if (!orderId && firstDocumentId) {
+        const document = await this.dbService.getDocument<DocumentMetadata>(
+          'documents',
+          firstDocumentId,
+          execution.tenantId,
+        );
+        orderId = document?.orderId;
+      }
+
+      if (!orderId) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'EXECUTION_ORDER_REQUIRED',
+            message: `Execution '${executionId}' is not linked to an order and cannot be streamed`,
+          },
+        });
+        return;
+      }
+
+      req.params.orderIdForAuth = orderId;
+      (req as AuthorizedRequest & { axiomExecution?: { tenantId: string; axiomJobId: string; orderId?: string; documentIds: string[] } }).axiomExecution = execution;
+      next();
+    } catch (error) {
+      console.error('[DocumentController] Error resolving execution authorization context:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'EXECUTION_RESOLUTION_FAILED',
+          message: 'Failed to resolve execution authorization context',
+        },
+      });
+    }
+  };
+
 
   // Blob Storage container for document files (set via STORAGE_CONTAINER_DOCUMENTS env var)
   private static readonly BLOB_CONTAINER = (() => {
@@ -130,10 +197,21 @@ export class DocumentController {
   private initializeRoutes(): void {
     const authz = this.authzMiddleware;
     const lp     = authz ? [authz.loadUserProfile()] : [];
-    const read   = authz ? [...lp, authz.authorize('document', 'read')]   : [];
+    const readCapability = authz ? [...lp, authz.authorize('document', 'read')] : [];
+    const readQuery = authz ? [...lp, authz.authorizeQuery('document', 'read')] : [];
+    const readStreamResource = authz
+      ? [...lp, this.loadExecutionOrderParam, authz.authorizeResource('order', 'read', { resourceIdParam: 'orderIdForAuth' })]
+      : [];
+    const readResource = authz
+      ? [...lp, authz.authorizeResource('document', 'read', { resourceIdParam: 'id' })]
+      : [];
     const create = authz ? [...lp, authz.authorize('document', 'create')] : [];
-    const update = authz ? [...lp, authz.authorize('document', 'update')] : [];
-    const del    = authz ? [...lp, authz.authorize('document', 'delete')] : [];
+    const updateResource = authz
+      ? [...lp, authz.authorizeResource('document', 'update', { resourceIdParam: 'id' })]
+      : [];
+    const deleteResource = authz
+      ? [...lp, authz.authorizeResource('document', 'delete', { resourceIdParam: 'id' })]
+      : [];
 
     /**
      * GET /stream/:executionId
@@ -141,7 +219,7 @@ export class DocumentController {
      */
     this.router.get(
       '/stream/:executionId',
-      ...read,
+      ...readStreamResource,
       this.streamDocumentExecution.bind(this)
     );
 
@@ -162,7 +240,7 @@ export class DocumentController {
      */
     this.router.get(
       '/',
-      ...read,
+      ...readQuery,
       this.listDocuments.bind(this)
     );
 
@@ -173,7 +251,7 @@ export class DocumentController {
     this.router.post(
       '/:id/versions',
       this.upload.single('file'),
-      ...update,
+      ...updateResource,
       this.uploadNewVersion.bind(this)
     );
 
@@ -183,7 +261,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/versions',
-      ...read,
+      ...readResource,
       this.getVersionHistory.bind(this)
     );
 
@@ -193,7 +271,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id',
-      ...read,
+      ...readResource,
       this.getDocument.bind(this)
     );
 
@@ -203,7 +281,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/download',
-      ...read,
+      ...readResource,
       this.downloadDocument.bind(this)
     );
 
@@ -213,7 +291,7 @@ export class DocumentController {
      */
     this.router.put(
       '/:id',
-      ...update,
+      ...updateResource,
       this.updateDocument.bind(this)
     );
 
@@ -223,7 +301,7 @@ export class DocumentController {
      */
     this.router.delete(
       '/:id',
-      ...del,
+      ...deleteResource,
       this.deleteDocument.bind(this)
     );
   }
@@ -240,13 +318,31 @@ export class DocumentController {
         return;
       }
 
-      // 1. Fetch the execution record to get the actual Axiom jobId
-      const execution = await this.axiomExecutionService.getExecutionById(executionId);
-      
-      // If we don't have an execution record yet, maybe it's the raw jobId directly?
-      const jobId = (execution as any)?.axiomJobId || executionId;
+      const cachedExecution = (req as AuthorizedRequest & { axiomExecution?: { tenantId: string; axiomJobId: string } }).axiomExecution;
+      const execution = cachedExecution ?? await this.resolveStreamExecution(executionId);
+      if (!execution || execution.tenantId !== req.user?.tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'EXECUTION_NOT_FOUND',
+            message: `Execution '${executionId}' was not found`,
+          },
+        });
+        return;
+      }
 
-      await this.axiomService.proxyPipelineStream(jobId, req, res);
+      if (!execution.axiomJobId) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'AXIOM_JOB_ID_REQUIRED',
+            message: `Execution '${executionId}' is missing axiomJobId and cannot be streamed`,
+          },
+        });
+        return;
+      }
+
+      await this.axiomService.proxyPipelineStream(execution.axiomJobId, req, res);
     } catch (error) {
       console.error('[DocumentController] Error streaming document execution:', error);
       if (!res.headersSent) {
@@ -255,6 +351,120 @@ export class DocumentController {
         res.end();
       }
     }
+  }
+
+  private async resolveStreamExecution(executionIdOrJobId: string): Promise<{
+    tenantId: string;
+    axiomJobId: string;
+    orderId?: string;
+    documentIds: string[];
+  } | null> {
+    const byId = await this.axiomExecutionService.getExecutionById(executionIdOrJobId);
+    if (byId.success && byId.data) {
+      return byId.data;
+    }
+
+    const byJobId = await this.axiomExecutionService.getExecutionByAxiomJobId(executionIdOrJobId);
+    if (byJobId.success && byJobId.data) {
+      return byJobId.data;
+    }
+
+    const evaluation = await this.axiomService.getEvaluationById(executionIdOrJobId).catch(() => null);
+    if (evaluation?.pipelineJobId) {
+      const tenantAndOrder = await this.resolveTenantAndOrder({
+        ...(evaluation.tenantId ? { tenantId: evaluation.tenantId } : {}),
+        ...(evaluation.orderId ? { orderId: evaluation.orderId } : {}),
+      });
+      if (tenantAndOrder) {
+        const documentId = this.getEvaluationDocumentId(evaluation as unknown as { _metadata?: unknown });
+        return {
+          tenantId: tenantAndOrder.tenantId,
+          axiomJobId: evaluation.pipelineJobId,
+          ...(tenantAndOrder.orderId ? { orderId: tenantAndOrder.orderId } : {}),
+          documentIds: documentId ? [documentId] : [],
+        };
+      }
+    }
+
+    const orderExecution = await this.resolveOrderBackedExecution(executionIdOrJobId);
+    if (orderExecution) {
+      return orderExecution;
+    }
+
+    return null;
+  }
+
+  private async resolveTenantAndOrder(params: {
+    tenantId?: string;
+    orderId?: string;
+  }): Promise<{ tenantId: string; orderId?: string } | null> {
+    if (params.tenantId) {
+      return {
+        tenantId: params.tenantId,
+        ...(params.orderId ? { orderId: params.orderId } : {}),
+      };
+    }
+
+    if (!params.orderId) {
+      return null;
+    }
+
+    const orderResult = await this.dbService.findOrderById(params.orderId);
+    if (!orderResult.success || !orderResult.data?.tenantId) {
+      return null;
+    }
+
+    return {
+      tenantId: orderResult.data.tenantId,
+      orderId: params.orderId,
+    };
+  }
+
+  private getEvaluationDocumentId(evaluation: { _metadata?: unknown }): string | undefined {
+    const metadata = evaluation['_metadata'];
+    if (!metadata || typeof metadata !== 'object') {
+      return undefined;
+    }
+
+    const documentId = (metadata as Record<string, unknown>)['documentId'];
+    return typeof documentId === 'string' && documentId.length > 0 ? documentId : undefined;
+  }
+
+  private async resolveOrderBackedExecution(orderId: string): Promise<{
+    tenantId: string;
+    axiomJobId: string;
+    orderId: string;
+    documentIds: string[];
+  } | null> {
+    const orderResult = await this.dbService.findOrderById(orderId);
+    if (!orderResult.success || !orderResult.data?.tenantId) {
+      return null;
+    }
+
+    const order = orderResult.data as unknown as Record<string, unknown>;
+    let axiomJobId = typeof order['axiomPipelineJobId'] === 'string' ? order['axiomPipelineJobId'] as string : undefined;
+
+    if (!axiomJobId) {
+      const runResult = await this.dbService.queryItems<Record<string, unknown>>(
+        'aiInsights',
+        `SELECT TOP 1 c.engineRunRef FROM c WHERE c.tenantId = @tenantId AND c.type = 'run-ledger-entry' AND c.loanPropertyContextId = @orderId AND c.engineRunRef != 'pending' ORDER BY c.createdAt DESC`,
+        [{ name: '@tenantId', value: orderResult.data.tenantId }, { name: '@orderId', value: orderId }],
+      );
+      if (runResult.success && runResult.data?.[0]?.['engineRunRef']) {
+        axiomJobId = runResult.data[0]['engineRunRef'] as string;
+      }
+    }
+
+    if (!axiomJobId) {
+      return null;
+    }
+
+    return {
+      tenantId: orderResult.data.tenantId,
+      axiomJobId,
+      orderId,
+      documentIds: [],
+    };
   }
 
   /**
@@ -348,7 +558,7 @@ export class DocumentController {
    * GET /
    * List documents with optional filtering
    */
-  private async listDocuments(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async listDocuments(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       const tenantId = req.user?.tenantId;
       if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
@@ -362,7 +572,7 @@ export class DocumentController {
       if (req.query.limit) query.limit = parseInt(req.query.limit as string, 10);
       if (req.query.offset) query.offset = parseInt(req.query.offset as string, 10);
 
-      const result = await this.documentService.listDocuments(tenantId, query);
+      const result = await this.documentService.listDocuments(tenantId, query, req.authorizationFilter);
 
       if (!result.success) {
         res.status(500).json(result);

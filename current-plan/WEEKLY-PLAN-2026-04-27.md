@@ -44,13 +44,13 @@ These items have already passed their planned end date. **Authorization (A-) and
 
 - [ ] **A-02 [P0]** Role hierarchy and permission inheritance
   - **Was due:** 4/23/2026 · **Pts:** 3 · **Owner:** Dev 1 · **Repo:** backend · **Deps:** A-01
-  - **Action:** Define Casbin role hierarchy (admin > manager > qc_analyst > appraiser). Remove duplicate policy lines.
+  - **Action:** Define Casbin role hierarchy (admin > manager > analyst > appraiser). Remove duplicate policy lines.
   - **Blocks:** A-04, A-03
   - **Notes:**
 
 - [ ] **A-04 [P0]** Align frontend roles with backend
   - **Was due:** 4/24/2026 · **Pts:** 3 · **Owner:** Dev 1 · **Repo:** frontend · **Deps:** A-02
-  - **Action:** Replace admin/staff/user in `authRoles.ts` with admin/manager/qc_analyst/appraiser. Update route guards and MSAL claim mapping.
+  - **Action:** Replace admin/staff/user in `authRoles.ts` with admin/manager/analyst/appraiser. Update route guards and MSAL claim mapping.
   - **Blocks:** A-05, A-06
   - **Notes:**
 

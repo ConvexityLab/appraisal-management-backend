@@ -115,6 +115,69 @@ resource notificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-p
   }
 }
 
+// AI Autopilot Tasks Queue — Phase 14 v2 (2026-05-11).
+//
+// Point-to-point transport between AiAutopilotSweepJob (publisher) and
+// AiAutopilotConsumer (subscriber).  Each message kicks one autopilot
+// run.  Application-level idempotency via `idempotencyKey` short-circuits
+// duplicate deliveries at the consumer; the broker just guarantees
+// at-least-once.  Tuned long-lock (PT10M) because autopilot runs may
+// dispatch to slow downstream services (Axiom, MOP) before completing.
+resource aiAutopilotTasksQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'autopilot-tasks'
+  properties: {
+    maxSizeInMegabytes: 1024
+    // 5 attempts before dead-letter — matches order-events / vendor-assignment.
+    maxDeliveryCount: 5
+    // Lock-duration capped at PT5M (Azure Service Bus hard max — values
+    // > 5 minutes return MessagingGatewayBadRequest at deploy time).
+    // For autopilot runs that exceed 5 minutes (Axiom pipelines + MOP +
+    // dispatcher chain), the consumer must call `renewMessageLock` to
+    // extend the lock incrementally — that's the supported pattern for
+    // long-running consumers. See AiAutopilotConsumerService.
+    lockDuration: 'PT5M'
+    // 14d retention matches order-events.  If a message sits this long
+    // unprocessed the recipe state is stale anyway.
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    // Broker-level dedupe is belt-and-suspenders on top of the
+    // app-level idempotencyKey probe in AutopilotRunRepository.
+    requiresDuplicateDetection: config.sku != 'Basic'
+    enablePartitioning: config.sku != 'Premium'
+  }
+}
+
+// Blob-Sync Events Queue
+// Fan-in queue for all blob-drop vendor integrations (Data Share completions,
+// BlobCreated notifications). Each external vendor storage account has its own
+// Event Grid subscription that routes here; the vendorType application property
+// (stamped by the subscription) lets BlobSyncWorkerService route to the correct
+// VendorConnection without parsing message bodies.
+//
+// ⚠️  Event Grid → Service Bus queue delivery requires Standard or Premium tier.
+//    This queue is defined unconditionally so it is available in all environments,
+//    but Event Grid subscriptions (in blob-sync-integration.bicep) must only be
+//    deployed against Standard/Premium namespaces (staging and prod).
+resource blobSyncEventsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'blob-sync-events'
+  properties: {
+    maxSizeInMegabytes: 2048
+    // 10 attempts: adapter catches transient errors and abandons; 10 broker-level
+    // retries give enough runway for intermittent storage/Cosmos failures before
+    // the message moves to the dead-letter queue for alerting.
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    requiresDuplicateDetection: config.sku != 'Basic'
+    enablePartitioning: config.sku != 'Premium'
+  }
+}
+
 // QC Events Topic (for publishing QC workflow events)
 resource qcEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2023-01-01-preview' = if (config.sku != 'Basic') {
   parent: serviceBusNamespace
@@ -220,6 +283,24 @@ resource notificationServiceSubscription 'Microsoft.ServiceBus/namespaces/topics
   name: 'notification-service'
   properties: {
     maxDeliveryCount: 10
+    lockDuration: 'PT1M'
+    defaultMessageTimeToLive: 'P7D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// QC Issue Recorder Subscription (consumed by QCIssueRecorderService —
+// converts qc.issue.detected events into aiInsights qc-issue rows that
+// the FE's AI Issues panel reads).
+// Pre-fix the recorder shared the notification-service subscription due
+// to a constructor-arg slot mistake; events were therefore handled by
+// the wrong subscriber and never persisted. See
+// src/services/qc-issue-recorder.service.ts.
+resource qcIssueRecorderSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'qc-issue-recorder'
+  properties: {
+    maxDeliveryCount: 5
     lockDuration: 'PT1M'
     defaultMessageTimeToLive: 'P7D'
     deadLetteringOnMessageExpiration: true
@@ -463,6 +544,8 @@ output queueNames array = [
   propertyIntelligenceQueue.name
   vendorAssignmentQueue.name
   notificationsQueue.name
+  aiAutopilotTasksQueue.name
+  blobSyncEventsQueue.name
 ]
 output topicNames array = config.sku != 'Basic' ? [
   qcEventsTopic.name

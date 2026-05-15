@@ -3,6 +3,7 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { SLATrackingService } from './sla-tracking.service.js';
 import { OrderEventService } from './order-event.service.js';
 import { AuditTrailService } from './audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { 
   OrderNegotiation, 
   NegotiationStatus, 
@@ -47,7 +48,7 @@ export class OrderNegotiationService {
     this.dbService = new CosmosDbService();
     this.slaTrackingService = new SLATrackingService();
     this.eventService = new OrderEventService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.dbService);
   }
 
   private dbInitialized = false;
@@ -143,7 +144,7 @@ export class OrderNegotiationService {
       );
       this.auditService.log({
         actor: { userId: vendorId, role: 'vendor' },
-        action: 'order.status_changed',
+        action: AuditEventType.STATUS_CHANGED,
         resource: { type: 'order', id: orderId },
         before: { status: previousStatus },
         after: { status: 'ACCEPTED' },
@@ -444,7 +445,7 @@ export class OrderNegotiationService {
       );
       this.auditService.log({
         actor: { userId: clientId, role: 'client' },
-        action: 'order.status_changed',
+        action: AuditEventType.STATUS_CHANGED,
         resource: { type: 'order', id: negotiation.orderId },
         before: { status: prevOrderStatus },
         after: { status: 'ACCEPTED', fee: negotiation.currentTerms.fee },

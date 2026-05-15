@@ -153,6 +153,28 @@ export class ReviewRequirementResolutionService {
       ? [`Optional data not currently present: ${optionalMissingDataPaths.join(', ')}`]
       : [];
 
+    // Derive per-path category from the criterion's semantic category string
+    // rather than relying on path-keyword heuristics at lookup time.
+    // CompiledCriterion.category is camelCase taxonomy (e.g. 'comparableSalesAnalysis').
+    const pathCategoryMap = new Map<string, 'comp' | 'adjustment' | 'standard'>();
+    const criterionCat = ((criterion as { category?: string; taxonomyCategory?: string }).category
+      ?? (criterion as { category?: string; taxonomyCategory?: string }).taxonomyCategory
+      ?? '').toLowerCase();
+    let derivedCategory: 'comp' | 'adjustment' | null = null;
+    if (criterionCat.includes('comparable') || criterionCat.includes('comp') || criterionCat.includes('salescomparison')) {
+      derivedCategory = 'comp';
+    } else if (criterionCat.includes('adjustment')) {
+      derivedCategory = 'adjustment';
+    }
+    if (derivedCategory !== null) {
+      for (const req of criterion.dataRequirements ?? []) {
+        const norm = this.normalizePath(req.path ?? '');
+        if (norm) {
+          pathCategoryMap.set(norm, derivedCategory);
+        }
+      }
+    }
+
     return this.buildResolution({
       criterionId: criterion.concept || criterion.code || criterion.id,
       criterionTitle: criterion.title || criterion.statement || criterion.code || 'Unnamed Axiom criterion',
@@ -167,9 +189,7 @@ export class ReviewRequirementResolutionService {
       missingDocumentTypes: [...new Set(missingDocumentTypes)],
       warnings,
       context,
-      // pathCategoryMap intentionally omitted: the engine-agnostic compiled
-      // contract does not carry per-data-path comp/adjustment classification.
-      // Resolver helpers fall back to keyword detection at lookup time.
+      ...(pathCategoryMap.size > 0 ? { pathCategoryMap } : {}),
     });
   }
 

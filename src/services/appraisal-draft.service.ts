@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Appraisal Draft Service — Phase 1 of UAD 3.6 Full Compliance
  *
  * CRUD + section-level save for in-progress appraisals. Drafts live in the
@@ -11,21 +11,22 @@
 import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { v4 as uuidv4 } from 'uuid';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { ReportConfigMergerService } from './report-config-merger.service.js';
+import { evaluateJsonLogic } from '../utils/validate-canonical-ingress.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 import {
   type AppraisalDraft,
   type CreateDraftRequest,
   type SectionSaveRequest,
-  type DraftSectionId,
   type DraftValidationError,
   DraftStatus,
   SectionStatus,
   DRAFT_SECTION_IDS,
   createInitialSectionStatus,
 } from '../types/appraisal-draft.types.js';
-import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress } from '../types/canonical-schema.js';
-import { SCHEMA_VERSION } from '../types/canonical-schema.js';
+import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress } from '@l1/shared-types';
+import { SCHEMA_VERSION } from '@l1/shared-types';
 import { LoanPurpose } from '../types/index.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 import {
@@ -44,8 +45,11 @@ const logger = new Logger('AppraisalDraftService');
 /**
  * Maps a section ID to the top-level fields of CanonicalReportDocument
  * that the section is allowed to write. Used for scoped PATCH merging.
+ *
+ * Sections NOT listed here (product-agnostic extras added via config) are
+ * stored in the draft's generic `sections` bag instead (R-10).
  */
-const SECTION_FIELD_MAP: Record<DraftSectionId, ReadonlyArray<keyof CanonicalReportDocument>> = {
+const SECTION_FIELD_MAP: Record<string, ReadonlyArray<keyof CanonicalReportDocument>> = {
   'subject': ['subject'],
   'contract': ['subject'],                  // contractInfo lives inside subject
   'neighborhood': ['subject'],              // neighborhood lives inside subject
@@ -66,11 +70,14 @@ const SECTION_FIELD_MAP: Record<DraftSectionId, ReadonlyArray<keyof CanonicalRep
 export class AppraisalDraftService {
   private _container: Container | null = null;
   private readonly contextLoader: OrderContextLoader;
+  private readonly mergerService: ReportConfigMergerService;
 
   constructor(
     private readonly dbService: CosmosDbService,
+    mergerService?: ReportConfigMergerService,
   ) {
     this.contextLoader = new OrderContextLoader(dbService);
+    this.mergerService = mergerService ?? new ReportConfigMergerService(dbService);
   }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
@@ -115,6 +122,7 @@ export class AppraisalDraftService {
       reportType: request.reportType,
       status: DraftStatus.CREATED,
       reportDocument,
+      sections: {},
       sectionStatus: createInitialSectionStatus(),
       validationErrors: null,
       createdAt: now,
@@ -171,12 +179,15 @@ export class AppraisalDraftService {
   async saveSection(
     draftId: string,
     orderId: string,
-    sectionId: DraftSectionId,
+    sectionId: string,
     request: SectionSaveRequest,
     userId: string,
   ): Promise<AppraisalDraft> {
-    if (!DRAFT_SECTION_IDS.includes(sectionId)) {
-      throw new Error(`Invalid section ID: "${sectionId}". Valid sections: ${DRAFT_SECTION_IDS.join(', ')}`);
+    // Reject obviously malformed keys but accept any valid section key string.
+    // The strict DRAFT_SECTION_IDS guard is removed so product-agnostic sections
+    // added via EffectiveReportConfig (R-6) flow through without type changes (R-10).
+    if (!sectionId || typeof sectionId !== 'string') {
+      throw new Error(`Invalid section ID: "${sectionId}". Must be a non-empty string.`);
     }
 
     const existing = await this.getDraft(draftId, orderId);
@@ -190,26 +201,39 @@ export class AppraisalDraftService {
       );
     }
 
-    // Merge section data into the report document
-    const allowedFields = SECTION_FIELD_MAP[sectionId];
-    const updatedDoc = { ...existing.reportDocument };
-    for (const field of allowedFields) {
-      if (field in request.data) {
-        (updatedDoc as Record<string, unknown>)[field] = this.deepMerge(
-          (updatedDoc as Record<string, unknown>)[field],
-          (request.data as Record<string, unknown>)[field],
-        );
+    const canonicalFields = SECTION_FIELD_MAP[sectionId];
+    let updatedDoc = existing.reportDocument;
+    let updatedSections = existing.sections ?? {};
+
+    if (canonicalFields != null) {
+      // ─ Canonical section: merge into reportDocument ─────────────────────────
+      const newDoc = { ...updatedDoc };
+      for (const field of canonicalFields) {
+        if (field in request.data) {
+          (newDoc as Record<string, unknown>)[field] = this.deepMerge(
+            (newDoc as Record<string, unknown>)[field],
+            request.data[field],
+          );
+        }
       }
+      updatedDoc = newDoc as CanonicalReportDocument;
+    } else {
+      // ─ Product-agnostic section: store in generic sections bag ──────────────
+      updatedSections = {
+        ...updatedSections,
+        [sectionId]: this.deepMerge(updatedSections[sectionId], request.data),
+      };
     }
 
-    // Determine section status based on content
+    // Update sectionStatus for this section
     const newSectionStatus = { ...existing.sectionStatus };
-    newSectionStatus[sectionId] = this.evaluateSectionStatus(sectionId, updatedDoc);
+    newSectionStatus[sectionId] = this.evaluateSectionStatus(sectionId, updatedDoc, updatedSections);
 
     const now = new Date().toISOString();
     const updatedDraft: AppraisalDraft = {
       ...existing,
-      reportDocument: updatedDoc as CanonicalReportDocument,
+      reportDocument: updatedDoc,
+      sections: updatedSections,
       sectionStatus: newSectionStatus,
       status: existing.status === DraftStatus.CREATED ? DraftStatus.EDITING : existing.status,
       updatedAt: now,
@@ -225,6 +249,75 @@ export class AppraisalDraftService {
 
     logger.info('Section saved', { draftId, sectionId, version: updatedDraft.version });
     return resource as AppraisalDraft;
+  }
+
+  // ── Config-driven section validation (R-22b) ─────────────────────────────
+
+  /**
+   * Validate the submitted data for a section against the EffectiveReportConfig.
+   *
+   * - Loads the order to resolve the effective config for the given orderId.
+   * - For each field in the section: evaluates `required` and `requiredWhen`
+   *   against `data` and reports absent required fields as errors.
+   * - Never throws from config-load failures — returns an empty list instead
+   *   so the PATCH save can proceed even when config is unavailable.
+   *
+   * @returns `DraftValidationError[]` — empty means no required fields missing.
+   */
+  async validateSection(
+    orderId: string,
+    sectionKey: string,
+    data: Record<string, unknown>,
+  ): Promise<DraftValidationError[]> {
+    let order: VendorOrder;
+    try {
+      order = await this.loadOrder(orderId);
+    } catch {
+      logger.warn('validateSection: could not load order — skipping config validation', { orderId, sectionKey });
+      return [];
+    }
+
+    let effectiveConfig;
+    try {
+      effectiveConfig = await this.mergerService.getEffectiveConfig(order);
+    } catch (err) {
+      logger.warn('validateSection: could not load EffectiveReportConfig — skipping config validation', {
+        orderId,
+        sectionKey,
+        error: (err as Error).message,
+      });
+      return [];
+    }
+
+    const section = effectiveConfig.sections.find(s => s.key === sectionKey);
+    if (!section) {
+      // Section not in config — no constraints to enforce.
+      return [];
+    }
+
+    const errors: DraftValidationError[] = [];
+    for (const field of section.fields) {
+      if (!field.visible) continue;
+      // Skip fields that are conditionally hidden by visibleWhen JSON Logic.
+      if (field.visibleWhen != null && Object.keys(field.visibleWhen).length > 0) {
+        const isVisible = evaluateJsonLogic(field.visibleWhen, data);
+        if (!isVisible) continue;
+      }
+      const isRequired = field.required ||
+        (field.requiredWhen != null && evaluateJsonLogic(field.requiredWhen, data));
+      if (!isRequired) continue;
+      const value = data[field.key];
+      const isAbsent = value === undefined || value === null || value === '';
+      if (isAbsent) {
+        errors.push({
+          sectionId: sectionKey,
+          fieldPath: field.key,
+          message: `${field.label} is required.`,
+          severity: 'error',
+        });
+      }
+    }
+    return errors;
   }
 
   // ── Full Document Save ─────────────────────────────────────────────────────
@@ -259,9 +352,14 @@ export class AppraisalDraftService {
       version: existing.version + 1,
     };
 
-    // Recompute all section statuses
-    for (const sid of DRAFT_SECTION_IDS) {
-      updatedDraft.sectionStatus[sid] = this.evaluateSectionStatus(sid, reportDocument);
+    // Recompute section statuses for all DRAFT_SECTION_IDS plus any product-agnostic
+    // sections already stored in the sections bag (R-10 — product-type generalization).
+    const allSectionIds = new Set<string>([
+      ...DRAFT_SECTION_IDS,
+      ...Object.keys(updatedDraft.sections ?? {}),
+    ]);
+    for (const sid of allSectionIds) {
+      updatedDraft.sectionStatus[sid] = this.evaluateSectionStatus(sid, reportDocument, updatedDraft.sections ?? {});
     }
 
     const { resource } = await this.container.item(draftId, orderId).replace(updatedDraft);
@@ -286,8 +384,11 @@ export class AppraisalDraftService {
       throw new Error(`Draft ${draftId} is already ${existing.status}`);
     }
 
-    // Check all required sections are complete
-    const incompleteSections = DRAFT_SECTION_IDS.filter(
+    // Check all config-required visible sections are complete (R-10).
+    // Uses EffectiveReportConfig instead of the hardcoded DRAFT_SECTION_IDS so
+    // product types like DRIVE_BY_2055 don't require cost/income sections.
+    const requiredSectionIds = await this._getRequiredSectionIds(orderId);
+    const incompleteSections = requiredSectionIds.filter(
       sid => existing.sectionStatus[sid] !== SectionStatus.COMPLETE,
     );
 
@@ -346,8 +447,23 @@ export class AppraisalDraftService {
    * Phase 7 (Order-relocation): join VendorOrder with parent ClientOrder so
    * draft seeding sees lender-side fields from their proper home.
    */
+  // ── Config-driven required-section resolution (R-10) ────────────────────
+
+  /**
+   * Returns the keys of sections that are both visible and required in the
+   * effective config for this order. Used by `finalizeDraft` to gate finalization
+   * on product-specific section requirements rather than the URAR hardcoded list.
+   */
+  private async _getRequiredSectionIds(orderId: string): Promise<string[]> {
+    const order = await this.loadOrder(orderId);
+    const config = await this.mergerService.getEffectiveConfig(order);
+    return config.sections
+      .filter(s => s.visible === true && s.required === true)
+      .map(s => s.key);
+  }
+
   private async loadOrderContext(orderId: string): Promise<OrderContext> {
-    return this.contextLoader.loadByVendorOrderId(orderId);
+    return this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
   }
 
   private async loadOrder(orderId: string): Promise<VendorOrder> {
@@ -480,7 +596,11 @@ export class AppraisalDraftService {
    * A section is IN_PROGRESS if at least one field has data.
    * Otherwise NOT_STARTED.
    */
-  private evaluateSectionStatus(sectionId: DraftSectionId, doc: CanonicalReportDocument): SectionStatus {
+  private evaluateSectionStatus(
+    sectionId: string,
+    doc: CanonicalReportDocument,
+    sections: Record<string, unknown> = {},
+  ): SectionStatus {
     switch (sectionId) {
       case 'subject':
         return this.evaluateSubjectStatus(doc);
@@ -511,8 +631,16 @@ export class AppraisalDraftService {
         return doc.reconciliation?.reconciliationNarrative
           ? SectionStatus.IN_PROGRESS
           : SectionStatus.NOT_STARTED;
-      default:
-        return SectionStatus.NOT_STARTED;
+      default: {
+        // Generic product-agnostic section — check the sections bag.
+        // Any non-empty data object means IN_PROGRESS.
+        const bagData = sections[sectionId];
+        if (bagData == null) return SectionStatus.NOT_STARTED;
+        if (typeof bagData === 'object' && Object.keys(bagData as object).length === 0) {
+          return SectionStatus.NOT_STARTED;
+        }
+        return SectionStatus.IN_PROGRESS;
+      }
     }
   }
 

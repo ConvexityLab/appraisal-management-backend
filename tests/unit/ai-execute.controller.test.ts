@@ -19,15 +19,11 @@ function validBody(overrides?: Record<string, unknown>) {
     intent: 'CREATE_ORDER',
     confidence: 0.93,
     actionPayload: {
+      engagementId: 'eng-1',
+      clientOrderId: 'co-1',
+      propertyId: 'prop-1',
       clientId: 'client-1',
       orderNumber: 'ORD-1',
-      propertyAddress: {
-        streetAddress: '123 Main St',
-        city: 'Dallas',
-        state: 'TX',
-        zipCode: '75001',
-        county: 'Dallas',
-      },
       propertyDetails: {
         propertyType: 'single_family_residential',
         occupancy: 'owner_occupied',

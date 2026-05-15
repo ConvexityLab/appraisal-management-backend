@@ -1,21 +1,29 @@
-import { Logger } from '../utils/logger.js';
+﻿import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import type { SqlParameter } from '@azure/cosmos';
 import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
+import { CLIENT_ORDERS_CONTAINER, type ClientOrder } from '../types/client-order.types.js';
+import { PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
+import type { PropertyRecord } from '@l1/shared-types';
 
-// Phase 7 of the Order-relocation refactor — note for Phase 8 readers.
-//
-// Several queries in this file predicate on lender-side fields embedded
-// in the VendorOrder document (`c.propertyAddress.state`,
-// `c.loanInformation.loanAmount`). These keep working today because
-// VendorOrders still carry the deprecated copy of those fields via the
-// placeClientOrder fan-out spread.
-//
-// TODO(Phase 8): once VendorOrder no longer carries propertyAddress /
-//   loanInformation, these queries must move to the `client-orders`
-//   container (where the fields live) and JOIN/aggregate VendorOrders
-//   from there. Not done in this commit because portfolio analytics
-//   is read-only and the data path is unchanged for the current schema.
+interface PortfolioAnalyticsOrderRow {
+  id: string;
+  status?: string;
+  productType?: string;
+  createdAt?: string;
+  completedAt?: string;
+  dueDate?: string;
+  assignedVendorId?: string;
+  priority?: string;
+  clientOrderId?: string;
+  propertyId?: string;
+}
+
+interface EnrichedPortfolioOrder {
+  order: PortfolioAnalyticsOrderRow;
+  clientOrder: ClientOrder | undefined;
+  property: PropertyRecord | undefined;
+}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Query parameter helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
@@ -40,14 +48,6 @@ function vendorClause(filters: PortfolioFilters): { clause: string; params: QPar
   };
 }
 
-function regionClause(filters: PortfolioFilters): { clause: string; params: QParam[] } {
-  if (!filters.region) return { clause: '', params: [] };
-  return {
-    clause: ' AND c.propertyAddress.state = @region',
-    params: [{ name: '@region', value: filters.region }],
-  };
-}
-
 function orderTypeClause(filters: PortfolioFilters): { clause: string; params: QParam[] } {
   if (!filters.orderType) return { clause: '', params: [] };
   return {
@@ -57,7 +57,7 @@ function orderTypeClause(filters: PortfolioFilters): { clause: string; params: Q
 }
 
 function buildBaseWhere(filters: PortfolioFilters): { where: string; params: QParam[] } {
-  const parts = [dateFilter(filters), vendorClause(filters), regionClause(filters), orderTypeClause(filters)];
+  const parts = [dateFilter(filters), vendorClause(filters), orderTypeClause(filters)];
   return {
     where: parts.map(p => p.clause).join(''),
     params: parts.flatMap(p => p.params),
@@ -103,6 +103,80 @@ export class PortfolioAnalyticsService {
       });
     }
     return this._initPromise;
+  }
+
+  private async loadPortfolioOrders(filters: PortfolioFilters): Promise<EnrichedPortfolioOrder[]> {
+    const { where, params } = buildBaseWhere(filters);
+    const rows = await this.db.runOrdersQuery({
+      query: `SELECT c.id, c.status, c.productType, c.createdAt, c.completedAt, c.dueDate, c.assignedVendorId, c.priority, c.clientOrderId, c.propertyId FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`,
+      parameters: params,
+    }) as PortfolioAnalyticsOrderRow[];
+
+    const clientOrderIds = Array.from(new Set(
+      rows
+        .map((row) => row.clientOrderId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ));
+
+    const clientOrders = clientOrderIds.length > 0
+      ? await this.db.queryDocuments<ClientOrder>(
+          CLIENT_ORDERS_CONTAINER,
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
+          [{ name: '@ids', value: clientOrderIds }],
+        )
+      : [];
+    const clientOrderMap = new Map(clientOrders.map((order) => [order.id, order]));
+
+    const propertyIds = Array.from(new Set(
+      rows
+        .map((row) => row.propertyId ?? (row.clientOrderId ? clientOrderMap.get(row.clientOrderId)?.propertyId : undefined))
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ));
+
+    const properties = propertyIds.length > 0
+      ? await this.db.queryDocuments<PropertyRecord>(
+          PROPERTY_RECORDS_CONTAINER,
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
+          [{ name: '@ids', value: propertyIds }],
+        )
+      : [];
+    const propertyMap = new Map(properties.map((property) => [property.id, property]));
+
+    const enriched = rows.map((row) => {
+      const clientOrder = row.clientOrderId ? clientOrderMap.get(row.clientOrderId) : undefined;
+      const propertyId = row.propertyId ?? clientOrder?.propertyId;
+      const property = propertyId ? propertyMap.get(propertyId) : undefined;
+      return { order: row, clientOrder, property };
+    });
+
+    if (!filters.region) {
+      return enriched;
+    }
+
+    const desiredRegion = filters.region.toUpperCase();
+    return enriched.filter((entry) => this.resolveOrderState(entry) === desiredRegion);
+  }
+
+  private resolveOrderState(entry: EnrichedPortfolioOrder): string | undefined {
+    return entry.property?.address?.state?.toUpperCase()
+      ?? entry.clientOrder?.propertyAddress?.state?.toUpperCase();
+  }
+
+  private resolveLoanAmount(entry: EnrichedPortfolioOrder): number {
+    return entry.clientOrder?.loanInformation?.loanAmount ?? 0;
+  }
+
+  private async buildScopedWhere(filters: PortfolioFilters): Promise<{ where: string; params: QParam[] }> {
+    const base = buildBaseWhere(filters);
+    if (!filters.region) {
+      return base;
+    }
+
+    const scopedOrders = await this.loadPortfolioOrders(filters);
+    return {
+      where: `${base.where} AND ARRAY_CONTAINS(@scopedOrderIds, c.id)`,
+      params: [...base.params, { name: '@scopedOrderIds', value: scopedOrders.map((entry) => entry.order.id) }],
+    };
   }
 
   /**
@@ -395,34 +469,23 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Volume Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateVolumeMetrics(filters: PortfolioFilters): Promise<VolumeMetrics> {
-    const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
-
-    const [totals, byStatus, byType, valueSummary] = await Promise.all([
-      this.db.runOrdersQuery({
-        query: `SELECT VALUE COUNT(1) FROM c ${baseWhere}`,
-        parameters: params,
-      }),
-      this.db.runOrdersQuery({
-        query: `SELECT c.status AS status, COUNT(1) AS cnt FROM c ${baseWhere} GROUP BY c.status`,
-        parameters: params,
-      }),
-      this.db.runOrdersQuery({
-        query: `SELECT c.productType AS productType, COUNT(1) AS cnt FROM c ${baseWhere} GROUP BY c.productType`,
-        parameters: params,
-      }),
-      this.db.runOrdersQuery({
-        query: `SELECT SUM(c.loanInformation.loanAmount) AS total, AVG(c.loanInformation.loanAmount) AS avg FROM c ${baseWhere}`,
-        parameters: params,
-      }),
-    ]);
-
-    const totalOrders: number = totals[0] ?? 0;
-    const statusMap = Object.fromEntries((byStatus as any[]).map((r: any) => [r.status, r.cnt]));
-    const typeMap = Object.fromEntries((byType as any[]).map((r: any) => [r.productType ?? 'unknown', r.cnt]));
-    const va = (valueSummary as any[])[0] ?? {};
-    const totalValue: number = va.total ?? 0;
-    const averageValue: number = va.avg ?? 0;
+    const entries = await this.loadPortfolioOrders(filters);
+    const totalOrders = entries.length;
+    const statusMap = entries.reduce<Record<string, number>>((acc, entry) => {
+      const status = entry.order.status ?? 'unknown';
+      acc[status] = (acc[status] ?? 0) + 1;
+      return acc;
+    }, {});
+    const typeMap = entries.reduce<Record<string, number>>((acc, entry) => {
+      const productType = entry.order.productType ?? 'unknown';
+      acc[productType] = (acc[productType] ?? 0) + 1;
+      return acc;
+    }, {});
+    const loanAmounts = entries
+      .map((entry) => this.resolveLoanAmount(entry))
+      .filter((amount) => Number.isFinite(amount) && amount > 0);
+    const totalValue = loanAmounts.reduce((sum, amount) => sum + amount, 0);
+    const averageValue = loanAmounts.length > 0 ? totalValue / loanAmounts.length : 0;
 
     const completedOrders: number = statusMap['completed'] ?? 0;
     const pendingOrders: number =
@@ -445,7 +508,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Performance Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculatePerformanceMetrics(filters: PortfolioFilters): Promise<PerformanceMetrics> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const [completionRows, onTimeRows, dailyThroughput] = await Promise.all([
@@ -489,7 +552,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Quality Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateQualityMetrics(filters: PortfolioFilters): Promise<QualityMetrics> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     // Use Axiom decision data where available as a proxy for QC pass/fail
@@ -521,7 +584,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Turntime Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateTurntimeMetrics(filters: PortfolioFilters): Promise<TurntimeMetrics> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
@@ -548,7 +611,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Vendor Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateVendorMetrics(filters: PortfolioFilters): Promise<VendorMetrics> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
@@ -585,7 +648,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Risk Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateRiskMetrics(filters: PortfolioFilters): Promise<RiskMetrics> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const [highRisk, medRisk, critical] = await Promise.all([
@@ -617,18 +680,19 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Geographic Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async calculateGeographicMetrics(filters: PortfolioFilters): Promise<GeographicMetrics> {
-    const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
+    const entries = await this.loadPortfolioOrders(filters);
+    const stateCounts = new Map<string, number>();
+    for (const entry of entries) {
+      const state = this.resolveOrderState(entry);
+      if (!state) {
+        continue;
+      }
+      stateCounts.set(state, (stateCounts.get(state) ?? 0) + 1);
+    }
 
-    const rows = await this.db.runOrdersQuery({
-      query: `SELECT c.propertyAddress.state AS state, COUNT(1) AS cnt
-              FROM c ${baseWhere} AND c.propertyAddress.state != null
-              GROUP BY c.propertyAddress.state
-              ORDER BY cnt DESC`,
-      parameters: params,
-    });
-
-    const stateRows = rows as Array<{ state: string; cnt: number }>;
+    const stateRows = Array.from(stateCounts.entries())
+      .map(([state, cnt]) => ({ state, cnt }))
+      .sort((left, right) => right.cnt - left.cnt);
     const totalCount = stateRows.reduce((s, r) => s + r.cnt, 0);
     const concentration: Record<string, number> = {};
     stateRows.slice(0, 5).forEach(r => {
@@ -654,7 +718,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Trend analysis Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async performTrendAnalysis(filters: PortfolioFilters): Promise<TrendAnalysis> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     // Monthly order counts to derive trend direction
@@ -692,7 +756,7 @@ export class PortfolioAnalyticsService {
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Private: Alerts Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   private async generateAlerts(filters: PortfolioFilters): Promise<Alert[]> {
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
     const now = new Date().toISOString();
 
@@ -841,7 +905,7 @@ export class PortfolioAnalyticsService {
   private async calculateVendorRanking(vendorId: string | undefined, filters: PortfolioFilters): Promise<any> {
     if (!vendorId) return { rank: null, percentile: null };
 
-    const { where, params } = buildBaseWhere(filters);
+    const { where, params } = await this.buildScopedWhere(filters);
     const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
@@ -902,15 +966,15 @@ export class PortfolioAnalyticsService {
   }
 
   private async analyzeValuationTrends(filters: PortfolioFilters): Promise<any> {
-    const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
+    const entries = await this.loadPortfolioOrders(filters);
+    const loanAmounts = entries
+      .map((entry) => this.resolveLoanAmount(entry))
+      .filter((amount) => Number.isFinite(amount) && amount > 0);
+    const average = loanAmounts.length > 0
+      ? loanAmounts.reduce((sum, amount) => sum + amount, 0) / loanAmounts.length
+      : 0;
 
-    const rows = await this.db.runOrdersQuery({
-      query: `SELECT AVG(c.loanInformation.loanAmount) AS avg FROM c ${baseWhere}`,
-      parameters: params,
-    });
-
-    return { average: (rows[0] as any)?.avg ?? 0, growth: 0 };
+    return { average, growth: 0 };
   }
 
   private async analyzeGeographicTrends(filters: PortfolioFilters): Promise<any> {

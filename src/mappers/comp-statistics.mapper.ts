@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comp-statistics → Canonical mapper
  *
  * Pure derivation: takes the canonical.comps array (already projected onto
@@ -8,7 +8,7 @@
  * No external data source — purely mechanical aggregation.
  */
 
-import type { CanonicalComp, CanonicalCompStatistics } from '../types/canonical-schema.js';
+import type { CanonicalComp, CanonicalCompStatistics } from '@l1/shared-types';
 
 function isFinite(n: number | null | undefined): n is number {
     return typeof n === 'number' && Number.isFinite(n);
