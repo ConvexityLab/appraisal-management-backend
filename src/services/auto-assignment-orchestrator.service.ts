@@ -575,10 +575,29 @@ export class AutoAssignmentOrchestratorService {
     }
 
     // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
-    const loanAmount = typeof (order as any).loanAmount === 'number' ? (order as any).loanAmount : 0;
+    // Read loanAmount from VendorOrder.loanInformation (canonical source on
+    // the new ClientOrder/VendorOrder split) AND fall back to the flat
+    // legacy field. Previously defaulted silently to 0, which defeats the
+    // value-threshold gate — high-value orders would skip supervision
+    // entirely on the new placement path. Surfaced by code review.
+    const loanInfoAmount = (order as { loanInformation?: { loanAmount?: number } }).loanInformation?.loanAmount;
+    const flatLoanAmount = (order as { loanAmount?: number }).loanAmount;
+    const loanAmount =
+      typeof loanInfoAmount === 'number' ? loanInfoAmount
+      : typeof flatLoanAmount === 'number' ? flatLoanAmount
+      : null;
+    if (loanAmount === null && tenantConfig.supervisoryReviewValueThreshold > 0) {
+      this.logger.warn('Supervisory-review value gate skipped: order has no loanAmount on either VendorOrder.loanInformation or legacy field', {
+        orderId,
+        tenantId,
+        threshold: tenantConfig.supervisoryReviewValueThreshold,
+      });
+    }
     const needsSupervision =
       tenantConfig.supervisoryReviewForAllOrders ||
-      (tenantConfig.supervisoryReviewValueThreshold > 0 && loanAmount > tenantConfig.supervisoryReviewValueThreshold);
+      (tenantConfig.supervisoryReviewValueThreshold > 0
+        && loanAmount !== null
+        && loanAmount > tenantConfig.supervisoryReviewValueThreshold);
 
     if (needsSupervision && tenantConfig.defaultSupervisorId) {
       try {
@@ -662,11 +681,18 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
-    // Cancel all other pending broadcast bids
+    // Cancel all OTHER pending broadcast bids (everyone except the winner).
+    // Filter by vendorId-prefix, not by reconstructing the bid ID with
+    // event.timestamp.getTime() — the original bid ID was created at
+    // dispatch time using Date.now(), and event.timestamp is the
+    // ACCEPTANCE time. The two never match, so the old filter retained
+    // every bid (including the winner's) and the cancel loop killed the
+    // winner's bid the moment they accepted. Surfaced by code review.
+    const winnerBidPrefix = `bid-${orderId}-${vendorId}-`;
     await this.cancelPendingBroadcastBids(
       order,
       tenantId,
-      state.broadcastBidIds.filter((id) => id !== `bid-${orderId}-${vendorId}-${event.timestamp.getTime()}`),
+      state.broadcastBidIds.filter((id) => !id.startsWith(winnerBidPrefix)),
       vendorId,
     );
 
@@ -1041,6 +1067,27 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
+    // Broadcast mode branch — previously fell through to sequential cascade,
+    // which spawned a parallel bid loop alongside the still-open broadcast
+    // round. Now: query the outstanding broadcast bids; escalate only when
+    // every one has been resolved (declined / timed_out / cancelled). If
+    // any are still pending, no-op and wait for the next event.
+    if (state.broadcastMode && state.broadcastBidIds && state.broadcastBidIds.length > 0) {
+      const stillOpen = await this.countOpenBroadcastBids(state.broadcastBidIds, tenantId);
+      if (stillOpen > 0) {
+        this.logger.info('advanceVendorAssignment: broadcast round still has open bids — waiting', {
+          orderId,
+          openBids: stillOpen,
+          totalBroadcast: state.broadcastBidIds.length,
+        });
+        return;
+      }
+      // All broadcast bids resolved without an acceptance — escalate.
+      const vendorsContacted = state.rankedVendors.map(v => v.vendorId);
+      await this.escalateVendorAssignment(order, tenantId, vendorsContacted);
+      return;
+    }
+
     const nextAttempt = state.currentAttempt + 1;
     const nextVendor = state.rankedVendors[nextAttempt];
 
@@ -1061,6 +1108,36 @@ export class AutoAssignmentOrchestratorService {
     };
 
     await this.sendBidToVendor(order, nextState, tenantId, priority);
+  }
+
+  /**
+   * Count broadcast bid invitations still in PENDING status.
+   * Used by `advanceVendorAssignment` to decide whether to wait for more
+   * responses or escalate. Returns 0 on read failure (fail toward escalate
+   * so an order doesn't get stuck on a transient Cosmos hiccup).
+   */
+  private async countOpenBroadcastBids(bidIds: string[], tenantId: string): Promise<number> {
+    if (bidIds.length === 0) return 0;
+    try {
+      const result = await this.dbService.queryItems<{ status: string }>(
+        'vendor-bids',
+        `SELECT VALUE COUNT(1) FROM c
+         WHERE c.tenantId = @tenantId
+           AND ARRAY_CONTAINS(@ids, c.id)
+           AND c.status = 'PENDING'`,
+        [
+          { name: '@tenantId', value: tenantId },
+          { name: '@ids', value: bidIds },
+        ],
+      );
+      const count = (result.data?.[0] as unknown as number) ?? 0;
+      return typeof count === 'number' ? count : 0;
+    } catch (err) {
+      this.logger.warn('countOpenBroadcastBids failed — assuming 0 to allow escalation', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return 0;
+    }
   }
 
   // ── Broadcast mode helpers ────────────────────────────────────────────────
@@ -1139,9 +1216,18 @@ export class AutoAssignmentOrchestratorService {
       await this.dbService.createItem('vendor-bids', bidInvitation);
     }
 
-    // Update order state with the batch of bid IDs
+    // Update order state with the batch of bid IDs.
+    // currentBidId is set to a sentinel `'broadcast'` so VendorTimeoutCheckerJob
+    // (which requires both `currentBidId` AND `currentBidExpiresAt` per
+    // its filter) can find broadcast rounds and time them out. Without
+    // this, a broadcast round whose vendors never respond stays
+    // PENDING_BID forever — surfaced by code review.
+    // The `broadcast` literal is recognized by `advanceVendorAssignment`
+    // (which branches on `state.broadcastMode === true` so the cascade
+    // routes to the next broadcast round, not a sequential bid).
     const updatedState: AutoVendorAssignmentState = {
       ...state,
+      currentBidId: 'broadcast',
       currentBidExpiresAt: expiresAt.toISOString(),
       expiringReminderSentAt: null, // V-02: reset so this new round is eligible for a reminder
       broadcastBidIds,

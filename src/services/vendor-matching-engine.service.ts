@@ -353,6 +353,23 @@ export class VendorMatchingEngine {
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, topN);
 
+    // Build the order context once for the snapshot — same shape on
+    // both eligible and denied branches. Includes propertyState so that
+    // Sandbox replay can re-evaluate state-dependent rules faithfully.
+    // Previously this only carried productType, so any rule keyed on
+    // order.propertyState silently no-op'd during replay.
+    const propertyStateForSnapshot = this.extractStateFromAddress(request.propertyAddress);
+    const orderContextForSnapshot = {
+      ...(request.productId ? { productType: request.productId } : {}),
+      ...(propertyStateForSnapshot ? { propertyState: propertyStateForSnapshot } : {}),
+    };
+
+    // Build a quick lookup for original scores so the snapshot doesn't
+    // do an O(n²) `matches.find(...)` inside the eligible.map.
+    const scoreByVendorId = new Map<string, number>(
+      matches.map(m => [m.vendorId, m.matchScore]),
+    );
+
     const evaluationsSnapshot = [
       ...eligible.map(({ vendor, distance }) => ({
         vendor: {
@@ -373,15 +390,13 @@ export class VendorMatchingEngine {
             : {}),
           distance: distance ?? null,
         },
-        order: {
-          ...(request.productId ? { productType: request.productId } : {}),
-        },
+        order: orderContextForSnapshot,
         originallyRanked: true,
-        originalScore: matches.find(m => m.vendorId === vendor.id)?.matchScore ?? 0,
+        originalScore: scoreByVendorId.get(vendor.id as string) ?? 0,
       })),
       ...denied.map(d => ({
         vendor: { id: d.vendorId },
-        order: { ...(request.productId ? { productType: request.productId } : {}) },
+        order: orderContextForSnapshot,
         originallyRanked: false,
         originalScore: 0,
       })),
@@ -1085,25 +1100,50 @@ export class VendorMatchingEngine {
     eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>;
     denied: DeniedVendorEntry[];
   }> {
-    const query = `
-      SELECT * FROM c
-      WHERE c.tenantId = @tenantId
-      AND c.entityType = 'vendor'
-      AND c.isActive = true
-      AND (NOT IS_DEFINED(c.serviceAreas) OR EXISTS(SELECT VALUE sa FROM sa IN c.serviceAreas WHERE sa.state = @state))
-    `;
-
-    // Extract state from address (simplified)
+    // Extract state from address. May return undefined if the address
+    // can't be parsed; we then skip the state filter (with a warning) so
+    // we don't silently route to California vendors. Operators looking
+    // at the trace will see `propertyState: undefined` and know the
+    // upstream needs to clean the address.
     const propertyState = this.extractStateFromAddress(request.propertyAddress);
+    if (!propertyState) {
+      this.logger.warn('extractStateFromAddress: could not parse state — skipping state filter', {
+        tenantId: request.tenantId,
+        propertyAddress: request.propertyAddress,
+      });
+    }
 
-    const result = await this.dbService.queryItems(
-      'vendors',
-      query,
-      [
-        { name: '@tenantId', value: request.tenantId },
-        { name: '@state', value: propertyState }
-      ]
-    ) as any;
+    // Eligibility query.
+    //   - `c.isActive = true`: legacy vendor docs without `isActive` would
+    //     be excluded since Cosmos `=` returns Undefined (not true) on
+    //     missing fields. We tolerate them by also matching when the
+    //     field is missing entirely. Migration to backfill isActive=true
+    //     is preferred long-term.
+    //   - `c.serviceAreas`: missing-field vendors are NOT treated as
+    //     "global" — they're skipped from the state-scoped query.
+    //     Vendors that legitimately serve every state must opt in
+    //     explicitly via geographicCoverage.preferred or with a sentinel.
+    //   - When propertyState is undefined we drop the state predicate
+    //     entirely (last branch in the WHERE) so unparseable addresses
+    //     still return *some* candidate set instead of zero.
+    const query = propertyState
+      ? `SELECT * FROM c
+         WHERE c.tenantId = @tenantId
+           AND c.entityType = 'vendor'
+           AND (c.isActive = true OR NOT IS_DEFINED(c.isActive))
+           AND IS_DEFINED(c.serviceAreas)
+           AND EXISTS(SELECT VALUE sa FROM sa IN c.serviceAreas WHERE sa.state = @state)`
+      : `SELECT * FROM c
+         WHERE c.tenantId = @tenantId
+           AND c.entityType = 'vendor'
+           AND (c.isActive = true OR NOT IS_DEFINED(c.isActive))`;
+
+    const params: Array<{ name: string; value: string }> = [
+      { name: '@tenantId', value: request.tenantId },
+    ];
+    if (propertyState) params.push({ name: '@state', value: propertyState });
+
+    const result = await this.dbService.queryItems('vendors', query, params) as any;
 
     let vendors: any[] = result.data || [];
 
@@ -1271,15 +1311,25 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Extract state from address string
+   * Extract state from address string. Returns `undefined` when no
+   * 2-letter state can be parsed.
+   *
+   * Previously defaulted to `'CA'` on parse failure, which silently routed
+   * every malformed-address order to California vendors and California
+   * licensure gates — a CLAUDE.md silent-fallback anti-pattern with real
+   * production impact. Callers must now handle `undefined` explicitly:
+   * the eligibility query treats it as "any state" with a logged warning,
+   * scoring uses the no-state code path, and orders that need a state
+   * for licensure should escalate to manual review upstream.
    */
-  private extractStateFromAddress(address: string): string {
+  private extractStateFromAddress(address: string): string | undefined {
+    if (!address) return undefined;
     // Try comma+space+STATE+comma/end pattern first (handles "Austin, TX, 78701" format).
     const commaFormat = address.match(/,\s*([A-Z]{2})\s*(?:,|$)/);
     if (commaFormat && commaFormat[1]) return commaFormat[1];
     // Fall back to STATE+space+zip format (handles "Austin TX 78701" format).
     const spaceFormat = address.match(/\b([A-Z]{2})\s+\d{5}/);
-    return spaceFormat && spaceFormat[1] ? spaceFormat[1] : 'CA'; // Default to CA
+    return spaceFormat && spaceFormat[1] ? spaceFormat[1] : undefined;
   }
 
   /**

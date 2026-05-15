@@ -29,12 +29,18 @@
  *     recovery is Phase 3.
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
 import { VendorOrderService, type CreateVendorOrderInput } from './vendor-order.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import type { EventPublisher } from '../types/events.js';
-import { EventCategory, type ClientOrderCreatedEvent } from '../types/events.js';
+import {
+  EventCategory,
+  EventPriority,
+  type ClientOrderCreatedEvent,
+  type EngagementOrderCreatedEvent,
+} from '../types/events.js';
 import {
   CLIENT_ORDERS_CONTAINER,
   CLIENT_ORDER_DOC_TYPE,
@@ -320,66 +326,126 @@ export class ClientOrderService {
     // persisted and is the source of truth.
     await this.publishClientOrderCreated(finalClientOrder);
 
-    // Also publish `engagement.order.created` per child VendorOrder so the
+    // Publish `engagement.order.created` per child VendorOrder so the
     // AutoAssignmentOrchestrator (which subscribes only to that event,
     // matching what the legacy POST /api/orders path emits) can rank
     // vendors and send bids. Was the gap J16 surfaced — without this,
     // the new ClientOrder/VendorOrder split skipped auto-assignment.
-    for (const vo of vendorOrders) {
-      await this.publishEngagementOrderCreated(finalClientOrder, vo);
-    }
+    // Parallel — each publish is independently caught + logged inside
+    // publishEngagementOrderCreated, so a slow Service Bus call doesn't
+    // block the other publishes (matters under bulk-portfolio load).
+    await Promise.all(
+      vendorOrders.map(vo => this.publishEngagementOrderCreated(finalClientOrder, vo)),
+    );
 
     return { clientOrder: finalClientOrder, vendorOrders };
   }
 
   /**
    * Publish `engagement.order.created` for a single VendorOrder. Mirrors
-   * the shape order.controller.ts emits on the legacy POST /api/orders
-   * path, so AutoAssignmentOrchestrator handles both paths identically.
+   * the legacy POST /api/orders payload (order.controller.ts:600-651) so
+   * AutoAssignmentOrchestrator handles both paths identically.
+   *
+   * Source-of-truth ordering for each field (most-specific → least):
+   *   - propertyAddress + propertyState: VendorOrder.propertyAddress (the
+   *     PropertyAddress shape: streetAddress/city/state/zipCode), then
+   *     ClientOrder.propertyAddress. NOT `propertyDetails` — that's the
+   *     physicals view (gla/features/etc) and has no address fields.
+   *   - loanAmount: VendorOrder.loanInformation, then ClientOrder.loanInformation.
+   *   - dueDate: VendorOrder.dueDate, then ClientOrder.dueDate.
+   *   - priority: VendorOrder.priority, then ClientOrder.priority. Mapped
+   *     from order's enum ('EMERGENCY'/'RUSH'/...) to EventPriority enum.
+   *
    * Publish failures are logged but never rethrown — the VendorOrder is
-   * already persisted.
+   * already persisted and is the source of truth.
    */
   private async publishEngagementOrderCreated(
     clientOrder: ClientOrder,
     vendorOrder: VendorOrder,
   ): Promise<void> {
-    const propAddr = (clientOrder as unknown as { propertyDetails?: { address?: string; city?: string; state?: string; zipCode?: string } }).propertyDetails;
-    const addrString = propAddr
-      ? [propAddr.address, propAddr.city, propAddr.state, propAddr.zipCode]
+    const addr = vendorOrder.propertyAddress ?? clientOrder.propertyAddress ?? null;
+    const propertyAddress: string = addr?.streetAddress
+      ? [addr.streetAddress, addr.city, addr.state, addr.zipCode]
           .filter((s): s is string => typeof s === 'string' && s.length > 0)
           .join(', ')
       : '';
-    const event = {
-      id: `eoc-${vendorOrder.id}-${Date.now()}`,
-      type: 'engagement.order.created' as const,
+    const propertyState: string = addr?.state ?? '';
+
+    const loanAmount: number =
+      vendorOrder.loanInformation?.loanAmount
+      ?? clientOrder.loanInformation?.loanAmount
+      ?? 0;
+
+    // Map from the order's priority enum to EventPriority. Mirrors
+    // order.controller.ts:619-622 exactly so both producers project the
+    // same way.
+    const orderPriority: string =
+      (vendorOrder as { priority?: string }).priority
+      ?? (clientOrder as { priority?: string }).priority
+      ?? 'STANDARD';
+    const priority: EventPriority =
+      orderPriority === 'EMERGENCY' ? EventPriority.CRITICAL
+      : orderPriority === 'RUSH'    ? EventPriority.HIGH
+      : EventPriority.NORMAL;
+
+    // dueDate fallback: per the auto-assign review this fabricates an SLA
+    // when the order has none. The legacy controller has the same default,
+    // so we keep parity for now AND log a warning so operators can see
+    // when it kicks in. Real fix is to require dueDate at placement time.
+    const rawDue: unknown = vendorOrder.dueDate ?? clientOrder.dueDate;
+    let dueDate: Date;
+    if (rawDue instanceof Date) dueDate = rawDue;
+    else if (typeof rawDue === 'string' || typeof rawDue === 'number') dueDate = new Date(rawDue);
+    else {
+      dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      this.logger.warn('engagement.order.created: dueDate missing on both VendorOrder and ClientOrder; defaulting to T+7d', {
+        vendorOrderId: vendorOrder.id,
+        clientOrderId: clientOrder.id,
+        tenantId: clientOrder.tenantId,
+      });
+    }
+
+    const event: EngagementOrderCreatedEvent = {
+      id: uuidv4(),
+      type: 'engagement.order.created',
       timestamp: new Date(),
-      source: 'ClientOrderService',
+      source: 'client-order-service',
       version: '1.0',
       category: EventCategory.ASSIGNMENT,
       data: {
         engagementId: clientOrder.engagementId,
         orderId: vendorOrder.id,
-        orderNumber: (vendorOrder as unknown as { orderNumber?: string }).orderNumber ?? '',
+        orderNumber: vendorOrder.orderNumber ?? '',
         tenantId: clientOrder.tenantId,
         productType: clientOrder.productType,
-        propertyAddress: addrString,
-        propertyState: propAddr?.state ?? '',
-        clientId: (clientOrder as unknown as { clientId?: string }).clientId ?? '',
-        loanAmount: 0,
-        priority: 'STANDARD' as const,
-        dueDate: (vendorOrder as unknown as { dueDate?: string | Date }).dueDate
-          ? new Date((vendorOrder as unknown as { dueDate: string | Date }).dueDate)
-          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        propertyAddress,
+        propertyState,
+        clientId: clientOrder.clientId,
+        loanAmount,
+        priority,
+        dueDate,
+        // productId + requiredCapabilities are persisted on the docs but
+        // not yet hoisted into the typed shape (TODO: add to ClientOrder /
+        // VendorOrder types). Cast through `unknown` to read the runtime
+        // value without weakening the rest of the event's type.
+        ...((clientOrder as unknown as { productId?: string }).productId
+          ? { productId: (clientOrder as unknown as { productId: string }).productId }
+          : {}),
+        ...((vendorOrder as unknown as { requiredCapabilities?: string[] }).requiredCapabilities?.length
+          ? { requiredCapabilities: (vendorOrder as unknown as { requiredCapabilities: string[] }).requiredCapabilities }
+          : {}),
       },
     };
+
     try {
-      await this.publisher.publish(event as never);
+      await this.publisher.publish(event);
     } catch (err) {
       this.logger.warn('Failed to publish engagement.order.created — VendorOrder already persisted', {
+        eventId: event.id,
         vendorOrderId: vendorOrder.id,
         clientOrderId: clientOrder.id,
         tenantId: clientOrder.tenantId,
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? { message: err.message, stack: err.stack } : String(err),
       });
     }
   }
@@ -520,6 +586,16 @@ export class ClientOrderService {
       addedCount: newVendorOrders.length,
       attempts: attempt,
     });
+
+    // Publish `engagement.order.created` per added VendorOrder so the
+    // AutoAssignmentOrchestrator picks them up. Without this the bulk-
+    // portfolio + AI-action-dispatcher paths (which call addVendorOrders
+    // directly, NOT placeClientOrder) silently skipped auto-assignment.
+    // Use `current` (the latest parent state we successfully patched)
+    // since `parent` may be stale after the etag-retry loop.
+    await Promise.all(
+      newVendorOrders.map(vo => this.publishEngagementOrderCreated(current, vo)),
+    );
 
     return newVendorOrders;
   }
