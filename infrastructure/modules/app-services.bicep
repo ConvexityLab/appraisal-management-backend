@@ -207,6 +207,12 @@ var containerApps = [
         value: applicationInsightsConnectionString
       }
       {
+        // Required by VendorEventTraceService to query Log Analytics workspace
+        // for end-to-end vendor integration traces via ARM REST API.
+        name: 'LOG_ANALYTICS_WORKSPACE_ID'
+        value: logAnalyticsWorkspaceId
+      }
+      {
         name: 'KEY_VAULT_URL'
         value: keyVaultUrl
       }

@@ -350,4 +350,51 @@ describe('AimPortAdapter', () => {
     expect(result.domainEvents[0]?.vendorOrderId).toBe('1900811');
     expect(result.ack.statusCode).toBe(200);
   });
+
+  it('suppresses inbound OrderHoldRequest echo-backs (AIM-Port reflects our own outbound hold)', async () => {
+    // AIM-Port confirms receipt of our outbound hold by sending it right back.
+    // We must return zero domain events to prevent a hold→echo→hold loop.
+    const adapter = new AimPortAdapter();
+    const body = {
+      OrderHoldRequest: {
+        login: { client_id: '495735', api_key: 'secret-key', order_id: 'VO-48' },
+        order: { hold_message: 'On hold pending docs' },
+      },
+    };
+    const result = await adapter.handleInbound(body, {}, connection, {
+      resolveSecret: async () => 'secret-key',
+    });
+    expect(result.domainEvents).toHaveLength(0);
+    expect(result.ack.statusCode).toBe(200);
+  });
+
+  it('suppresses inbound OrderResumeRequest echo-backs', async () => {
+    const adapter = new AimPortAdapter();
+    const body = {
+      OrderResumeRequest: {
+        login: { client_id: '495735', api_key: 'secret-key', order_id: 'VO-48' },
+        order: { resume_message: 'Resuming order' },
+      },
+    };
+    const result = await adapter.handleInbound(body, {}, connection, {
+      resolveSecret: async () => 'secret-key',
+    });
+    expect(result.domainEvents).toHaveLength(0);
+    expect(result.ack.statusCode).toBe(200);
+  });
+
+  it('suppresses inbound OrderCancelledRequest echo-backs', async () => {
+    const adapter = new AimPortAdapter();
+    const body = {
+      OrderCancelledRequest: {
+        login: { client_id: '495735', api_key: 'secret-key', order_id: 'VO-48' },
+        order: { cancellation_message: 'Cancelled by lender' },
+      },
+    };
+    const result = await adapter.handleInbound(body, {}, connection, {
+      resolveSecret: async () => 'secret-key',
+    });
+    expect(result.domainEvents).toHaveLength(0);
+    expect(result.ack.statusCode).toBe(200);
+  });
 });

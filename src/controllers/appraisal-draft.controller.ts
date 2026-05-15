@@ -11,6 +11,7 @@
  *   PUT    /:draftId                   Full-document save
  *   PATCH  /:draftId/sections/:sid     Section-level save
  *   POST   /:draftId/finalize          Finalize a draft
+ *   POST   /:draftId/validate-canonical  Pre-flight UAD v1.3 canonical check
  *   DELETE /:draftId                   Delete a draft (CREATED/EDITING only)
  *
  * @see UAD_3.6_COMPLIANCE_PLAN.md — Phase 1
@@ -19,7 +20,8 @@
 import express, { type Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
-import { AppraisalDraftService } from '../services/appraisal-draft.service.js';
+import { AppraisalDraftService, UadFinalizationValidationError } from '../services/appraisal-draft.service.js';
+import { UadValidationService } from '../services/uad-validation.service.js';
 import { ReportConfigMergerService } from '../services/report-config-merger.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
@@ -27,6 +29,7 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
 // section key validation is now open to any string (product-config-driven).
 
 const logger = new Logger('AppraisalDraftController');
+const uadValidator = new UadValidationService();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -209,6 +212,37 @@ export function createAppraisalDraftRouter(dbService: CosmosDbService): express.
     },
   );
 
+  // ── POST /:draftId/validate-canonical — Pre-flight UAD validation ────────
+
+  router.post('/:draftId/validate-canonical',
+    param('draftId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      try {
+        const orderId = req.query.orderId as string | undefined;
+        if (!orderId) {
+          return res.status(400).json({ success: false, error: 'orderId query parameter is required' });
+        }
+
+        const draft = await draftService.getDraft(req.params['draftId'] as string, orderId);
+        const allResults = uadValidator.validateCanonicalSections(draft.reportDocument);
+        const validationErrors = allResults.filter(e => e.severity === 'ERROR');
+        const warnings         = allResults.filter(e => e.severity === 'WARNING');
+        return res.status(200).json({
+          success: true,
+          data: { isValid: validationErrors.length === 0, validationErrors, warnings },
+        });
+      } catch (error) {
+        logger.error('Error running pre-flight canonical validation', { error });
+        return res.status(500).json({ success: false, error: (error as Error).message });
+      }
+    },
+  );
+
   // ── POST /:draftId/finalize — Finalize draft ──────────────────────────
 
   router.post('/:draftId/finalize',
@@ -226,9 +260,20 @@ export function createAppraisalDraftRouter(dbService: CosmosDbService): express.
           return res.status(400).json({ success: false, error: 'orderId query parameter is required' });
         }
 
-        const draft = await draftService.finalizeDraft(req.params['draftId'] as string, orderId, userId);
-        return res.status(200).json({ success: true, data: draft });
+        const { draft, canonicalWarnings } = await draftService.finalizeDraft(req.params['draftId'] as string, orderId, userId);
+        return res.status(200).json({ success: true, data: draft, warnings: canonicalWarnings });
       } catch (error) {
+        if (error instanceof UadFinalizationValidationError) {
+          logger.warn('Draft finalization blocked by UAD v1.3 validation errors', {
+            draftId: req.params['draftId'],
+            errorCount: error.validationErrors.length,
+          });
+          return res.status(422).json({
+            success: false,
+            error: 'UAD v1.3 section validation failed',
+            validationErrors: error.validationErrors,
+          });
+        }
         logger.error('Error finalizing draft', { error });
         return res.status(500).json({ success: false, error: (error as Error).message });
       }

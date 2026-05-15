@@ -88,6 +88,9 @@ var containers = [
   {
     name: 'vendor-event-outbox'
     partitionKey: '/tenantId'
+    // TTL: 7 days. COMPLETED/DEAD_LETTER documents are not explicitly deleted —
+    // TTL keeps the container from growing unbounded over time.
+    defaultTtl: 604800
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -1267,7 +1270,9 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
         paths: [container.partitionKey]
         kind: 'Hash'
       }
-      defaultTtl: -1
+      // Use per-container TTL if defined (e.g. vendor-event-outbox uses 7 days),
+      // otherwise -1 (TTL enabled but no default — per-document TTL only).
+      defaultTtl: container.?defaultTtl ?? -1
       indexingPolicy: container.indexingPolicy
       uniqueKeyPolicy: {
         uniqueKeys: container.?uniqueKeys ?? []

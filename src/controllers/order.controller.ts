@@ -20,6 +20,9 @@
  *   PUT    /:orderId                        → updateOrder            (authorizeResource update)
  *   PUT    /:orderId/status                 → updateOrderStatus      (authorizeResource update)
  *   POST   /:orderId/cancel                → cancelOrder            (authorizeResource execute, validated)
+ *   POST   /:orderId/hold                  → holdOrder              (authorizeResource execute)
+ *   POST   /:orderId/resume                → resumeOrder            (authorizeResource execute)
+ *   POST   /:orderId/vendor-message        → sendVendorMessage      (authorizeResource execute)
  *   POST   /:orderId/deliver               → deliverOrder           (authorizeResource execute)
  *   POST   /:orderId/assign                → assignVendor           (authorizeResource update)
  *   POST   /:orderId/unassign              → unassignVendor         (authorizeResource update)
@@ -56,6 +59,9 @@ import { OrderStatus, normalizeOrderStatus, isValidStatusTransition } from '../t
 import {
   validateCreateOrder,
   validateCancelOrder,
+  validateHoldOrder,
+  validateResumeOrder,
+  validateSendVendorMessage,
   validateSearchOrders,
   validateBatchStatusUpdate,
   validateBatchAssign,
@@ -87,6 +93,8 @@ import {
   ScorecardError,
 } from '../services/vendor-order-scorecard.service.js';
 import { VendorOrderScorecardSuggester } from '../services/vendor-order-scorecard-suggester.service.js';
+import { VendorOutboundOutboxService } from '../services/vendor-integrations/VendorOutboundOutboxService.js';
+import { VendorOrderNotificationService } from '../services/vendor-integrations/VendorOrderNotificationService.js';
 
 const logger = new Logger('OrderController');
 const accessControlHelper = new AccessControlHelper();
@@ -198,6 +206,7 @@ export class OrderController {
   private clientOrderService: ClientOrderService;
   private scorecardService: VendorOrderScorecardService;
   private scorecardSuggester: VendorOrderScorecardSuggester;
+  private vendorNotificationService: VendorOrderNotificationService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -237,6 +246,10 @@ export class OrderController {
       new AuditTrailService(dbService),
     );
     this.scorecardSuggester = new VendorOrderScorecardSuggester(dbService);
+    this.vendorNotificationService = new VendorOrderNotificationService(
+      dbService,
+      new VendorOutboundOutboxService(dbService),
+    );
     this.setupRoutes(authzMiddleware);
   }
 
@@ -397,6 +410,9 @@ export class OrderController {
     this.router.put('/:orderId',                            ...updateRes,  this.updateOrder.bind(this));
     this.router.put('/:orderId/status',                     ...updateRes,  this.updateOrderStatus.bind(this));
     this.router.post('/:orderId/cancel',                    ...execRes,    ...validateCancelOrder(), this.cancelOrder.bind(this));
+    this.router.post('/:orderId/hold',                      ...execRes,    ...validateHoldOrder(),   this.holdOrder.bind(this));
+    this.router.post('/:orderId/resume',                    ...execRes,    ...validateResumeOrder(), this.resumeOrder.bind(this));
+    this.router.post('/:orderId/vendor-message',            ...execRes,    ...validateSendVendorMessage(), this.sendVendorMessage.bind(this));
     this.router.post('/:orderId/deliver',                   ...execRes,    this.deliverOrder.bind(this));
     this.router.post('/:orderId/assign',                    ...updateRes,  this.assignVendor.bind(this));
     this.router.post('/:orderId/unassign',                  ...updateRes,  this.unassignVendor.bind(this));
@@ -1417,6 +1433,8 @@ export class OrderController {
         );
         this.notificationService.notifyOrderCancelled(result.data!)
           .catch((err) => logger.error('Failed to send order cancellation notification', { orderId, error: err }));
+        this.vendorNotificationService.notifyCancel(orderId, current.data.tenantId, reason)
+          .catch((err) => logger.error('Failed to enqueue outbound vendor cancel notification', { orderId, error: err }));
         res.json({
           success: true,
           orderId,
@@ -1435,6 +1453,226 @@ export class OrderController {
       res.status(500).json({
         error: 'Failed to cancel order',
         code: 'ORDER_CANCEL_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/hold ───────────────────────────────────────────────────
+
+  private async holdOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      const { reason } = req.body;
+
+      if (!orderId) {
+        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
+        return;
+      }
+
+      const current = await this.dbService.findOrderById(orderId);
+      if (!current.success || !current.data) {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+
+      const currentStatus = normalizeOrderStatus(current.data.status as string);
+      if (!isValidStatusTransition(currentStatus, OrderStatus.ON_HOLD)) {
+        res.status(422).json({
+          error: `Cannot place order in ${currentStatus} status on hold`,
+          code: 'INVALID_STATUS_TRANSITION',
+          currentStatus,
+          requestedStatus: OrderStatus.ON_HOLD,
+        });
+        return;
+      }
+
+      const result = await this.dbService.updateOrder(orderId, {
+        status: OrderStatus.ON_HOLD as unknown as Order['status'],
+        metadata: {
+          ...(current.data.metadata || {}),
+          holdReason: reason,
+          heldAt: new Date().toISOString(),
+          heldBy: req.user?.id || 'unknown',
+          previousStatus: currentStatus,
+        },
+      } as Partial<Order>);
+
+      if (result.success) {
+        this.eventService.publishOrderStatusChanged(
+          orderId, currentStatus, OrderStatus.ON_HOLD, req.user?.id || 'unknown',
+        ).catch((err) =>
+          logger.error('Failed to publish ORDER_STATUS_CHANGED event for hold', { orderId, error: err }),
+        );
+        this.auditService.log({
+          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          action: 'order.held',
+          resource: { type: 'order', id: orderId },
+          before: { status: currentStatus },
+          after: { status: OrderStatus.ON_HOLD },
+          metadata: { reason },
+        }).catch((err) =>
+          logger.error('Failed to write audit log for hold', { orderId, error: err }),
+        );
+        this.vendorNotificationService.notifyHold(orderId, current.data.tenantId, reason)
+          .catch((err) => logger.error('Failed to enqueue outbound vendor hold notification', { orderId, error: err }));
+        res.json({
+          success: true,
+          orderId,
+          message: 'Order placed on hold',
+          updatedAt: new Date(),
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to hold order', code: 'ORDER_HOLD_ERROR', details: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to hold order',
+        code: 'ORDER_HOLD_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/resume ─────────────────────────────────────────────────
+
+  private async resumeOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      const { reason } = req.body;
+
+      if (!orderId) {
+        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
+        return;
+      }
+
+      const current = await this.dbService.findOrderById(orderId);
+      if (!current.success || !current.data) {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+
+      const currentStatus = normalizeOrderStatus(current.data.status as string);
+      if (currentStatus !== OrderStatus.ON_HOLD) {
+        res.status(422).json({
+          error: `Cannot resume an order that is not on hold (current status: ${currentStatus})`,
+          code: 'INVALID_STATUS_TRANSITION',
+          currentStatus,
+        });
+        return;
+      }
+
+      // Restore to the status that was active before the hold, default IN_PROGRESS.
+      const previousStatus =
+        (current.data.metadata as any)?.previousStatus as OrderStatus | undefined;
+      const targetStatus =
+        previousStatus && isValidStatusTransition(OrderStatus.ON_HOLD, previousStatus)
+          ? previousStatus
+          : OrderStatus.IN_PROGRESS;
+
+      const result = await this.dbService.updateOrder(orderId, {
+        status: targetStatus as unknown as Order['status'],
+        metadata: {
+          ...(current.data.metadata || {}),
+          resumedAt: new Date().toISOString(),
+          resumedBy: req.user?.id || 'unknown',
+          resumeReason: reason,
+        },
+      } as Partial<Order>);
+
+      if (result.success) {
+        this.eventService.publishOrderStatusChanged(
+          orderId, currentStatus, targetStatus, req.user?.id || 'unknown',
+        ).catch((err) =>
+          logger.error('Failed to publish ORDER_STATUS_CHANGED event for resume', { orderId, error: err }),
+        );
+        this.auditService.log({
+          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          action: 'order.resumed',
+          resource: { type: 'order', id: orderId },
+          before: { status: currentStatus },
+          after: { status: targetStatus },
+          metadata: { reason },
+        }).catch((err) =>
+          logger.error('Failed to write audit log for resume', { orderId, error: err }),
+        );
+        this.vendorNotificationService.notifyResume(orderId, current.data.tenantId, reason)
+          .catch((err) => logger.error('Failed to enqueue outbound vendor resume notification', { orderId, error: err }));
+        res.json({
+          success: true,
+          orderId,
+          message: 'Order resumed',
+          status: targetStatus,
+          updatedAt: new Date(),
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to resume order', code: 'ORDER_RESUME_ERROR', details: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to resume order',
+        code: 'ORDER_RESUME_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/vendor-message ─────────────────────────────────────────
+
+  private async sendVendorMessage(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      const { subject, content } = req.body;
+
+      if (!orderId) {
+        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
+        return;
+      }
+      if (typeof subject !== 'string' || !subject.trim()) {
+        res.status(400).json({ error: 'subject is required', code: 'MISSING_SUBJECT' });
+        return;
+      }
+      if (typeof content !== 'string' || !content.trim()) {
+        res.status(400).json({ error: 'content is required', code: 'MISSING_CONTENT' });
+        return;
+      }
+
+      const order = await this.dbService.findOrderById(orderId);
+      if (!order.success || !order.data) {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+
+      const dispatched = await this.vendorNotificationService.notifyMessage(
+        orderId,
+        order.data.tenantId,
+        subject.trim(),
+        content.trim(),
+      );
+
+      if (!dispatched) {
+        res.status(422).json({
+          error: 'This order has no vendor integration — there is no vendor system to receive this message',
+          code: 'VENDOR_NOT_INTEGRATED',
+          orderId,
+        });
+        return;
+      }
+
+      this.auditService.log({
+        actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+        action: 'order.vendor_message_sent',
+        resource: { type: 'order', id: orderId },
+        metadata: { subject: subject.trim() },
+      }).catch((err) =>
+        logger.error('Failed to write audit log for vendor message', { orderId, error: err }),
+      );
+
+      res.json({ success: true, orderId, message: 'Message queued for delivery to vendor' });
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to send vendor message',
+        code: 'VENDOR_MESSAGE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }

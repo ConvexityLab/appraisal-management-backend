@@ -121,8 +121,8 @@
   </div>
 
   <div class="form-title-bar">
-    <h1>Uniform Residential Appraisal Report &mdash; Form 1004</h1>
-    <p>File No. {{metadata.orderNumber}} &bull; UAD Edition &bull; Fannie Mae / Freddie Mac Compliant</p>
+    <h1>{{gseFormLabel}}</h1>
+    <p>File No. {{metadata.orderNumber}} &bull; UAD 3.6 Edition &bull; Fannie Mae / Freddie Mac Compliant</p>
   </div>
 
   <div class="section-hdr">Subject</div>
@@ -244,20 +244,58 @@
     <div class="cell"><span class="lbl">Foundation</span><span class="val">{{subject.foundationType}}</span></div>
     <div class="cell"><span class="lbl">Exterior Description</span><span class="val">{{subject.exteriorWalls}}; {{subject.roofSurface}}</span></div>
   </div>
+  {{#unless isExteriorOnly}}
   <div class="row g2">
     <div class="cell"><span class="lbl">Heating / Cooling</span><span class="val">{{subject.heating}}; {{subject.cooling}}</span></div>
     <div class="cell"><span class="lbl">Interior Finishes</span><span class="val">{{subject.interiorFloors}}; {{subject.interiorWalls}}</span></div>
   </div>
+  {{/unless}}
   <div class="row g2">
-    <div class="cell"><span class="lbl">Condition</span><span class="val">{{subject.condition}}{{#if subject.conditionDescription}} &mdash; {{subject.conditionDescription}}{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Condition{{#if isExteriorOnly}} (Exterior Observable){{/if}}</span><span class="val">{{subject.condition}}{{#if subject.conditionDescription}} &mdash; {{subject.conditionDescription}}{{/if}}</span></div>
     <div class="cell"><span class="lbl">Quality</span><span class="val">{{subject.quality}}</span></div>
   </div>
+  {{#if subject.hasUpdateStatus}}
+  <div class="row g2">
+    {{#if subject.kitchenUpdateStatus}}
+    <div class="cell"><span class="lbl">Kitchen Update Status</span><span class="val">{{subject.kitchenUpdateStatus.timeFrame}}{{#if subject.kitchenUpdateStatus.quality}} &bull; Q: {{subject.kitchenUpdateStatus.quality}}{{/if}}{{#if subject.kitchenUpdateStatus.condition}} &bull; C: {{subject.kitchenUpdateStatus.condition}}{{/if}}</span></div>
+    {{/if}}
+    {{#if subject.bathroomUpdateStatus}}
+    <div class="cell"><span class="lbl">Bathroom Update Status</span><span class="val">{{subject.bathroomUpdateStatus.timeFrame}}{{#if subject.bathroomUpdateStatus.quality}} &bull; Q: {{subject.bathroomUpdateStatus.quality}}{{/if}}{{#if subject.bathroomUpdateStatus.condition}} &bull; C: {{subject.bathroomUpdateStatus.condition}}{{/if}}</span></div>
+    {{/if}}
+  </div>
+  {{/if}}
   <div class="row g2">
     <div class="cell"><span class="lbl">Additional Features</span><span class="val">{{subject.additionalFeatures}}</span></div>
     <div class="cell"><span class="lbl">Pool / Porch / Patio / Deck</span><span class="val">Pool: {{subject.pool}}; {{subject.porchPatioDeck}}</span></div>
   </div>
-
-  <div class="section-hdr gold">Subject Property Photos</div>
+  {{#if hasDefects}}
+  <div class="section-hdr" style="background:#FFF0F0;color:#8B0000">Apparent Defects / Deficiencies (UAD 3.6)</div>
+  <table class="grid" style="width:100%;font-size:7pt">
+    <thead><tr><th>Feature / Section</th><th>Location</th><th>Description</th><th>Affects Soundness</th><th>Recommended Action</th><th>Est. Repair Cost</th></tr></thead>
+    <tbody>
+    {{#each defects}}
+      <tr>
+        <td>{{feature}}</td>
+        <td>{{location}}</td>
+        <td>{{description}}</td>
+        <td>{{#if affectsSoundness}}<b style="color:#8B0000">Yes</b>{{else}}No{{/if}}</td>
+        <td>{{recommendedAction}}</td>
+        <td>{{estimatedCostToRepair}}</td>
+      </tr>
+    {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+  {{#if subject.accessoryDwellingUnits}}
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Accessory Dwelling Units (ADU)</span><span class="val">{{subject.accessoryDwellingUnits}}</span></div>
+    {{#if subject.constructionStage}}<div class="cell"><span class="lbl">Construction Stage</span><span class="val">{{subject.constructionStage}}</span></div>{{/if}}
+  </div>
+  {{else}}{{#if subject.constructionStage}}
+  <div class="row g1">
+    <div class="cell"><span class="lbl">Construction Stage</span><span class="val">{{subject.constructionStage}}</span></div>
+  </div>
+  {{/if}}{{/if}}
   <div class="photo-row">
     <div class="photo-box">
       {{#if photos.subjectFront}}
@@ -557,11 +595,29 @@
 
   <div class="section-hdr">Prior Sales History &mdash; Subject &amp; Comparables (3-Year)</div>
   <div class="row g4">
-    <div class="cell"><span class="lbl">Subject Prior Sale</span><span class="val">{{metadata.subjectPriorSaleDate1}} / {{metadata.subjectPriorSalePrice1}}</span></div>
+    <div class="cell"><span class="lbl">Subject Prior Closed Sale (3-Yr)</span><span class="val">{{#if metadata.subjectPriorSaleDate1}}{{metadata.subjectPriorSaleDate1}} / {{metadata.subjectPriorSalePrice1}}{{else}}<em style="color:var(--muted)">None reported in prior 3 years</em>{{/if}}</span></div>
     <div class="cell"><span class="lbl">Comp 1 Prior Sale</span><span class="val">{{primaryComps.[0].priorSaleDate}} / {{primaryComps.[0].priorSalePrice}}</span></div>
     <div class="cell"><span class="lbl">Comp 2 Prior Sale</span><span class="val">{{primaryComps.[1].priorSaleDate}} / {{primaryComps.[1].priorSalePrice}}</span></div>
     <div class="cell"><span class="lbl">Comp 3 Prior Sale</span><span class="val">{{primaryComps.[2].priorSaleDate}} / {{primaryComps.[2].priorSalePrice}}</span></div>
   </div>
+  {{#if hasSubjectListings}}
+  <div class="section-hdr" style="font-size:7pt;margin-top:4px">Subject Listing History &mdash; Days on Market (UAD 3.6 / Fannie Mae B4-1.3-02)</div>
+  <div class="row g2" style="font-size:7.5pt;margin-bottom:2px">
+    <div class="cell"><span class="lbl">Total DOM (all listing periods)</span><span class="val"><b>{{totalDaysOnMarket}}</b> days</span></div>
+  </div>
+  <table class="grid" style="width:100%;font-size:7pt">
+    <thead><tr><th>Data Source</th><th>Status</th><th>Type</th><th>MLS ID</th><th>Start Date</th><th>End Date</th><th>DOM</th><th>Starting Price</th><th>Current / Final Price</th></tr></thead>
+    <tbody>
+    {{#each subjectListings}}
+      <tr>
+        <td>{{dataSource}}</td><td>{{listingStatus}}</td><td>{{listingType}}</td><td>{{listingId}}</td>
+        <td>{{startDate}}</td><td>{{endDate}}</td><td>{{daysOnMarket}}</td>
+        <td>{{startingListPrice}}</td><td>{{currentOrFinalListPrice}}</td>
+      </tr>
+    {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
 
   <div class="page-footer">
     <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File {{metadata.orderNumber}} &bull; Page 2 of 4</span>
@@ -585,8 +641,153 @@
     </div>
   </div>
 
+  {{!-- Phase G: Condo / Condominium Project Analysis (Form 1073) --}}
+  {{#if hasCondoDetail}}
+  <div class="section-hdr">Condominium Project Analysis &mdash; Individual Condo Unit (Form 1073)</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Project Name</span><span class="val">{{condoDetail.projectName}}</span></div>
+    <div class="cell"><span class="lbl">Project Type</span><span class="val">{{condoDetail.projectType}}</span></div>
+    <div class="cell"><span class="lbl">Data Source</span><span class="val">{{condoDetail.projectInfoDataSource}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Total Units</span><span class="val">{{condoDetail.totalUnits}}</span></div>
+    <div class="cell"><span class="lbl">Units Sold</span><span class="val">{{condoDetail.unitsSold}}</span></div>
+    <div class="cell"><span class="lbl">Units For Sale</span><span class="val">{{condoDetail.unitsForSale}}</span></div>
+    <div class="cell"><span class="lbl">Units Rented</span><span class="val">{{condoDetail.unitsRented}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Owner Occupancy %</span><span class="val">{{condoDetail.ownerOccupancyPct}}</span></div>
+    <div class="cell"><span class="lbl">Single-Entity Ownership %</span><span class="val">{{condoDetail.singleEntityOwnershipPct}}{{#if condoDetail.singleEntityConcentrationFlag}} <span style="color:var(--red);font-weight:700">&nbsp;&#9888; FNMA LL-2022-01</span>{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Floor / Floors in Bldg</span><span class="val">{{condoDetail.unitFloorLevel}} / {{condoDetail.buildingTotalFloors}}</span></div>
+    <div class="cell"><span class="lbl">Non-Residential Use %</span><span class="val">{{condoDetail.nonResidentialUsePct}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Phased Development</span><span class="val">{{#if condoDetail.isPhased}}Yes{{else}}No{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Common Elements Complete</span><span class="val">{{#if condoDetail.commonElementsComplete}}Yes{{else}}No{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Developer Controlled</span><span class="val">{{#if condoDetail.developerControlled}}Yes{{else}}No{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Pending Litigation</span><span class="val">{{#if condoDetail.pendingLitigation}}<span style="color:var(--red);font-weight:700">Yes</span>{{else}}No{{/if}}</span></div>
+  </div>
+  {{#if condoDetail.pendingLitigation}}
+  <div class="row g2">
+    <div class="cell" style="grid-column:span 2"><span class="lbl">Litigation Details</span><span class="val">{{condoDetail.pendingLitigationDetails}}</span></div>
+  </div>
+  {{/if}}
+  {{#if condoDetail.hasSpecialAssessment}}
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Special Assessment Amount</span><span class="val">{{condoDetail.specialAssessment}}</span></div>
+    <div class="cell"><span class="lbl">Special Assessment Details</span><span class="val">{{condoDetail.specialAssessmentDetails}}</span></div>
+  </div>
+  {{/if}}
+  {{#if hasHoaDetail}}
+  <div class="section-hdr gold">HOA / Association Information</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Association Name</span><span class="val">{{condoDetail.hoaName}}</span></div>
+    <div class="cell"><span class="lbl">Monthly Fee</span><span class="val">{{condoDetail.hoaFee}} / {{condoDetail.hoaFrequency}}</span></div>
+    <div class="cell"><span class="lbl">Special Assessment (Mo.)</span><span class="val">{{condoDetail.specialAssessmentMonthly}}</span></div>
+    <div class="cell"><span class="lbl">Management Company</span><span class="val">{{condoDetail.managementCompany}}</span></div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Reserve Fund Balance</span><span class="val">{{condoDetail.reserveFundBalance}}</span></div>
+    <div class="cell"><span class="lbl">Reserve Fund Adequacy</span><span class="val">{{condoDetail.reserveFundAdequacy}}</span></div>
+    <div class="cell"><span class="lbl">Delinquent Dues &gt; 60 Days</span><span class="val">{{condoDetail.delinquentDues60Day}}</span></div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Master Insurance Premium</span><span class="val">{{condoDetail.masterInsurancePremium}}</span></div>
+    <div class="cell"><span class="lbl">Insurance Coverage</span><span class="val">{{condoDetail.masterInsuranceCoverage}}</span></div>
+    <div class="cell"><span class="lbl">Fidelity Bond Coverage</span><span class="val">{{condoDetail.fidelityBondCoverage}}</span></div>
+  </div>
+  {{/if}}
+  {{#if condoDetail.comments}}
+  <div class="row g2">
+    <div class="cell" style="grid-column:span 2"><span class="lbl">Appraiser Comments &mdash; Project</span><span class="val">{{condoDetail.comments}}</span></div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- Phase H: PUD Project Information --}}
+  {{#if hasPudDetail}}
+  <div class="section-hdr">Planned Unit Development (PUD) Project Information</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Project Name</span><span class="val">{{pudDetail.projectName}}</span></div>
+    <div class="cell"><span class="lbl">PUD Type</span><span class="val">{{pudDetail.pudType}}</span></div>
+    <div class="cell"><span class="lbl">Total Phases</span><span class="val">{{pudDetail.totalPhases}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Total Units</span><span class="val">{{pudDetail.totalUnits}}</span></div>
+    <div class="cell"><span class="lbl">Units Sold</span><span class="val">{{pudDetail.unitsSold}}</span></div>
+    <div class="cell"><span class="lbl">Units For Sale</span><span class="val">{{pudDetail.unitsForSale}}</span></div>
+    <div class="cell"><span class="lbl">Units Rented</span><span class="val">{{pudDetail.unitsRented}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Owner Occupancy %</span><span class="val">{{pudDetail.ownerOccupancyPct}}</span></div>
+    <div class="cell"><span class="lbl">Developer Controlled</span><span class="val">{{#if pudDetail.developerControlled}}Yes{{else}}No{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Common Elements Complete</span><span class="val">{{#if pudDetail.commonElementsComplete}}Yes{{else}}No{{/if}}</span></div>
+    <div class="cell"><span class="lbl">Project Complete</span><span class="val">{{#if pudDetail.projectComplete}}Yes{{else}}No{{/if}}</span></div>
+  </div>
+  {{#if pudDetail.observedDeficiencies}}
+  <div class="row g2">
+    <div class="cell" style="grid-column:span 2"><span class="lbl">Observed Deficiencies</span><span class="val" style="color:var(--red)">{{pudDetail.observedDeficienciesDescription}}</span></div>
+  </div>
+  {{/if}}
+  {{#if hasHoaDetail}}
+  <div class="section-hdr gold">HOA / Association Information</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">HOA Monthly Fee</span><span class="val">{{pudDetail.hoaFee}} / {{pudDetail.hoaFrequency}}</span></div>
+    <div class="cell"><span class="lbl">HOA Includes</span><span class="val">{{pudDetail.hoaIncludes}}</span></div>
+    <div class="cell"><span class="lbl">Management Company</span><span class="val">{{pudDetail.managementCompany}}</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Reserve Fund Balance</span><span class="val">{{pudDetail.reserveFundBalance}}</span></div>
+  </div>
+  {{/if}}
+  {{#if pudDetail.comments}}
+  <div class="row g2">
+    <div class="cell" style="grid-column:span 2"><span class="lbl">Appraiser Comments &mdash; PUD</span><span class="val">{{pudDetail.comments}}</span></div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- Phase I: Manufactured Home Addendum (Form 1004C) --}}
+  {{#if hasManufacturedHome}}
+  <div class="section-hdr">Manufactured Home Addendum &mdash; Form 1004C</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Manufacturer</span><span class="val">{{manufacturedHome.manufacturer}}</span></div>
+    <div class="cell"><span class="lbl">Model</span><span class="val">{{manufacturedHome.model}}</span></div>
+    <div class="cell"><span class="lbl">Year Manufactured</span><span class="val">{{manufacturedHome.yearManufactured}}</span></div>
+    <div class="cell"><span class="lbl">Width Type</span><span class="val">{{manufacturedHome.widthType}}</span></div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Serial Number</span><span class="val">{{manufacturedHome.serialNumber}}</span></div>
+    <div class="cell"><span class="lbl">HUD Label Nos.</span><span class="val">{{manufacturedHome.hudLabelNumbers}}</span></div>
+    <div class="cell"><span class="lbl">HUD Data Plate Present</span><span class="val">{{#if manufacturedHome.hudDataPlatePresent}}<span style="color:var(--green);font-weight:700">Yes</span>{{else}}<span style="color:var(--red);font-weight:700">No</span>{{/if}}</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Foundation Type</span><span class="val">{{manufacturedHome.foundationType}}</span></div>
+    <div class="cell"><span class="lbl">Factory-Built Certification</span><span class="val">{{manufacturedHome.factoryBuiltCertification}}</span></div>
+  </div>
+  {{#if manufacturedHome.totalCost}}
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Invoice Cost</span><span class="val">{{manufacturedHome.invoiceCost}}</span></div>
+    <div class="cell"><span class="lbl">Delivery Cost</span><span class="val">{{manufacturedHome.deliveryCost}}</span></div>
+    <div class="cell"><span class="lbl">Installation / Setup</span><span class="val">{{manufacturedHome.setupCost}}</span></div>
+    <div class="cell" style="background:var(--gold-bg)"><span class="lbl">Total MH Cost</span><span class="val" style="font-weight:800;color:var(--navy)">{{manufacturedHome.totalCost}}</span></div>
+  </div>
+  {{/if}}
+  {{#if manufacturedHome.narrative}}
+  <div class="row g2">
+    <div class="cell" style="grid-column:span 2"><span class="lbl">Manufactured Home Narrative</span><span class="val">{{manufacturedHome.narrative}}</span></div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  {{#if costApproachRequiredWarning}}
+  <div style="border-left:4px solid var(--red);background:#FEE2E2;padding:5px 10px;margin:4px 0;border-radius:0 4px 4px 0;font-size:7.5pt;font-weight:700;color:#7F1D1D">
+    &#9888;&nbsp;{{costApproachRequiredWarning}}
+  </div>
+  {{/if}}
+
   {{#if hasCostApproach}}
-  <div class="section-hdr">Cost Approach to Value (Not Required by Fannie Mae)</div>
+  <div class="section-hdr">{{costApproachLabel}}</div>
   <div class="row g4">
     <div class="cell"><span class="lbl">Est. Land Value</span><span class="val">{{costApproach.estimatedLandValue}}</span></div>
     <div class="cell"><span class="lbl">Replacement Cost New</span><span class="val">{{costApproach.replacementCostNew}}</span></div>
@@ -755,6 +956,192 @@
   </table>
   {{/if}}
 
+  {{!-- ── URAR v1.3 — Overall Quality & Condition ─────────────────────────── --}}
+  {{#if hasOverallQC}}
+  <div class="section-hdr">Overall Quality &amp; Condition (UAD 3.6)</div>
+  <div class="row g3">
+    {{#if overallQualityCondition.overallQualityRating}}
+    <div class="cell">
+      <span class="lbl">Overall Quality Rating</span>
+      <span class="val">{{overallQualityCondition.overallQualityRating}}</span>
+    </div>
+    {{/if}}
+    {{#if overallQualityCondition.overallConditionRating}}
+    <div class="cell">
+      <span class="lbl">Overall Condition Rating</span>
+      <span class="val">{{overallQualityCondition.overallConditionRating}}</span>
+    </div>
+    {{/if}}
+    {{#if overallQualityCondition.effectiveAge}}
+    <div class="cell">
+      <span class="lbl">Effective Age (Yrs)</span>
+      <span class="val">{{overallQualityCondition.effectiveAge}}</span>
+    </div>
+    {{/if}}
+  </div>
+  {{#if overallQualityCondition.narrative}}
+  <div class="narrative-block">{{overallQualityCondition.narrative}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Vehicle Storage (Page 17) ───────────────────────────── --}}
+  {{#if hasVehicleStorage}}
+  <div class="section-hdr">Vehicle Storage</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Type</th><th>Spaces</th><th>Detail</th><th>Surface Area (Sq Ft)</th><th>Year Built</th><th>Market Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each vehicleStorages}}
+      <tr>
+        <td>{{this.type}}</td>
+        <td>{{this.spaces}}</td>
+        <td>{{this.detail}}</td>
+        <td>{{this.surfaceArea}}</td>
+        <td>{{this.yearBuilt}}</td>
+        <td>{{this.impact}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Outbuildings (Page 16) ──────────────────────────────── --}}
+  {{#if hasOutbuildings}}
+  <div class="section-hdr">Outbuildings</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Type</th><th>GBA (Sq Ft)</th><th>Quality</th><th>Condition</th><th>Year Built</th><th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each outbuildings}}
+      <tr>
+        <td>{{this.type}}</td>
+        <td>{{this.gba}}</td>
+        <td>{{this.quality}}</td>
+        <td>{{this.condition}}</td>
+        <td>{{this.yearBuilt}}</td>
+        <td>{{this.comment}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Property Amenities (Page 18) ─────────────────────────── --}}
+  {{#if hasAmenities}}
+  <div class="section-hdr">Property Amenities</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Category</th><th>Feature</th><th>Detail</th><th>Market Impact</th><th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each amenities}}
+      <tr>
+        <td>{{this.category}}</td>
+        <td>{{this.feature}}</td>
+        <td>{{this.detail}}</td>
+        <td>{{this.impact}}</td>
+        <td>{{this.comment}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Disaster Mitigation (Page 9) ─────────────────────────── --}}
+  {{#if hasDisasterMitigation}}
+  <div class="section-hdr">Disaster Mitigation</div>
+  {{#if disasterMitigationItems.length}}
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Disaster Category</th><th>Mitigation Feature</th><th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each disasterMitigationItems}}
+      <tr>
+        <td>{{this.disasterCategory}}</td>
+        <td>{{this.mitigationFeature}}</td>
+        <td>{{this.detail}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+  {{#if disasterMitigationPrograms}}
+  <div class="row g1">
+    <div class="cell"><span class="lbl">Community Programs</span><span class="val">{{disasterMitigationPrograms}}</span></div>
+  </div>
+  {{/if}}
+  {{#if disasterMitigationNarrative}}
+  <div class="narrative-block">{{disasterMitigationNarrative}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Energy Efficiency & Green Features (Page 10) ──────────── --}}
+  {{#if hasEnergyEfficiencySection}}
+  <div class="section-hdr">Energy Efficiency &amp; Green Features</div>
+  {{#if energyEfficiencyCertification}}
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Building Certification</span><span class="val">{{energyEfficiencyCertification}}</span></div>
+    {{#if energyEfficiencyRatingValue}}<div class="cell"><span class="lbl">Energy Efficiency Rating</span><span class="val">{{energyEfficiencyRatingValue}}</span></div>{{/if}}
+  </div>
+  {{/if}}
+  {{#if energyEfficiencyFeatures.length}}
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Feature</th><th>Detail</th><th>Market Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each energyEfficiencyFeatures}}
+      <tr>
+        <td>{{this.feature}}</td>
+        <td>{{this.detail}}</td>
+        <td>{{this.impact}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+  {{#if energyEfficiencyNarrative}}
+  <div class="narrative-block">{{energyEfficiencyNarrative}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Functional Obsolescence Items ───────────────────────── --}}
+  {{#if hasFunctionalObsolescenceItems}}
+  <div class="section-hdr">Functional Obsolescence</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Feature</th><th>Description</th><th>Detail</th><th>Impact</th><th>Curable?</th><th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each functionalObsolescenceItems}}
+      <tr>
+        <td>{{this.feature}}</td>
+        <td>{{this.description}}</td>
+        <td>{{this.detail}}</td>
+        <td>{{this.impact}}</td>
+        <td>{{#if this.curable}}Yes{{else}}No{{/if}}</td>
+        <td>{{this.comment}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
   <div class="page-footer">
     <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File {{metadata.orderNumber}} &bull; Page 3 of 4</span>
     <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
@@ -777,6 +1164,138 @@
     </div>
   </div>
 
+  {{!-- ── URAR v1.3 — Analyzed Properties Not Used (Pages 29–30) ──────────── --}}
+  {{#if hasAnalyzedNotUsed}}
+  <div class="section-hdr">Analyzed Properties Not Used as Comparable Sales</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Address</th><th>Sale Price</th><th>Sale Date</th><th>Status</th><th>Reason Not Used</th><th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each analyzedPropertiesNotUsed}}
+      <tr>
+        <td>{{this.address}}</td>
+        <td>{{this.salePrice}}</td>
+        <td>{{this.saleDate}}</td>
+        <td>{{this.status}}</td>
+        <td>{{this.reasonNotUsed}}</td>
+        <td>{{this.comment}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Prior Transfers (detailed) ──────────────────────────── --}}
+  {{#if hasPriorTransfers}}
+  <div class="section-hdr">Prior Transfer History (Deed Records)</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Transaction Date</th><th>Sale Price</th><th>Seller</th><th>Buyer</th><th>Transfer Type</th><th>Arm's Length</th><th>DOM</th><th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each priorTransfers}}
+      <tr>
+        <td>{{this.transactionDate}}</td>
+        <td>{{this.salePrice}}</td>
+        <td>{{this.seller}}</td>
+        <td>{{this.buyer}}</td>
+        <td>{{this.transferType}}</td>
+        <td>{{#if this.isArmsLength}}Yes{{else}}No{{/if}}</td>
+        <td>{{this.daysOnMarket}}</td>
+        <td>{{this.notes}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Assignment Conditions ───────────────────────────────── --}}
+  {{#if hasAssignmentConditions}}
+  <div class="section-hdr">Assignment Conditions</div>
+  <div class="row g2">
+    {{#if assignmentConditions.intendedUse}}<div class="cell"><span class="lbl">Intended Use</span><span class="val">{{assignmentConditions.intendedUse}}</span></div>{{/if}}
+    {{#if assignmentConditions.intendedUsers}}<div class="cell"><span class="lbl">Intended Users</span><span class="val">{{assignmentConditions.intendedUsers}}</span></div>{{/if}}
+  </div>
+  <div class="row g2">
+    {{#if assignmentConditions.propertyRightsAppraised}}<div class="cell"><span class="lbl">Property Rights Appraised</span><span class="val">{{assignmentConditions.propertyRightsAppraised}}</span></div>{{/if}}
+    {{#if assignmentConditions.marketValueDefinitionSource}}<div class="cell"><span class="lbl">Market Value Definition Source</span><span class="val">{{assignmentConditions.marketValueDefinitionSource}}</span></div>{{/if}}
+  </div>
+  {{#if assignmentConditions.subjectToConditions.length}}
+  <div style="font-size:7.5pt;font-weight:700;margin:4px 0 2px">Subject-To Conditions:</div>
+  {{#each assignmentConditions.subjectToConditions}}
+  <div class="disclosure-item">{{this}}</div>
+  {{/each}}
+  {{/if}}
+  {{#if assignmentConditions.extraordinaryAssumptions.length}}
+  <div style="font-size:7.5pt;font-weight:700;margin:4px 0 2px">Extraordinary Assumptions:</div>
+  {{#each assignmentConditions.extraordinaryAssumptions}}
+  <div class="disclosure-item">{{this}}</div>
+  {{/each}}
+  {{/if}}
+  {{#if assignmentConditions.hypotheticalConditions.length}}
+  <div style="font-size:7.5pt;font-weight:700;margin:4px 0 2px">Hypothetical Conditions:</div>
+  {{#each assignmentConditions.hypotheticalConditions}}
+  <div class="disclosure-item">{{this}}</div>
+  {{/each}}
+  {{/if}}
+  {{#if assignmentConditions.competencyProvisionsApply}}
+  <div style="font-size:7pt;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:3px;padding:4px 8px;margin-top:4px">
+    <b>Competency Provisions Apply</b> &mdash; {{assignmentConditions.competencyNarrative}}
+  </div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Revision History ────────────────────────────────────── --}}
+  {{#if hasRevisionHistory}}
+  <div class="section-hdr">Revision History</div>
+  <table class="adj-tbl" style="width:100%">
+    <thead>
+      <tr>
+        <th>Date</th><th>URAR Section</th><th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each revisionHistory}}
+      <tr>
+        <td>{{this.revisionDate}}</td>
+        <td>{{this.urarSection}}</td>
+        <td>{{this.description}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Reconsideration of Value ─────────────────────────────── --}}
+  {{#if hasReconsideration}}
+  <div class="section-hdr">Reconsideration of Value</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Type</span><span class="val">{{reconsiderationOfValue.type}}</span></div>
+    <div class="cell"><span class="lbl">Date</span><span class="val">{{reconsiderationOfValue.date}}</span></div>
+    <div class="cell"><span class="lbl">Result</span><span class="val">{{reconsiderationOfValue.result}}</span></div>
+  </div>
+  {{#if reconsiderationOfValue.commentary}}
+  <div class="narrative-block">{{reconsiderationOfValue.commentary}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ── URAR v1.3 — Additional Comments ──────────────────────────────────── --}}
+  {{#if hasAdditionalComments}}
+  <div class="section-hdr">Additional Comments</div>
+  {{#each additionalComments}}
+  <div style="margin-bottom:6px;padding:5px 8px;background:#F8FAFC;border-left:3px solid var(--navy);border-radius:2px">
+    {{#if this.sectionRef}}<div style="font-size:6.5pt;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.05em">{{this.sectionRef}}</div>{{/if}}
+    {{#if this.heading}}<div style="font-size:7.5pt;font-weight:600;margin-bottom:2px">{{this.heading}}</div>{{/if}}
+    <div style="font-size:7.5pt;line-height:1.6">{{this.body}}</div>
+  </div>
+  {{/each}}
+  {{/if}}
+
   <div class="section-hdr">Appraiser Certification</div>
   <div style="font-size:7.5pt;line-height:1.65;padding:6px 8px;background:#FAFBFC;border:1px solid var(--border);border-radius:3px;margin-bottom:6px">
     I certify that, to the best of my knowledge and belief:
@@ -785,7 +1304,7 @@
 
   <div class="section-hdr">Scope of Work</div>
   <div style="font-size:7.5pt;line-height:1.6;padding:5px 8px;background:#F8FAFC;border:1px solid var(--border);border-radius:3px;margin-bottom:6px">
-    Interior and exterior inspection performed {{metadata.inspectionDate}}. Public records searched. MLS sales data reviewed. Sales Comparison{{#if hasCostApproach}}, Cost{{/if}}{{#if hasIncomeApproach}}, and Income Approaches{{else}} Approach{{/if}} developed. Market conditions analyzed per Fannie Mae Market Conditions Addendum guidance.
+    {{scopeStatement}}
   </div>
 
   <div class="section-hdr">Appraiser Signature</div>
@@ -871,7 +1390,7 @@
   <div class="row g2">
     <div class="cell" style="font-size:7.5pt;line-height:2">
       &#10003; Market Conditions Addendum (Form 1004MC)<br>
-      &#10003; Subject Interior Photographs<br>
+      {{#unless isExteriorOnly}}&#10003; Subject Interior Photographs<br>{{/unless}}
       &#10003; Flood Certification<br>
       &#10003; License Certificate &mdash; {{appraiser.name}}
     </div>
@@ -879,7 +1398,21 @@
       &#10003; Plat Map<br>
       &#10003; Comparable Location Map<br>
       &#10003; Appraiser Comments &amp; Limiting Conditions<br>
-      {{#if hasEA}}&#10003; Extraordinary Assumptions Documentation{{/if}}
+      {{#if hasEA}}&#10003; Extraordinary Assumptions Documentation<br>{{/if}}
+      {{#if hasCondoDetail}}&#10003; Condominium Project Analysis (Form 1073)<br>{{/if}}
+      {{#if hasPudDetail}}&#10003; PUD Project Information Addendum<br>{{/if}}
+      {{#if hasManufacturedHome}}&#10003; Manufactured Home Addendum (Form 1004C)<br>{{/if}}
+      {{#if hasDisasterMitigation}}&#10003; Disaster Mitigation Disclosure<br>{{/if}}
+      {{#if hasEnergyEfficiencySection}}&#10003; Energy Efficiency &amp; Green Features<br>{{/if}}
+      {{#if hasFunctionalObsolescenceItems}}&#10003; Functional Obsolescence Schedule<br>{{/if}}
+      {{#if hasVehicleStorage}}&#10003; Vehicle Storage Schedule<br>{{/if}}
+      {{#if hasOutbuildings}}&#10003; Outbuildings Schedule<br>{{/if}}
+      {{#if hasAmenities}}&#10003; Property Amenities Schedule<br>{{/if}}
+      {{#if hasAnalyzedNotUsed}}&#10003; Analyzed Properties Not Used<br>{{/if}}
+      {{#if hasPriorTransfers}}&#10003; Prior Transfer History (Deed Records)<br>{{/if}}
+      {{#if hasAssignmentConditions}}&#10003; Assignment Conditions<br>{{/if}}
+      {{#if hasRevisionHistory}}&#10003; Revision History<br>{{/if}}
+      {{#if hasReconsideration}}&#10003; Reconsideration of Value<br>{{/if}}
     </div>
   </div>
 

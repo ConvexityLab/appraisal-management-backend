@@ -99,8 +99,8 @@
 <!-- ═══════════════════════════ PAGE 1 ═══════════════════════════════ -->
 <div class="page">
 
-  <div class="form-title">Uniform Residential Appraisal Report</div>
-  <div class="form-subtitle">File No. {{metadata.orderNumber}} &nbsp;|&nbsp; Loan No. {{metadata.loanNumber}} &nbsp;|&nbsp; Effective Date: {{reconciliation.effectiveDateShort}}</div>
+  <div class="form-title">{{gseFormLabel}}</div>
+  <div class="form-subtitle">File No. {{metadata.orderNumber}} &nbsp;|&nbsp; Loan No. {{metadata.loanNumber}} &nbsp;|&nbsp; Effective Date: {{reconciliation.effectiveDateShort}} &bull; UAD 3.6 Edition</div>
 
   <!-- SUBJECT SECTION -->
   <div class="section-header">Subject</div>
@@ -360,6 +360,7 @@
       <span class="cell-label">Pool</span><span class="cell-value">{{subject.pool}}</span>
     </div>
   </div>
+  {{#unless isExteriorOnly}}
   <div class="grid cols-6">
     <div class="cell">
       <span class="cell-label">Floors</span><span class="cell-value">{{subject.interiorFloors}}</span>
@@ -380,9 +381,10 @@
       <span class="cell-label">Windows</span><span class="cell-value">{{subject.windowType}}</span>
     </div>
   </div>
+  {{/unless}}
   <div class="grid cols-4">
     <div class="cell">
-      <span class="cell-label">Condition (C1-C6)</span><span class="cell-value">{{subject.condition}}</span>
+      <span class="cell-label">Condition{{#if isExteriorOnly}} (Exterior Observable){{/if}} (C1-C6)</span><span class="cell-value">{{subject.condition}}</span>
     </div>
     <div class="cell">
       <span class="cell-label">Quality (Q1-Q6)</span><span class="cell-value">{{subject.quality}}</span>
@@ -392,8 +394,50 @@
       {{subject.conditionDescription}}{{#if subject.additionalFeatures}} | {{subject.additionalFeatures}}{{/if}}
     </div>
   </div>
-
-  <!-- SUBJECT PHOTO + STREET MAP -->
+  {{#if subject.hasUpdateStatus}}
+  <div class="grid cols-2" style="margin-top:1px">
+    {{#if subject.kitchenUpdateStatus}}
+    <div class="cell">
+      <span class="cell-label">Kitchen Update Status (UAD 3.6)</span>
+      <span class="cell-value">{{subject.kitchenUpdateStatus.timeFrame}}{{#if subject.kitchenUpdateStatus.quality}} &bull; Q: {{subject.kitchenUpdateStatus.quality}}{{/if}}{{#if subject.kitchenUpdateStatus.condition}} &bull; C: {{subject.kitchenUpdateStatus.condition}}{{/if}}</span>
+    </div>
+    {{/if}}
+    {{#if subject.bathroomUpdateStatus}}
+    <div class="cell">
+      <span class="cell-label">Bathroom Update Status (UAD 3.6)</span>
+      <span class="cell-value">{{subject.bathroomUpdateStatus.timeFrame}}{{#if subject.bathroomUpdateStatus.quality}} &bull; Q: {{subject.bathroomUpdateStatus.quality}}{{/if}}{{#if subject.bathroomUpdateStatus.condition}} &bull; C: {{subject.bathroomUpdateStatus.condition}}{{/if}}</span>
+    </div>
+    {{/if}}
+  </div>
+  {{/if}}
+  {{#if subject.accessoryDwellingUnits}}
+  <div class="grid cols-2" style="margin-top:1px">
+    <div class="cell"><span class="cell-label">Accessory Dwelling Units (ADU)</span><span class="cell-value">{{subject.accessoryDwellingUnits}}</span></div>
+    {{#if subject.constructionStage}}<div class="cell"><span class="cell-label">Construction Stage</span><span class="cell-value">{{subject.constructionStage}}</span></div>{{/if}}
+  </div>
+  {{else}}{{#if subject.constructionStage}}
+  <div class="grid cols-1" style="margin-top:1px">
+    <div class="cell"><span class="cell-label">Construction Stage</span><span class="cell-value">{{subject.constructionStage}}</span></div>
+  </div>
+  {{/if}}{{/if}}
+  {{#if hasDefects}}
+  <div class="section-header" style="background:#FFF0F0;color:#8B0000;margin-top:4px">Apparent Defects / Deficiencies (UAD 3.6)</div>
+  <table style="width:100%;font-size:7pt;border-collapse:collapse">
+    <thead><tr style="background:#F8D7DA"><th style="padding:2px 4px;text-align:left">Feature</th><th>Location</th><th>Description</th><th>Affects Soundness</th><th>Recommended Action</th><th>Est. Repair Cost</th></tr></thead>
+    <tbody>
+    {{#each defects}}
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:2px 4px">{{feature}}</td>
+        <td style="padding:2px 4px">{{location}}</td>
+        <td style="padding:2px 4px">{{description}}</td>
+        <td style="padding:2px 4px">{{#if affectsSoundness}}<b style="color:#8B0000">Yes</b>{{else}}No{{/if}}</td>
+        <td style="padding:2px 4px">{{recommendedAction}}</td>
+        <td style="padding:2px 4px">{{estimatedCostToRepair}}</td>
+      </tr>
+    {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
   <div class="section-header">Subject Property Photos</div>
   <div class="photo-grid" style="margin-top:2px;">
     <div class="photo-slot">
@@ -660,6 +704,24 @@
     </div>
     <div class="cell tall"></div>
   </div>
+  {{#if hasSubjectListings}}
+  <div class="section-header" style="margin-top:4px">Subject Listing History &mdash; Days on Market (UAD 3.6 / Fannie Mae B4-1.3-02)</div>
+  <div class="grid cols-2" style="margin-top:1px;font-size:7.5pt">
+    <div class="cell"><span class="cell-label">Total DOM (all listing periods)</span><span class="cell-value"><b>{{totalDaysOnMarket}}</b> days</span></div>
+  </div>
+  <table style="width:100%;font-size:7pt;border-collapse:collapse;margin-top:2px">
+    <thead><tr style="background:#E8EFF7"><th style="padding:2px 4px;text-align:left">Data Source</th><th>Status</th><th>Type</th><th>MLS ID</th><th>Start Date</th><th>End Date</th><th>DOM</th><th>Starting Price</th><th>Current / Final Price</th></tr></thead>
+    <tbody>
+    {{#each subjectListings}}
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:2px 4px">{{dataSource}}</td><td style="padding:2px 4px">{{listingStatus}}</td><td style="padding:2px 4px">{{listingType}}</td><td style="padding:2px 4px">{{listingId}}</td>
+        <td style="padding:2px 4px">{{startDate}}</td><td style="padding:2px 4px">{{endDate}}</td><td style="padding:2px 4px">{{daysOnMarket}}</td>
+        <td style="padding:2px 4px">{{startingListPrice}}</td><td style="padding:2px 4px">{{currentOrFinalListPrice}}</td>
+      </tr>
+    {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
 
   <div class="form-footer">Uniform Residential Appraisal Report (URAR) &nbsp;|&nbsp; Generated {{generatedAt}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; Page 2</div>
 </div>
@@ -671,9 +733,214 @@
   <div class="form-title">Reconciliation &amp; Conclusion of Value</div>
   <div class="form-subtitle">Report: {{metadata.orderNumber}} &nbsp;|&nbsp; Subject: {{subject.fullAddress}}</div>
 
+  <!-- Condominium Project Analysis (Form 1073) -->
+  {{#if hasCondoDetail}}
+  <div class="section-header">Condominium Project Analysis &mdash; Individual Condo Unit (Form 1073)</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Project Name</span><span class="cell-value">{{condoDetail.projectName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Project Type</span><span class="cell-value">{{condoDetail.projectType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Data Source</span><span class="cell-value">{{condoDetail.dataSource}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Units</span><span class="cell-value">{{condoDetail.totalUnits}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Units Sold</span><span class="cell-value">{{condoDetail.unitsSold}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">For Sale</span><span class="cell-value">{{condoDetail.unitsForSale}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Rented / Investor</span><span class="cell-value">{{condoDetail.unitsRented}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Owner Occupancy</span><span class="cell-value">{{condoDetail.ownerOccupancyPct}}%</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Single-Entity Ownership</span><span class="cell-value">{{condoDetail.singleEntityOwnershipPct}}%{{#if condoDetail.singleEntityConcentrationFlag}} &#9888; &gt;10% (FNMA LL-2022-01){{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Floor / Unit Position</span><span class="cell-value">{{condoDetail.floorLocation}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Non-Residential %</span><span class="cell-value">{{condoDetail.nonResidentialPct}}%</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Phased Development</span><span class="cell-value">{{condoDetail.phasedDevelopment}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Common Elements Complete</span><span class="cell-value">{{condoDetail.commonElementsComplete}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Developer Controlled</span><span class="cell-value">{{condoDetail.developerControlled}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Pending Litigation</span><span class="cell-value">{{condoDetail.pendingLitigation}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Special Assessment</span><span class="cell-value">{{condoDetail.specialAssessment}}</span>
+    </div>
+  </div>
+  {{#if condoDetail.pendingLitigation}}
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Litigation Details</span>{{condoDetail.litigationDetails}}
+    </div>
+    <div class="cell"></div>
+  </div>
+  {{/if}}
+  {{#if hasHoaDetail}}
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">HOA Fee</span><span class="cell-value">{{condoDetail.hoaFee}} / {{condoDetail.hoaFrequency}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">HOA Includes</span><span class="cell-value">{{condoDetail.hoaIncludes}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Reserve Fund Balance</span><span class="cell-value">{{condoDetail.reserveFundBalance}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">HOA Contact</span><span class="cell-value">{{condoDetail.hoaContact}}</span>
+    </div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  <!-- PUD Project Information -->
+  {{#if hasPudDetail}}
+  <div class="section-header">Planned Unit Development (PUD) Project Information</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Project Name</span><span class="cell-value">{{pudDetail.projectName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">PUD Type</span><span class="cell-value">{{pudDetail.pudType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Phases</span><span class="cell-value">{{pudDetail.totalPhases}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Units</span><span class="cell-value">{{pudDetail.totalUnits}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Units Sold</span><span class="cell-value">{{pudDetail.unitsSold}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">For Sale</span><span class="cell-value">{{pudDetail.unitsForSale}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Owner Occupancy</span><span class="cell-value">{{pudDetail.ownerOccupancyPct}}%</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Developer Controlled</span><span class="cell-value">{{pudDetail.developerControlled}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Common Elements Complete</span><span class="cell-value">{{pudDetail.commonElementsComplete}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Project Complete</span><span class="cell-value">{{pudDetail.projectComplete}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Observed Deficiencies</span><span class="cell-value">{{pudDetail.observedDeficiencies}}</span>
+    </div>
+  </div>
+  {{#if pudDetail.observedDeficiencies}}
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Deficiency Details</span>{{pudDetail.deficiencyDetails}}
+    </div>
+    <div class="cell"></div>
+  </div>
+  {{/if}}
+  {{#if hasHoaDetail}}
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">HOA Fee</span><span class="cell-value">{{pudDetail.hoaFee}} / {{pudDetail.hoaFrequency}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">HOA Includes</span><span class="cell-value">{{pudDetail.hoaIncludes}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Reserve Fund Balance</span><span class="cell-value">{{pudDetail.reserveFundBalance}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Management Co.</span><span class="cell-value">{{pudDetail.managementCompany}}</span>
+    </div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  <!-- Manufactured Home Addendum (Form 1004C) -->
+  {{#if hasManufacturedHome}}
+  <div class="section-header">Manufactured Home Addendum &mdash; Form 1004C</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Manufacturer</span><span class="cell-value">{{manufacturedHome.manufacturer}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Model</span><span class="cell-value">{{manufacturedHome.model}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Year Manufactured</span><span class="cell-value">{{manufacturedHome.yearManufactured}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Width Type</span><span class="cell-value">{{manufacturedHome.widthType}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Serial Number</span><span class="cell-value">{{manufacturedHome.serialNumber}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">HUD Label Numbers</span><span class="cell-value">{{manufacturedHome.hudLabelNumbers}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">HUD Data Plate</span><span class="cell-value">{{manufacturedHome.hudDataPlatePresent}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Foundation Type</span><span class="cell-value">{{manufacturedHome.foundationType}}</span>
+    </div>
+  </div>
+  {{#if manufacturedHome.totalCost}}
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Invoice Cost</span><span class="cell-value">{{manufacturedHome.invoiceCost}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Delivery Cost</span><span class="cell-value">{{manufacturedHome.deliveryCost}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Setup/Install Cost</span><span class="cell-value">{{manufacturedHome.setupCost}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Cost New</span><span class="cell-value bold">{{manufacturedHome.totalCost}}</span>
+    </div>
+  </div>
+  {{/if}}
+  {{/if}}
+
   <!-- Cost Approach (optional) -->
+  {{#if costApproachRequiredWarning}}
+  <div style="border-left:4px solid #d32f2f; background:#fff8f8; padding:6px 10px; margin:4px 0; font-size:8pt; color:#b71c1c;">&#9888;&nbsp;{{costApproachRequiredWarning}}</div>
+  {{/if}}
   {{#if hasCostApproach}}
-  <div class="section-header">Cost Approach to Value (Not Required by Fannie Mae, Optional)</div>
+  <div class="section-header">{{costApproachLabel}}</div>
   <div class="grid cols-4">
     <div class="cell">
       <span class="cell-label">Est. Land Value</span>

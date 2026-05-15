@@ -128,6 +128,7 @@ export const STATUS_CONFIG: ReadonlyMap<OrderStatus, OrderStatusConfig> = new Ma
       OrderStatus.IN_PROGRESS,
       OrderStatus.INSPECTION_SCHEDULED,
       OrderStatus.CANCELLED,
+      OrderStatus.ON_HOLD,
     ],
   }],
   [OrderStatus.IN_PROGRESS, {
@@ -155,6 +156,7 @@ export const STATUS_CONFIG: ReadonlyMap<OrderStatus, OrderStatusConfig> = new Ma
       OrderStatus.INSPECTION_COMPLETED,
       OrderStatus.IN_PROGRESS,
       OrderStatus.CANCELLED,
+      OrderStatus.ON_HOLD,
     ],
   }],
   [OrderStatus.INSPECTION_COMPLETED, {
@@ -168,6 +170,7 @@ export const STATUS_CONFIG: ReadonlyMap<OrderStatus, OrderStatusConfig> = new Ma
       OrderStatus.IN_PROGRESS,
       OrderStatus.SUBMITTED,
       OrderStatus.CANCELLED,
+      OrderStatus.ON_HOLD,
     ],
   }],
   [OrderStatus.SUBMITTED, {
@@ -244,7 +247,10 @@ export const STATUS_CONFIG: ReadonlyMap<OrderStatus, OrderStatusConfig> = new Ma
       OrderStatus.NEW,
       OrderStatus.PENDING_ASSIGNMENT,
       OrderStatus.ASSIGNED,
+      OrderStatus.ACCEPTED,
       OrderStatus.IN_PROGRESS,
+      OrderStatus.INSPECTION_SCHEDULED,
+      OrderStatus.INSPECTION_COMPLETED,
     ],
   }],
 ]);

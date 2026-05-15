@@ -14,7 +14,20 @@ import {
   UadPropertyType,
   UadOccupancyType,
   UadComparable,
-  UadAdjustments
+  UadAdjustments,
+  CanonicalReportDocument,
+  CanonicalDisasterMitigationItem,
+  CanonicalEnergyFeature,
+  CanonicalFunctionalObsolescenceItem,
+  CanonicalVehicleStorage,
+  CanonicalOutbuilding,
+  CanonicalPropertyAmenity,
+  CanonicalAnalyzedPropertyNotUsed,
+  CanonicalPriorTransfer,
+  CanonicalRevisionEntry,
+  CanonicalReconsiderationOfValue,
+  CanonicalAssignmentConditions,
+  CanonicalOverallQualityCondition
 } from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 
@@ -758,6 +771,568 @@ export class UadValidationService {
       });
     }
 
+    return errors;
+  }
+
+  // =========================================================================
+  // URAR v1.3 CANONICAL SECTION VALIDATION (UAD-900+)
+  // =========================================================================
+
+  /**
+   * Validates the URAR v1.3 extended sections in a CanonicalReportDocument.
+   * Returns an array of UAD validation errors; an empty array means no issues.
+   */
+  // ── UAD-100/200/500: Core canonical validation ────────────────────────────
+  // These checks mirror the UAD 001-800 rules but operate directly on the
+  // CanonicalReportDocument so they can be gated at finalization without
+  // constructing a full UadAppraisalReport.
+
+  private validateCanonicalCore(doc: CanonicalReportDocument): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+
+    // ── Subject Property (UAD-100) ───────────────────────────────────────────
+    // Only run subject checks when `doc.subject` is present; an absent subject
+    // section means the appraiser hasn't started it yet — handled by the
+    // section-completion gate before we reach validateCanonicalSections.
+    const subject = doc.subject;
+    if (subject) {
+      const addr = subject?.address;
+
+    if (!addr?.streetAddress) {
+      errors.push({ fieldPath: 'subject.address.streetAddress', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject street address is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    }
+    if (!addr?.city) {
+      errors.push({ fieldPath: 'subject.address.city', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject city is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    }
+    if (!addr?.state) {
+      errors.push({ fieldPath: 'subject.address.state', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject state is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else if (!/^[A-Z]{2}$/.test(addr.state)) {
+      errors.push({ fieldPath: 'subject.address.state', errorCode: 'STATE_CODE_INVALID', errorMessage: `Subject state must be a 2-letter code, received: ${addr.state}`, severity: 'ERROR', uadRule: 'UAD-101' });
+    }
+    if (!addr?.zipCode) {
+      errors.push({ fieldPath: 'subject.address.zipCode', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject zip code is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else if (!/^\d{5}(-\d{4})?$/.test(addr.zipCode)) {
+      errors.push({ fieldPath: 'subject.address.zipCode', errorCode: 'ZIP_CODE_INVALID', errorMessage: `Subject zip code must be 5 or 9 digits, received: ${addr.zipCode}`, severity: 'ERROR', uadRule: 'UAD-102' });
+    }
+    if (!subject?.propertyType) {
+      errors.push({ fieldPath: 'subject.propertyType', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject property type is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    }
+    if (!subject?.condition) {
+      errors.push({ fieldPath: 'subject.condition', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject condition rating (C1-C6) is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else if (!/^C[1-6]$/.test(subject.condition)) {
+      errors.push({ fieldPath: 'subject.condition', errorCode: 'CONDITION_RATING_INVALID', errorMessage: `Subject condition rating must be C1-C6, received: ${subject.condition}`, severity: 'ERROR', uadRule: 'UAD-104' });
+    }
+    if (!subject?.quality) {
+      errors.push({ fieldPath: 'subject.quality', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject quality rating (Q1-Q6) is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else if (!/^Q[1-6]$/.test(subject.quality)) {
+      errors.push({ fieldPath: 'subject.quality', errorCode: 'QUALITY_RATING_INVALID', errorMessage: `Subject quality rating must be Q1-Q6, received: ${subject.quality}`, severity: 'ERROR', uadRule: 'UAD-103' });
+    }
+    if (!subject?.yearBuilt) {
+      errors.push({ fieldPath: 'subject.yearBuilt', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject year built is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else {
+      const currentYear = new Date().getFullYear();
+      if (subject.yearBuilt < 1600 || subject.yearBuilt > currentYear + 1) {
+        errors.push({ fieldPath: 'subject.yearBuilt', errorCode: 'YEAR_BUILT_INVALID', errorMessage: `Subject year built ${subject.yearBuilt} is out of range (1600–${currentYear + 1})`, severity: 'ERROR', uadRule: 'UAD-105' });
+      }
+    }
+    if (!subject?.grossLivingArea) {
+      errors.push({ fieldPath: 'subject.grossLivingArea', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Subject gross living area is required", severity: 'ERROR', uadRule: 'UAD-100' });
+    } else if (subject.grossLivingArea < 100 || subject.grossLivingArea > 50000) {
+      errors.push({ fieldPath: 'subject.grossLivingArea', errorCode: 'GLA_OUT_OF_RANGE', errorMessage: `Subject GLA ${subject.grossLivingArea} sf is outside expected range (100–50000)`, severity: 'WARNING', uadRule: 'UAD-106' });
+    }
+    } // end if (subject)
+
+    // ── Comparables (UAD-200) ────────────────────────────────────────────────
+    // Only validate when comps section has been started (undefined = not yet touched)
+    if (doc.comps !== undefined) {
+      const selectedComps = (doc.comps ?? []).filter(c => c.selected);
+      if (selectedComps.length === 0) {
+        errors.push({ fieldPath: 'comps', errorCode: 'NO_COMPARABLES', errorMessage: "At least one comparable sale is required", severity: 'ERROR', uadRule: 'UAD-200' });
+      }
+      selectedComps.forEach((comp, i) => {
+        if (!comp.salePrice) {
+          errors.push({ fieldPath: `comps[${i}].salePrice`, errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: `Comp ${i + 1}: sale price is required`, severity: 'ERROR', uadRule: 'UAD-201' });
+        }
+        if (!comp.saleDate) {
+          errors.push({ fieldPath: `comps[${i}].saleDate`, errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: `Comp ${i + 1}: sale date is required`, severity: 'ERROR', uadRule: 'UAD-202' });
+        }
+        if (!comp.grossLivingArea) {
+          errors.push({ fieldPath: `comps[${i}].grossLivingArea`, errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: `Comp ${i + 1}: gross living area is required`, severity: 'ERROR', uadRule: 'UAD-203' });
+        }
+        if (!comp.address?.streetAddress) {
+          errors.push({ fieldPath: `comps[${i}].address.streetAddress`, errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: `Comp ${i + 1}: address is required`, severity: 'ERROR', uadRule: 'UAD-204' });
+        }
+      });
+    }
+
+    // ── Reconciliation / Valuation (UAD-500) ─────────────────────────────────
+    // Only validate when valuation section has been explicitly set
+    if (doc.valuation !== undefined) {
+      if (!doc.valuation) {
+        errors.push({ fieldPath: 'valuation', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Valuation (reconciliation) is required to finalize", severity: 'ERROR', uadRule: 'UAD-500' });
+      } else {
+        if (!doc.valuation.estimatedValue || doc.valuation.estimatedValue <= 0) {
+          errors.push({ fieldPath: 'valuation.estimatedValue', errorCode: 'VALUE_INVALID', errorMessage: `Estimated value must be a positive number, received: ${doc.valuation.estimatedValue}`, severity: 'ERROR', uadRule: 'UAD-501' });
+        }
+        if (!doc.valuation.effectiveDate) {
+          errors.push({ fieldPath: 'valuation.effectiveDate', errorCode: 'REQUIRED_FIELD_MISSING', errorMessage: "Effective date of value is required", severity: 'ERROR', uadRule: 'UAD-502' });
+        }
+      }
+    }
+
+    return errors;
+  }
+
+  validateCanonicalSections(doc: CanonicalReportDocument): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+
+    // Core UAD-100/200/500 content checks on the canonical subject, comps, and valuation
+    errors.push(...this.validateCanonicalCore(doc));
+
+    if (doc.disasterMitigation) {
+      errors.push(...this.validateDisasterMitigation(doc.disasterMitigation.items));
+    }
+    if (doc.energyEfficiency) {
+      errors.push(...this.validateEnergyEfficiency(doc.energyEfficiency.features));
+    }
+    if (doc.functionalObsolescence) {
+      errors.push(...this.validateFunctionalObsolescence(doc.functionalObsolescence));
+    }
+    if (doc.vehicleStorage) {
+      errors.push(...this.validateVehicleStorage(doc.vehicleStorage));
+    }
+    if (doc.outbuildings) {
+      errors.push(...this.validateOutbuildings(doc.outbuildings));
+    }
+    if (doc.amenities) {
+      errors.push(...this.validateAmenities(doc.amenities));
+    }
+    if (doc.overallQualityCondition) {
+      errors.push(...this.validateOverallQualityCondition(doc.overallQualityCondition));
+    }
+    if (doc.analyzedPropertiesNotUsed) {
+      errors.push(...this.validateAnalyzedPropertiesNotUsed(doc.analyzedPropertiesNotUsed));
+    }
+    if (doc.priorTransfers) {
+      errors.push(...this.validatePriorTransfers(doc.priorTransfers));
+    }
+    if (doc.revisionHistory) {
+      errors.push(...this.validateRevisionHistory(doc.revisionHistory));
+    }
+    if (doc.reconsiderationOfValue) {
+      errors.push(...this.validateReconsiderationOfValue(doc.reconsiderationOfValue));
+    }
+    if (doc.assignmentConditions) {
+      errors.push(...this.validateAssignmentConditions(doc.assignmentConditions));
+    }
+
+    return errors;
+  }
+
+  // ── UAD-900: Disaster Mitigation ────────────────────────────────────────────
+
+  private readonly VALID_DISASTER_CATEGORIES = new Set([
+    'Flood', 'Wildfire', 'Wind', 'Earthquake', 'Hail', 'Tornado', 'Hurricane', 'Other'
+  ]);
+
+  private validateDisasterMitigation(items: CanonicalDisasterMitigationItem[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.disasterCategory) {
+        errors.push({
+          fieldPath: `disasterMitigation.items[${i}].disasterCategory`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Disaster mitigation item [${i}]: disasterCategory is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-901'
+        });
+      } else if (!this.VALID_DISASTER_CATEGORIES.has(item.disasterCategory)) {
+        errors.push({
+          fieldPath: `disasterMitigation.items[${i}].disasterCategory`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Disaster mitigation item [${i}]: disasterCategory "${item.disasterCategory}" is not a recognised value`,
+          severity: 'ERROR',
+          uadRule: 'UAD-902'
+        });
+      }
+      if (!item.mitigationFeature) {
+        errors.push({
+          fieldPath: `disasterMitigation.items[${i}].mitigationFeature`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Disaster mitigation item [${i}]: mitigationFeature is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-903'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-910: Energy Efficiency ───────────────────────────────────────────────
+
+  private readonly VALID_IMPACT_VALUES = new Set(['Beneficial', 'Neutral', 'Adverse']);
+  private readonly VALID_BUILDING_CERTIFICATIONS = new Set([
+    'LEED', 'Energy Star', 'HERS', 'Green Globes', 'NGBS', 'Passive House', 'ZERH', 'Other'
+  ]);
+
+  private validateEnergyEfficiency(features: CanonicalEnergyFeature[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    features.forEach((feat, i) => {
+      if (!feat.feature) {
+        errors.push({
+          fieldPath: `energyEfficiency.features[${i}].feature`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Energy efficiency feature [${i}]: feature name is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-911'
+        });
+      }
+      if (feat.impact && !this.VALID_IMPACT_VALUES.has(feat.impact)) {
+        errors.push({
+          fieldPath: `energyEfficiency.features[${i}].impact`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Energy efficiency feature [${i}]: impact "${feat.impact}" must be Beneficial, Neutral, or Adverse`,
+          severity: 'ERROR',
+          uadRule: 'UAD-912'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-920: Functional Obsolescence ────────────────────────────────────────
+
+  private validateFunctionalObsolescence(items: CanonicalFunctionalObsolescenceItem[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.feature) {
+        errors.push({
+          fieldPath: `functionalObsolescence[${i}].feature`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Functional obsolescence item [${i}]: feature is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-921'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-930: Vehicle Storage ─────────────────────────────────────────────────
+
+  private readonly VALID_VEHICLE_STORAGE_TYPES = new Set([
+    'Attached Garage', 'Detached Garage', 'Built-In Garage', 'Carport', 'None'
+  ]);
+
+  private validateVehicleStorage(items: CanonicalVehicleStorage[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.type) {
+        errors.push({
+          fieldPath: `vehicleStorage[${i}].type`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Vehicle storage item [${i}]: type is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-931'
+        });
+      } else if (!this.VALID_VEHICLE_STORAGE_TYPES.has(item.type)) {
+        errors.push({
+          fieldPath: `vehicleStorage[${i}].type`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Vehicle storage item [${i}]: type "${item.type}" must be one of: ${[...this.VALID_VEHICLE_STORAGE_TYPES].join(', ')}`,
+          severity: 'ERROR',
+          uadRule: 'UAD-932'
+        });
+      }
+      if (item.spaces !== null && item.spaces !== undefined && item.spaces < 0) {
+        errors.push({
+          fieldPath: `vehicleStorage[${i}].spaces`,
+          errorCode: 'VALUE_OUT_OF_RANGE',
+          errorMessage: `Vehicle storage item [${i}]: spaces cannot be negative, received ${item.spaces}`,
+          severity: 'ERROR',
+          uadRule: 'UAD-933'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-940: Outbuildings ────────────────────────────────────────────────────
+
+  private validateOutbuildings(items: CanonicalOutbuilding[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.type) {
+        errors.push({
+          fieldPath: `outbuildings[${i}].type`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Outbuilding item [${i}]: type is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-941'
+        });
+      }
+      if (item.gba !== null && item.gba !== undefined && item.gba <= 0) {
+        errors.push({
+          fieldPath: `outbuildings[${i}].gba`,
+          errorCode: 'VALUE_OUT_OF_RANGE',
+          errorMessage: `Outbuilding item [${i}]: gba must be greater than 0, received ${item.gba}`,
+          severity: 'ERROR',
+          uadRule: 'UAD-942'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-950: Amenities ───────────────────────────────────────────────────────
+
+  private readonly VALID_AMENITY_CATEGORIES = new Set([
+    'Outdoor Accessories', 'Outdoor Living', 'Water Features', 'Whole Home', 'Miscellaneous'
+  ]);
+
+  private validateAmenities(items: CanonicalPropertyAmenity[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.category) {
+        errors.push({
+          fieldPath: `amenities[${i}].category`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Amenity item [${i}]: category is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-951'
+        });
+      } else if (!this.VALID_AMENITY_CATEGORIES.has(item.category)) {
+        errors.push({
+          fieldPath: `amenities[${i}].category`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Amenity item [${i}]: category "${item.category}" must be one of: ${[...this.VALID_AMENITY_CATEGORIES].join(', ')}`,
+          severity: 'ERROR',
+          uadRule: 'UAD-952'
+        });
+      }
+      if (!item.feature) {
+        errors.push({
+          fieldPath: `amenities[${i}].feature`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Amenity item [${i}]: feature is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-953'
+        });
+      }
+      if (item.impact && !this.VALID_IMPACT_VALUES.has(item.impact)) {
+        errors.push({
+          fieldPath: `amenities[${i}].impact`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Amenity item [${i}]: impact "${item.impact}" must be Beneficial, Neutral, or Adverse`,
+          severity: 'ERROR',
+          uadRule: 'UAD-954'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-960: Overall Quality & Condition ────────────────────────────────────
+
+  private readonly VALID_QUALITY_RATINGS = new Set(['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6']);
+  private readonly VALID_CONDITION_RATINGS = new Set(['C1', 'C2', 'C3', 'C4', 'C5', 'C6']);
+
+  private validateOverallQualityCondition(data: CanonicalOverallQualityCondition): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    if (data.overallQuality && !this.VALID_QUALITY_RATINGS.has(data.overallQuality)) {
+      errors.push({
+        fieldPath: 'overallQualityCondition.overallQuality',
+        errorCode: 'ENUM_VALUE_INVALID',
+        errorMessage: `Overall quality rating "${data.overallQuality}" must be Q1-Q6`,
+        severity: 'ERROR',
+        uadRule: 'UAD-961'
+      });
+    }
+    if (data.overallCondition && !this.VALID_CONDITION_RATINGS.has(data.overallCondition)) {
+      errors.push({
+        fieldPath: 'overallQualityCondition.overallCondition',
+        errorCode: 'ENUM_VALUE_INVALID',
+        errorMessage: `Overall condition rating "${data.overallCondition}" must be C1-C6`,
+        severity: 'ERROR',
+        uadRule: 'UAD-962'
+      });
+    }
+    [...data.exteriorFeatures, ...data.interiorFeatures].forEach((feat, i) => {
+      if (feat.quality && !this.VALID_QUALITY_RATINGS.has(feat.quality)) {
+        errors.push({
+          fieldPath: `overallQualityCondition.features[${i}].quality`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Feature "${feat.feature}" quality rating "${feat.quality}" must be Q1-Q6`,
+          severity: 'ERROR',
+          uadRule: 'UAD-963'
+        });
+      }
+      if (feat.condition && !this.VALID_CONDITION_RATINGS.has(feat.condition)) {
+        errors.push({
+          fieldPath: `overallQualityCondition.features[${i}].condition`,
+          errorCode: 'ENUM_VALUE_INVALID',
+          errorMessage: `Feature "${feat.feature}" condition rating "${feat.condition}" must be C1-C6`,
+          severity: 'ERROR',
+          uadRule: 'UAD-964'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-970: Analyzed Properties Not Used ───────────────────────────────────
+
+  private validateAnalyzedPropertiesNotUsed(items: CanonicalAnalyzedPropertyNotUsed[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.address) {
+        errors.push({
+          fieldPath: `analyzedPropertiesNotUsed[${i}].address`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Analyzed property not used [${i}]: address is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-971'
+        });
+      }
+      if (!item.reasonNotUsed) {
+        errors.push({
+          fieldPath: `analyzedPropertiesNotUsed[${i}].reasonNotUsed`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Analyzed property not used [${i}]: reasonNotUsed is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-972'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-980: Prior Transfers ─────────────────────────────────────────────────
+
+  private validatePriorTransfers(items: CanonicalPriorTransfer[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (item.salePrice !== null && item.salePrice !== undefined && item.salePrice <= 0) {
+        errors.push({
+          fieldPath: `priorTransfers[${i}].salePrice`,
+          errorCode: 'VALUE_OUT_OF_RANGE',
+          errorMessage: `Prior transfer [${i}]: salePrice must be greater than 0, received ${item.salePrice}`,
+          severity: 'ERROR',
+          uadRule: 'UAD-981'
+        });
+      }
+      if (item.transactionDate && isNaN(Date.parse(item.transactionDate))) {
+        errors.push({
+          fieldPath: `priorTransfers[${i}].transactionDate`,
+          errorCode: 'DATE_INVALID',
+          errorMessage: `Prior transfer [${i}]: transactionDate "${item.transactionDate}" is not a valid date`,
+          severity: 'ERROR',
+          uadRule: 'UAD-982'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-990: Revision History ────────────────────────────────────────────────
+
+  private validateRevisionHistory(items: CanonicalRevisionEntry[]): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    items.forEach((item, i) => {
+      if (!item.revisionDate) {
+        errors.push({
+          fieldPath: `revisionHistory[${i}].revisionDate`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Revision history entry [${i}]: revisionDate is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-991'
+        });
+      } else if (isNaN(Date.parse(item.revisionDate))) {
+        errors.push({
+          fieldPath: `revisionHistory[${i}].revisionDate`,
+          errorCode: 'DATE_INVALID',
+          errorMessage: `Revision history entry [${i}]: revisionDate "${item.revisionDate}" is not a valid date`,
+          severity: 'ERROR',
+          uadRule: 'UAD-992'
+        });
+      }
+      if (!item.description) {
+        errors.push({
+          fieldPath: `revisionHistory[${i}].description`,
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: `Revision history entry [${i}]: description is required`,
+          severity: 'ERROR',
+          uadRule: 'UAD-993'
+        });
+      }
+    });
+    return errors;
+  }
+
+  // ── UAD-994: Reconsideration of Value ───────────────────────────────────────
+
+  private validateReconsiderationOfValue(data: CanonicalReconsiderationOfValue): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    if (!data.type) {
+      errors.push({
+        fieldPath: 'reconsiderationOfValue.type',
+        errorCode: 'REQUIRED_FIELD_MISSING',
+        errorMessage: 'Reconsideration of value: type is required',
+        severity: 'ERROR',
+        uadRule: 'UAD-995'
+      });
+    }
+    if (!data.date) {
+      errors.push({
+        fieldPath: 'reconsiderationOfValue.date',
+        errorCode: 'REQUIRED_FIELD_MISSING',
+        errorMessage: 'Reconsideration of value: date is required',
+        severity: 'ERROR',
+        uadRule: 'UAD-996'
+      });
+    } else if (isNaN(Date.parse(data.date))) {
+      errors.push({
+        fieldPath: 'reconsiderationOfValue.date',
+        errorCode: 'DATE_INVALID',
+        errorMessage: `Reconsideration of value: date "${data.date}" is not a valid date`,
+        severity: 'ERROR',
+        uadRule: 'UAD-997'
+      });
+    }
+    if (!data.result) {
+      errors.push({
+        fieldPath: 'reconsiderationOfValue.result',
+        errorCode: 'REQUIRED_FIELD_MISSING',
+        errorMessage: 'Reconsideration of value: result is required',
+        severity: 'ERROR',
+        uadRule: 'UAD-998'
+      });
+    }
+    return errors;
+  }
+
+  // ── UAD-999: Assignment Conditions ──────────────────────────────────────────
+
+  private validateAssignmentConditions(data: CanonicalAssignmentConditions): UadValidationError[] {
+    const errors: UadValidationError[] = [];
+    if (!data.intendedUse) {
+      errors.push({
+        fieldPath: 'assignmentConditions.intendedUse',
+        errorCode: 'REQUIRED_FIELD_MISSING',
+        errorMessage: 'Assignment conditions: intendedUse is required',
+        severity: 'ERROR',
+        uadRule: 'UAD-999'
+      });
+    }
+    if (!data.marketValueDefinition) {
+      errors.push({
+        fieldPath: 'assignmentConditions.marketValueDefinition',
+        errorCode: 'RECOMMENDED_FIELD_MISSING',
+        errorMessage: 'Assignment conditions: marketValueDefinition is recommended for USPAP compliance',
+        severity: 'WARNING',
+        uadRule: 'UAD-999W'
+      });
+    }
     return errors;
   }
 

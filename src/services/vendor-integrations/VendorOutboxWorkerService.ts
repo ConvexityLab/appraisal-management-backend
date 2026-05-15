@@ -270,7 +270,11 @@ export class VendorOutboxWorkerService {
   }
 
   private isClaimableStatus(status: VendorOutboxDocument['status']): status is WorkerManagedStatus {
-    return status === 'PENDING' || status === 'FAILED' || status === 'PROCESSING';
+    // Only PENDING and FAILED documents are returned by loadPendingDocuments.
+    // PROCESSING documents are never in the query result — including PROCESSING
+    // here would be dead code and would make the WorkerManagedStatus type guard
+    // a lie (it claims to narrow to PENDING|FAILED only).
+    return status === 'PENDING' || status === 'FAILED';
   }
 
   private toAppEvent(document: VendorOutboxDocument): AppEvent {

@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from '../services/cosmos-db.service.js';
 import type { VendorOutboxDocument } from '../types/vendor-integration.types.js';
+import { vendorEventTraceService } from '../services/VendorEventTraceService.js';
 
 const logger = new Logger('VendorOutboxMonitorController');
 const VENDOR_EVENT_OUTBOX_CONTAINER = 'vendor-event-outbox';
@@ -277,6 +278,37 @@ export function createVendorOutboxMonitorRouter(dbService: Pick<CosmosDbService,
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Failed to acknowledge vendor outbox item', { tenantId, operatorId, itemId: req.params.id, error: message });
+      return res.status(500).json({ success: false, error: { message } });
+    }
+  });
+
+  /**
+   * GET /trace?vendorOrderId=<id>&hours=24
+   * GET /trace?correlationId=<id>&hours=24
+   *
+   * Queries Log Analytics for end-to-end vendor integration traces.
+   * Returns timeline grouped by correlationId.
+   */
+  router.get('/trace', async (req: Request, res: Response) => {
+    const { vendorOrderId, correlationId, hours: hoursStr } = req.query as Record<string, string | undefined>;
+    const hours = hoursStr ? Math.min(Math.max(Number(hoursStr), 1), 168) : 24;
+
+    if (!vendorOrderId && !correlationId) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Provide either vendorOrderId or correlationId query parameter.' },
+      });
+    }
+
+    try {
+      const timelines = vendorOrderId
+        ? await vendorEventTraceService.queryByVendorOrderId(vendorOrderId, hours)
+        : await vendorEventTraceService.queryByCorrelationId(correlationId!, hours);
+
+      return res.json({ success: true, data: timelines });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('Vendor trace query failed', { message });
       return res.status(500).json({ success: false, error: { message } });
     }
   });

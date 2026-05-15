@@ -318,6 +318,17 @@ export class VendorConnectionAdminService {
           `AIM-Port connections require ${missingFields.join(', ')}. Missing fields: ${missingFields.join(', ')}.`,
         );
       }
+    } else if (connection.vendorType === 'class-valuation') {
+      const cvMissingFields = [
+        !connection.credentials.inboundHmacSecretName ? 'credentials.inboundHmacSecretName' : null,
+        !connection.credentials.outboundHmacSecretName ? 'credentials.outboundHmacSecretName' : null,
+      ].filter((value): value is string => value !== null);
+
+      if (cvMissingFields.length > 0) {
+        throw new VendorConnectionValidationError(
+          `ClassValuation connections require ${cvMissingFields.join(', ')}. Missing fields: ${cvMissingFields.join(', ')}.`,
+        );
+      }
     }
   }
 

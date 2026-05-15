@@ -13,7 +13,8 @@ import {
   UadComparable,
   UadAppraisalInfo,
   UadNeighborhood,
-  UadMarketConditions
+  UadMarketConditions,
+  UadSubjectListing
 } from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 
@@ -269,11 +270,8 @@ export class MismoXmlGenerator {
 
     if (subject.energyEfficiency) {
       const energyNode = property.ele('ENERGY_EFFICIENCIES');
-      if (subject.energyEfficiency.hasFeatures !== undefined) {
-        energyNode.ele('HasFeaturesIndicator', subject.energyEfficiency.hasFeatures ? 'true' : 'false');
-      }
-      if (subject.energyEfficiency.items) {
-        subject.energyEfficiency.items.forEach((item: any) => {
+      if (subject.energyEfficiency.features?.length > 0) {
+        subject.energyEfficiency.features.forEach((item: any) => {
           const itemNode = energyNode.ele('ENERGY_EFFICIENCY');
           itemNode.ele('EnergyFeatureCategory', item.category);
         });
@@ -282,7 +280,7 @@ export class MismoXmlGenerator {
 
     if (subject.manufacturedHome) {
       const mfgNode = property.ele('MANUFACTURED_HOME');
-      mfgNode.ele('ManufacturedHomeMakeText', subject.manufacturedHome.make);
+      mfgNode.ele('ManufacturedHomeMakeText', subject.manufacturedHome.manufacturer);
       mfgNode.ele('ManufacturedHomeModelIdentifier', subject.manufacturedHome.model);
       mfgNode.ele('ManufacturedHomeYearBuilt', subject.manufacturedHome.yearManufactured);
     }
@@ -291,8 +289,8 @@ export class MismoXmlGenerator {
       const storageNodes = property.ele('VEHICLE_STORAGES');
       subject.vehicleStorage.forEach((vs: any) => {
         const vsNode = storageNodes.ele('VEHICLE_STORAGE');
-        vsNode.ele('VehicleStorageType', vs.storageType);
-        vsNode.ele('VehicleStorageCapacity', vs.capacityCount);
+        vsNode.ele('VehicleStorageType', vs.type);
+        vsNode.ele('VehicleStorageCapacity', vs.spaces);
       });
     }
 
@@ -305,12 +303,12 @@ export class MismoXmlGenerator {
         const scheduleNode = rentalNode.ele('RENT_SCHEDULES');
         subject.rentalInformation.rentSchedule.forEach((rs: any) => {
           const unitNode = scheduleNode.ele('RENT_SCHEDULE');
-          unitNode.ele('UnitIdentifier', rs.unitId || '');
+          unitNode.ele('UnitIdentifier', rs.unitIdentifier || '');
           if (rs.monthlyRent !== undefined && rs.monthlyRent !== null) {
             unitNode.ele('MonthlyRentAmount', rs.monthlyRent);
           }
-          if (rs.occupancyType) {
-            unitNode.ele('UnitOccupancyType', rs.occupancyType);
+          if (rs.occupancy) {
+            unitNode.ele('UnitOccupancyType', rs.occupancy);
           }
         });
       }
@@ -332,6 +330,86 @@ export class MismoXmlGenerator {
       rovNode.ele('ReconsiderationDate', subject.reconsiderationOfValue.date || '');
       rovNode.ele('ReconsiderationResult', subject.reconsiderationOfValue.result || '');
       rovNode.ele('ReconsiderationCommentary', subject.reconsiderationOfValue.commentary || '');
+    }
+
+    if (subject.subjectListings && subject.subjectListings.length > 0) {
+      const listingsNode = property.ele('SUBJECT_LISTINGS');
+      subject.subjectListings.forEach((sl: UadSubjectListing) => {
+        const listingNode = listingsNode.ele('SUBJECT_LISTING');
+        if (sl.dataSource)                       listingNode.ele('SubjectListingDataSource', sl.dataSource);
+        if (sl.listingStatus)                    listingNode.ele('SubjectListingStatusType', sl.listingStatus);
+        if (sl.listingType)                      listingNode.ele('SubjectListingType', sl.listingType);
+        if (sl.listingId)                        listingNode.ele('SubjectListingIdentifier', sl.listingId);
+        if (sl.startDate)                        listingNode.ele('SubjectListingStartDate', sl.startDate);
+        if (sl.endDate)                          listingNode.ele('SubjectListingEndDate', sl.endDate);
+        if (sl.daysOnMarket != null)             listingNode.ele('SubjectListingDaysOnMarketCount', String(sl.daysOnMarket));
+        if (sl.startingListPrice != null)        listingNode.ele('SubjectListingStartingPriceAmount', String(sl.startingListPrice));
+        if (sl.currentOrFinalListPrice != null)  listingNode.ele('SubjectListingCurrentPriceAmount', String(sl.currentOrFinalListPrice));
+      });
+    }
+
+    if (subject.functionalObsolescence && Array.isArray(subject.functionalObsolescence) && subject.functionalObsolescence.length > 0) {
+      const foNode = property.ele('FUNCTIONAL_OBSOLESCENCES');
+      subject.functionalObsolescence.forEach((fo: any) => {
+        const foItem = foNode.ele('FUNCTIONAL_OBSOLESCENCE');
+        if (fo.feature)      foItem.ele('FunctionalObsolescenceFeature', fo.feature);
+        if (fo.description)  foItem.ele('FunctionalObsolescenceDescription', fo.description);
+        if (fo.curable != null) foItem.ele('FunctionalObsolescenceCurableIndicator', fo.curable ? 'true' : 'false');
+        if (fo.impact)       foItem.ele('FunctionalObsolescenceImpact', fo.impact);
+        if (fo.comment)      foItem.ele('FunctionalObsolescenceComment', fo.comment);
+      });
+    }
+
+    if (subject.outbuildings && Array.isArray(subject.outbuildings) && subject.outbuildings.length > 0) {
+      const obNode = property.ele('OUTBUILDINGS');
+      subject.outbuildings.forEach((ob: any) => {
+        const obItem = obNode.ele('OUTBUILDING');
+        if (ob.type)                obItem.ele('OutbuildingType', ob.type);
+        if (ob.gba != null)         obItem.ele('OutbuildingGrossArea', ob.gba);
+        if (ob.finishedArea != null) obItem.ele('OutbuildingFinishedArea', ob.finishedArea);
+        if (ob.yearBuilt != null)   obItem.ele('OutbuildingYearBuilt', ob.yearBuilt);
+        if (ob.quality)             obItem.ele('OutbuildingQualityType', ob.quality);
+        if (ob.condition)           obItem.ele('OutbuildingConditionType', ob.condition);
+        if (ob.comment)             obItem.ele('OutbuildingComment', ob.comment);
+      });
+    }
+
+    if (subject.amenities && Array.isArray(subject.amenities) && subject.amenities.length > 0) {
+      const amNode = property.ele('PROPERTY_AMENITIES');
+      subject.amenities.forEach((am: any) => {
+        const amItem = amNode.ele('PROPERTY_AMENITY');
+        if (am.category)  amItem.ele('AmenityCategory', am.category);
+        if (am.feature)   amItem.ele('AmenityFeature', am.feature);
+        if (am.detail)    amItem.ele('AmenityDetail', am.detail);
+        if (am.impact)    amItem.ele('AmenityImpact', am.impact);
+        if (am.comment)   amItem.ele('AmenityComment', am.comment);
+      });
+    }
+
+    if (subject.overallQualityCondition) {
+      const qcNode = property.ele('OVERALL_QUALITY_CONDITION');
+      const oqc = subject.overallQualityCondition;
+      if (oqc.overallQuality)    qcNode.ele('OverallQualityRating', oqc.overallQuality);
+      if (oqc.overallCondition)  qcNode.ele('OverallConditionRating', oqc.overallCondition);
+      if (oqc.reconciliationNarrative) qcNode.ele('QualityConditionNarrative', oqc.reconciliationNarrative);
+      if (oqc.exteriorFeatures?.length > 0) {
+        const extNode = qcNode.ele('EXTERIOR_FEATURE_RATINGS');
+        oqc.exteriorFeatures.forEach((ef: any) => {
+          const efItem = extNode.ele('FEATURE_RATING');
+          efItem.ele('FeatureName', ef.feature);
+          if (ef.quality)    efItem.ele('FeatureQualityRating', ef.quality);
+          if (ef.condition)  efItem.ele('FeatureConditionRating', ef.condition);
+        });
+      }
+      if (oqc.interiorFeatures?.length > 0) {
+        const intNode = qcNode.ele('INTERIOR_FEATURE_RATINGS');
+        oqc.interiorFeatures.forEach((inf: any) => {
+          const infItem = intNode.ele('FEATURE_RATING');
+          infItem.ele('FeatureName', inf.feature);
+          if (inf.quality)    infItem.ele('FeatureQualityRating', inf.quality);
+          if (inf.condition)  infItem.ele('FeatureConditionRating', inf.condition);
+        });
+      }
     }
   }
 

@@ -230,6 +230,8 @@ export interface CanonicalPropertyCore {
   porchPatioDeck: string; // description, e.g. "Open Porch, Deck"
   /** @deprecated Phase 7F: Use amenities array instead */
   pool: boolean;
+  /** Pool type — distinguishes InGround from AboveGround. Only meaningful when pool is true. */
+  poolType?: 'InGround' | 'AboveGround' | null;
   attic: string; // "None", "Scuttle", "Stairs", "Finished"
 
   // â”€â”€ Form 1004 additional description fields (not in core UAD 3.6 spec) â”€â”€â”€

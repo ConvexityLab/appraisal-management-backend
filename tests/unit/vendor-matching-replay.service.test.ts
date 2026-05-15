@@ -223,7 +223,10 @@ describe('VendorMatchingReplayService', () => {
       rulesDeny: (id) => id === 'v-flip',
     });
     const svc = new VendorMatchingReplayService(db as never, pusher as never);
-    const diff = await svc.replay({ tenantId: 't1', rules: [{ name: 'r' }] });
+    // sinceDays: 14 so all three hard-coded traces fall inside the window
+    // regardless of when the test runs. This test is about the count invariant,
+    // not the date-filter logic (which is tested separately).
+    const diff = await svc.replay({ tenantId: 't1', rules: [{ name: 'r' }], sinceDays: 14 });
 
     expect(diff.windowSize).toBe(3);
     expect(diff.totalEvaluated).toBe(3);

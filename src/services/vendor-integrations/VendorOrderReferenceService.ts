@@ -83,7 +83,6 @@ function addBusinessDays(from: Date, days: number): Date {
 }
 
 /**
-/**
  * Resolves one vendor product entry to an internal ProductType string.
  *
  * Resolution order:

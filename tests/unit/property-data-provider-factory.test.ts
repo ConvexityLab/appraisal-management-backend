@@ -1,15 +1,21 @@
 /**
  * Unit tests for createPropertyDataProvider (factory)
  *
- * Verifies that the factory composes the correct chain of providers based
+ * Verifies that the factory composes the correct provider stack based
  * on which env vars are set:
  *   COSMOS_ENDPOINT       → LocalAttomPropertyDataProvider
- *   BRIDGE_SERVER_TOKEN   → BridgePropertyDataProvider
  *   ATTOM_API_KEY         → AttomPropertyDataProvider
+ *   BRIDGE_SERVER_TOKEN   → BridgePropertyDataProvider
  *
- * Order is intentional: Cosmos → Bridge → ATTOM. When two or more are set
- * the providers are wrapped in a ChainedPropertyDataProvider in that order.
- * When none are set the factory returns NullPropertyDataProvider.
+ * Composition: when ≥2 providers are enabled they are wrapped in a
+ * MergingPropertyDataProvider so every provider is consulted and results
+ * are field-merged (earlier providers win on overlap). Order is
+ * ATTOM-first: LocalAttom → live ATTOM → Bridge — so ATTOM fields beat
+ * Bridge fields where both supply them, and Bridge contributes MLS-only
+ * fields ATTOM doesn't carry.
+ *
+ * Single provider → returned directly (no merging wrapper).
+ * Zero providers → NullPropertyDataProvider.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,7 +49,7 @@ vi.mock('../../src/utils/logger.js', () => ({
 }));
 
 import { createPropertyDataProvider } from '../../src/services/property-data-providers/factory.js';
-import { ChainedPropertyDataProvider } from '../../src/services/property-data-providers/chained.provider.js';
+import { MergingPropertyDataProvider } from '../../src/services/property-data-providers/merging.provider.js';
 import { NullPropertyDataProvider } from '../../src/services/property-data-providers/null.provider.js';
 
 const ENV_KEYS = [
@@ -90,7 +96,7 @@ describe('createPropertyDataProvider', () => {
 
     const provider = createPropertyDataProvider({} as never) as { __kind?: string };
 
-    expect(provider).not.toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).not.toBeInstanceOf(MergingPropertyDataProvider);
     expect(provider.__kind).toBe('local-attom');
   });
 
@@ -107,7 +113,7 @@ describe('createPropertyDataProvider', () => {
 
     const provider = createPropertyDataProvider() as { __kind?: string };
 
-    expect(provider).not.toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).not.toBeInstanceOf(MergingPropertyDataProvider);
     expect(provider.__kind).toBe('bridge');
   });
 
@@ -117,51 +123,54 @@ describe('createPropertyDataProvider', () => {
     // ATTOM requires a CosmosDbService instance for its property-data cache.
     const provider = createPropertyDataProvider({} as never) as { __kind?: string };
 
-    expect(provider).not.toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).not.toBeInstanceOf(MergingPropertyDataProvider);
     expect(provider.__kind).toBe('attom');
   });
 
-  it('chains LocalAttom → Bridge → Attom (in that exact order) when all three are configured', () => {
+  it('merges LocalAttom → Attom → Bridge (ATTOM-first) when all three are configured', () => {
     process.env.COSMOS_ENDPOINT = 'https://example.documents.azure.com';
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
     process.env.ATTOM_API_KEY = 'attom-key';
 
     const provider = createPropertyDataProvider({} as never);
 
-    expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).toBeInstanceOf(MergingPropertyDataProvider);
     // Use the private `providers` field via cast — it's the public contract
     // expressed as readonly state that we need to assert ordering on.
     const inner = (provider as unknown as {
       providers: Array<{ __kind: string }>;
     }).providers;
-    expect(inner.map((p) => p.__kind)).toEqual(['local-attom', 'bridge', 'attom']);
+    // ATTOM-first: LocalAttom (cached ATTOM) → live ATTOM → Bridge. Bridge
+    // is last so its values lose to ATTOM on field overlap but it still
+    // contributes MLS-only fields ATTOM doesn't carry.
+    expect(inner.map((p) => p.__kind)).toEqual(['local-attom', 'attom', 'bridge']);
   });
 
-  it('chains LocalAttom → Bridge when COSMOS + BRIDGE are set (Attom omitted)', () => {
+  it('merges LocalAttom → Bridge when COSMOS + BRIDGE are set (Attom omitted)', () => {
     process.env.COSMOS_ENDPOINT = 'https://example.documents.azure.com';
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
 
     const provider = createPropertyDataProvider({} as never);
 
-    expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).toBeInstanceOf(MergingPropertyDataProvider);
     const inner = (provider as unknown as {
       providers: Array<{ __kind: string }>;
     }).providers;
     expect(inner.map((p) => p.__kind)).toEqual(['local-attom', 'bridge']);
   });
 
-  it('chains Bridge → Attom (preserves prior behavior) when COSMOS is not set', () => {
+  it('merges Attom → Bridge (ATTOM ahead of Bridge) when COSMOS is not set', () => {
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
     process.env.ATTOM_API_KEY = 'attom-key';
 
     // ATTOM always requires a CosmosDbService instance for its property-data cache.
-    // COSMOS_ENDPOINT is not set, so LocalAttom is excluded from the chain.
+    // COSMOS_ENDPOINT is not set, so LocalAttom is excluded from the merge.
     const provider = createPropertyDataProvider({} as never);
 
-    expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
+    expect(provider).toBeInstanceOf(MergingPropertyDataProvider);
     const inner = (provider as unknown as {
       providers: Array<{ __kind: string }>;
     }).providers;
-    expect(inner.map((p) => p.__kind)).toEqual(['bridge', 'attom']);
+    expect(inner.map((p) => p.__kind)).toEqual(['attom', 'bridge']);
   });
 });

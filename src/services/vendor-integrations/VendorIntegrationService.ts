@@ -23,11 +23,11 @@ export interface VendorInboundProcessingResult extends AdapterInboundResult {
  *  - authenticate the inbound request using adapter-specific rules
  *  - normalize the request into `VendorDomainEvent[]`
  *
- * Remaining TODOs:
- *  - durable outbox persistence of normalized events
- *  - dead-lettering of malformed vendor payloads
- *  - per-connection idempotency/replay tracking
- *  - outbound event queue orchestration
+ * All originally-planned capabilities are now implemented:
+ *  - durable outbox persistence via persistInboundEvents (VendorEventOutboxService)
+ *  - malformed payload errors propagate to the webhook controller (400/500 response)
+ *  - per-connection idempotency via replayKey + registerInboundReceipt in VendorEventOutboxService
+ *  - outbound event queue via VendorOutboundOutboxService + VendorOutboundWorkerService + VendorOutboundDispatcher
  */
 export class VendorIntegrationService {
   private readonly logger = new Logger('VendorIntegrationService');

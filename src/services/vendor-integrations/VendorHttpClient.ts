@@ -1,5 +1,6 @@
 import { Logger } from '../../utils/logger.js';
 import type { OutboundCall } from '../../types/vendor-integration.types.js';
+import { appInsightsMetrics } from '../app-insights-metrics.service.js';
 
 export interface VendorHttpResponse<T = unknown> {
   status: number;
@@ -40,6 +41,17 @@ export class VendorHttpClient {
       status: response.status,
       ok: response.ok,
     });
+
+    if (call.correlationId) {
+      appInsightsMetrics.trackVendorOutboundHttpResult({
+        correlationId: call.correlationId,
+        requestType: call.eventType ?? 'unknown',
+        vendorOrderId: call.vendorOrderId ?? 'unknown',
+        status: response.status,
+        ok: response.ok,
+        url: call.url,
+      });
+    }
 
     return {
       status: response.status,

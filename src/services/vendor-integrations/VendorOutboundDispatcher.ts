@@ -5,6 +5,7 @@ import type { VendorAdapter } from './VendorAdapter.js';
 import { AimPortAdapter } from './AimPortAdapter.js';
 import { ClassValuationWebhookAdapter } from './ClassValuationWebhookAdapter.js';
 import { VendorHttpClient } from './VendorHttpClient.js';
+import { appInsightsMetrics } from '../app-insights-metrics.service.js';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 1_000;   // 1 s
@@ -23,16 +24,15 @@ function sleep(ms: number): Promise<void> {
 /**
  * Transport-aware outbound dispatcher.
  *
- * Dispatch is synchronous per-attempt (no durable queue yet) but retried up
- * to DEFAULT_MAX_ATTEMPTS times with exponential back-off + full jitter before
- * the error is surfaced to the caller. Callers that need fire-and-forget
- * must `.catch()` themselves.
+ * Dispatch is synchronous per-attempt but retried up to DEFAULT_MAX_ATTEMPTS
+ * times with exponential back-off + full jitter before the error is surfaced
+ * to the caller. Callers that need fire-and-forget must `.catch()` themselves.
  *
- * TODOs for the next increment:
- *  - move dispatch to BullMQ / Service Bus-backed durable outbox for cross-restart durability
- *  - dead-letter document written to Cosmos after max retries so operators can replay manually
- *  - response auditing (store every call attempt + HTTP status for observability)
- *  - support webhook and polling-based vendor transports
+ * Durable cross-restart delivery is handled at a higher level:
+ * VendorOutboundOutboxService enqueues events to Cosmos, and
+ * VendorOutboundWorkerService polls and calls this dispatcher with retries.
+ * Dead-lettered documents remain in Cosmos for operator replay via the
+ * vendor-outbox-monitor controller.
  */
 export class VendorOutboundDispatcher {
   private readonly logger = new Logger('VendorOutboundDispatcher');
@@ -80,6 +80,15 @@ export class VendorOutboundDispatcher {
       });
       return;
     }
+
+    // Thread the originating event ID as correlationId for App Insights tracing.
+    call.correlationId = event.id;
+
+    appInsightsMetrics.trackVendorOutboundDispatched({
+      correlationId: event.id,
+      eventType: event.eventType,
+      vendorOrderId: event.vendorOrderId,
+    });
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt < DEFAULT_MAX_ATTEMPTS; attempt++) {

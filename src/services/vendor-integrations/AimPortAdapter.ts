@@ -20,6 +20,7 @@ import type {
   VendorProductsListedPayload,
 } from '../../types/vendor-integration.types.js';
 import type { InboundAdapterContext, OutboundAdapterContext, VendorAdapter } from './VendorAdapter.js';
+import { appInsightsMetrics } from '../app-insights-metrics.service.js';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -287,6 +288,14 @@ export class AimPortAdapter implements VendorAdapter {
     };
 
     const events: VendorDomainEvent[] = this.mapInboundEvents(requestType, envelope, baseEvent, connection.productMappings);
+
+    appInsightsMetrics.trackVendorInboundReceived({
+      correlationId: baseEvent.id,
+      requestType,
+      vendorOrderId: baseEvent.vendorOrderId,
+      connectionId: connection.id,
+      vendorType: this.vendorType,
+    });
 
     let resolvedOrderId = legacyOrderId;
     if (

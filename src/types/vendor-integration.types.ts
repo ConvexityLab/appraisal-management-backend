@@ -551,6 +551,8 @@ export interface OutboundCall {
   /** For logging/dead-letter context */
   eventType: VendorEventType;
   vendorOrderId: string;
+  /** Correlation ID linking this outbound call to the originating VendorDomainEvent (event.id) */
+  correlationId?: string;
 }
 
 // ─── Real Order Reference / Outbox ───────────────────────────────────────────

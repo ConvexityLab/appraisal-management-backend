@@ -222,6 +222,89 @@ export class AppInsightsMetricsService {
   // CORE TRACKING METHODS
   // ===========================
 
+  // ── Vendor integration pipeline telemetry ──────────────────────────────────
+
+  /** Fired by AimPortAdapter when an inbound webhook is successfully parsed into domain events. */
+  trackVendorInboundReceived(props: {
+    correlationId: string;
+    requestType: string;
+    vendorOrderId: string;
+    connectionId: string;
+    vendorType: string;
+  }): void {
+    this.trackEvent('VendorInbound.Received', {
+      correlationId: props.correlationId,
+      requestType: props.requestType,
+      vendorOrderId: props.vendorOrderId,
+      connectionId: props.connectionId,
+      vendorType: props.vendorType,
+    });
+  }
+
+  /** Fired by VendorIntegrationEventConsumerService when it picks up a Service Bus event. */
+  trackVendorConsumerProcessing(props: {
+    correlationId: string;
+    eventType: string;
+    vendorOrderId: string;
+    origin?: string;
+  }): void {
+    this.trackEvent('VendorConsumer.Processing', {
+      correlationId: props.correlationId,
+      eventType: props.eventType,
+      vendorOrderId: props.vendorOrderId,
+      origin: props.origin ?? 'unknown',
+    });
+  }
+
+  /** Fired when outbound dispatch is skipped because the event originated inbound (echo guard). */
+  trackVendorOutboundSuppressed(props: {
+    correlationId: string;
+    eventType: string;
+    vendorOrderId: string;
+    reason: string;
+  }): void {
+    this.trackEvent('VendorOutbound.Suppressed', {
+      correlationId: props.correlationId,
+      eventType: props.eventType,
+      vendorOrderId: props.vendorOrderId,
+      reason: props.reason,
+    });
+  }
+
+  /** Fired by VendorOutboundDispatcher just before the HTTP call is made. */
+  trackVendorOutboundDispatched(props: {
+    correlationId: string;
+    eventType: string;
+    vendorOrderId: string;
+  }): void {
+    this.trackEvent('VendorOutbound.Dispatched', {
+      correlationId: props.correlationId,
+      eventType: props.eventType,
+      vendorOrderId: props.vendorOrderId,
+    });
+  }
+
+  /** Fired by VendorHttpClient after the HTTP response is received. */
+  trackVendorOutboundHttpResult(props: {
+    correlationId: string;
+    requestType: string;
+    vendorOrderId: string;
+    status: number;
+    ok: boolean;
+    url: string;
+  }): void {
+    this.trackEvent('VendorOutbound.HttpResult', {
+      correlationId: props.correlationId,
+      requestType: props.requestType,
+      vendorOrderId: props.vendorOrderId,
+      status: String(props.status),
+      ok: String(props.ok),
+      url: props.url,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+
   private trackEvent(name: string, properties?: Record<string, string>): void {
     if (!this.enabled || !this.client) return;
 

@@ -53,6 +53,18 @@ import type {
   RuleEvaluationResult,
 } from './provider.types.js';
 
+/**
+ * Wraps a non-2xx HTTP response from MOP. Status is preserved so the
+ * retry classifier can keep 5xx (transient — retry) distinct from 4xx
+ * (deterministic — don't retry).
+ */
+export class MopHttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'MopHttpError';
+  }
+}
+
 export interface MopProviderConfig {
   baseUrl: string;
   /** Per-request timeout in ms. Default 2000. */
@@ -70,6 +82,18 @@ export interface MopProviderConfig {
    * recommended path for AMS → MOP calls until per-consumer JWT auth lands.
    */
   serviceAuthToken?: string;
+  /**
+   * Bounded retry attempts for transient network failures (ECONNRESET,
+   * ECONNREFUSED, EAI_AGAIN) and HTTP 5xx responses. Excludes timeouts
+   * (we've already burned the time budget) and 4xx (request-shape bugs
+   * don't get better on retry). Default 1 (one retry, so up to 2 calls).
+   */
+  retryAttempts?: number;
+  /**
+   * Base delay in ms between retries; the actual wait is base * 2^(attempt).
+   * Default 100ms — at retryAttempts=1, total added latency cap is ~100ms.
+   */
+  retryBaseDelayMs?: number;
 }
 
 export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvider {
@@ -79,6 +103,8 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
   private readonly timeoutMs: number;
   private readonly authHeader: string | null;
   private readonly serviceAuthToken: string | null;
+  private readonly retryAttempts: number;
+  private readonly retryBaseDelayMs: number;
 
   /** Path on MOP for vendor-matching evaluation (when MOP supports it). */
   private static readonly EVAL_PATH = '/api/v1/vendor-matching/evaluate';
@@ -93,6 +119,8 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
     this.timeoutMs = config.timeoutMs ?? 2000;
     this.authHeader = config.authHeader ?? null;
     this.serviceAuthToken = config.serviceAuthToken ?? null;
+    this.retryAttempts = Math.max(0, config.retryAttempts ?? 1);
+    this.retryBaseDelayMs = Math.max(0, config.retryBaseDelayMs ?? 100);
   }
 
   async evaluateForVendors(
@@ -108,16 +136,57 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
       evaluations: contexts.map(ctx => ({ vendor: ctx.vendor, order: ctx.order })),
     };
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.authHeader) headers['Authorization'] = this.authHeader;
+    if (this.serviceAuthToken) headers['X-Service-Auth'] = this.serviceAuthToken;
+
+    const maxAttempts = this.retryAttempts + 1;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.singleEvalCall(url, headers, body, contexts.length, tenantId, attempt);
+      } catch (err) {
+        lastErr = err;
+        // Retry only for transient network errors + 5xx. Timeouts do NOT
+        // retry — we've already burned the per-request budget and a retry
+        // would just double the latency hit. 4xx do not retry — bad
+        // request shapes don't get better on retry.
+        if (attempt < maxAttempts && this.isTransient(err)) {
+          const delay = this.retryBaseDelayMs * Math.pow(2, attempt - 1);
+          this.logger.warn('mop.eval.retry', {
+            tenantId,
+            attempt,
+            nextDelayMs: delay,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Unreachable — the loop always either returns or throws — but TS needs it.
+    throw lastErr;
+  }
+
+  /**
+   * One-shot call to MOP — no retry logic. The outer evaluateForVendors
+   * wraps this in a bounded retry loop for transient network failures only.
+   */
+  private async singleEvalCall(
+    url: string,
+    headers: Record<string, string>,
+    body: unknown,
+    expectedCount: number,
+    tenantId: string,
+    attempt: number,
+  ): Promise<RuleEvaluationResult[]> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const start = Date.now();
     let httpStatus: number | null = null;
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (this.authHeader) headers['Authorization'] = this.authHeader;
-      if (this.serviceAuthToken) headers['X-Service-Auth'] = this.serviceAuthToken;
-
       const response = await fetch(url, {
         method: 'POST',
         headers,
@@ -127,14 +196,14 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
       httpStatus = response.status;
 
       if (!response.ok) {
-        throw new Error(`MOP eval returned ${response.status} ${response.statusText}`);
+        throw new MopHttpError(response.status, `MOP eval returned ${response.status} ${response.statusText}`);
       }
 
       const data = (await response.json()) as { results?: unknown };
 
-      if (!Array.isArray(data.results) || data.results.length !== contexts.length) {
+      if (!Array.isArray(data.results) || data.results.length !== expectedCount) {
         throw new Error(
-          `MOP eval response malformed: expected results[] of length ${contexts.length}, got ${
+          `MOP eval response malformed: expected results[] of length ${expectedCount}, got ${
             Array.isArray(data.results) ? data.results.length : typeof data.results
           }`
         );
@@ -148,11 +217,12 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
       const adjusted = results.filter(r => r.scoreAdjustment !== 0).length;
       this.logger.info('mop.eval.success', {
         tenantId,
-        vendorCount: contexts.length,
+        vendorCount: expectedCount,
         deniedCount: denied,
         adjustedCount: adjusted,
         latencyMs: Date.now() - start,
         httpStatus,
+        attempt,
       });
 
       return results;
@@ -160,9 +230,10 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
       const isTimeout = err?.name === 'AbortError';
       this.logger.error('mop.eval.failure', {
         tenantId,
-        vendorCount: contexts.length,
+        vendorCount: expectedCount,
         latencyMs: Date.now() - start,
         httpStatus,
+        attempt,
         kind: isTimeout ? 'timeout' : err?.constructor?.name ?? 'Error',
         message: err instanceof Error ? err.message : String(err),
       });
@@ -175,6 +246,28 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Classify whether an error is retryable. Conservative — only network
+   * connectivity issues and HTTP 5xx are retried; everything else
+   * (timeouts, 4xx, malformed body) is surfaced immediately.
+   */
+  private isTransient(err: unknown): boolean {
+    if (err instanceof MopHttpError) {
+      return err.status >= 500;
+    }
+    // node-fetch/undici errors expose a cause/code chain for ECONNRESET etc.
+    const code = (err as { code?: string; cause?: { code?: string } })?.code
+      ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (typeof code === 'string') {
+      return code === 'ECONNRESET'
+        || code === 'ECONNREFUSED'
+        || code === 'EAI_AGAIN'
+        || code === 'ETIMEDOUT'
+        || code === 'UND_ERR_SOCKET';
+    }
+    return false;
   }
 
   async isHealthy(): Promise<boolean> {

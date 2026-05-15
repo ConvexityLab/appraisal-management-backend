@@ -328,12 +328,22 @@ export class VendorMatchingEngine {
       originallyRanked: boolean;
       originalScore: number;
     }>;
+    /**
+     * Populated when the rules provider failed and the engine fell open.
+     * Forwarded onto the assignment trace so operators can audit which
+     * runs ran without rules.
+     */
+    rulesProviderError?: { providerName: string; message: string };
   }> {
     const propertyCoords = await this.geocodeAddress(request.propertyAddress);
-    const { eligible, denied } = await this.getEligibleVendors(request, propertyCoords);
+    const eligibilityResult = await this.getEligibleVendors(request, propertyCoords);
+    const { eligible, denied } = eligibilityResult;
+    const rulesProviderError = eligibilityResult.rulesProviderError;
 
     if (eligible.length === 0) {
-      return { matches: [], denied, evaluationsSnapshot: [] };
+      return rulesProviderError
+        ? { matches: [], denied, evaluationsSnapshot: [], rulesProviderError }
+        : { matches: [], denied, evaluationsSnapshot: [] };
     }
 
     // Fetch product once so gradeBonus values come from the product document.
@@ -402,7 +412,9 @@ export class VendorMatchingEngine {
       })),
     ];
 
-    return { matches, denied, evaluationsSnapshot };
+    return rulesProviderError
+      ? { matches, denied, evaluationsSnapshot, rulesProviderError }
+      : { matches, denied, evaluationsSnapshot };
   }
 
   /**
@@ -654,37 +666,10 @@ export class VendorMatchingEngine {
      */
     productGradeLevels?: import('../types/index.js').GradeLevel[],
   ): Promise<VendorMatchResult> {
-    // Hard gate: required capabilities — vendor scored 0 if any are missing
-    if (request.requiredCapabilities?.length) {
-      const vendorCaps: string[] = [...(vendor.capabilities ?? []), ...(vendor.capabilityTags ?? [])];
-      const missing = request.requiredCapabilities.filter(c => !vendorCaps.includes(c));
-      if (missing.length > 0) {
-        const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
-        return {
-          vendorId: vendor.id,
-          matchScore: 0,
-          scoreBreakdown: zeroComponents,
-          distance: null,
-          estimatedTurnaround: 0,
-          estimatedFee: null,
-          matchReasons: [`Missing required capabilities: ${missing.join(', ')}`],
-          vendor: {
-            id: vendor.id,
-            name: vendor.name || vendor.businessName,
-            tier: 'BRONZE' as const,
-            overallScore: 0
-          },
-          explanation: {
-            vendorId: vendor.id,
-            scoreComponents: zeroComponents,
-            ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: [], scoreAdjustment: 0 },
-            baseScore: 0,
-            finalScore: 0,
-            weightsVersion: WEIGHTS_VERSION,
-          }
-        };
-      }
-    }
+    // Capability hard gate moved upstream to getEligibleVendors (HIGH-fix
+    // hoist: missing-capability vendors must land in denied[] so analytics
+    // see them). scoreVendor now assumes all required capabilities are
+    // satisfied — getEligibleVendors filters first.
 
     // Get vendor data
     const [performance, availability] = await Promise.all([
@@ -1099,6 +1084,14 @@ export class VendorMatchingEngine {
   ): Promise<{
     eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>;
     denied: DeniedVendorEntry[];
+    /**
+     * Populated when the rules provider threw and the engine had to
+     * fail-open (treat all vendors as rule-eligible). Surfaced so the
+     * assignment-trace can show "this run bypassed the rules engine"
+     * to operators — without this, a silent fail-open could route an
+     * order in a state we'd normally deny.
+     */
+    rulesProviderError?: { providerName: string; message: string };
   }> {
     // Extract state from address. May return undefined if the address
     // can't be parsed; we then skip the state filter (with a warning) so
@@ -1154,6 +1147,32 @@ export class VendorMatchingEngine {
       );
     }
 
+    // Hard gate: required capabilities. Vendors missing any requested
+    // capability are routed into `denied[]` so analytics counting
+    // denyReasons (and inferNoMatchReason on the orchestrator) see them.
+    // Previously this gate lived in scoreVendor, which returned a 0-score
+    // entry in the eligible list — that hid the denial from the trace.
+    const capabilityDenied: DeniedVendorEntry[] = [];
+    if (request.requiredCapabilities?.length) {
+      const required = request.requiredCapabilities;
+      const survivors: any[] = [];
+      for (const v of vendors) {
+        const vendorCaps: string[] = [...(v.capabilities ?? []), ...(v.capabilityTags ?? [])];
+        const missing = required.filter(c => !vendorCaps.includes(c));
+        if (missing.length > 0) {
+          capabilityDenied.push({
+            vendorId: v.id,
+            vendorName: v.name || v.businessName || v.id,
+            denyReasons: [`Missing required capabilities: ${missing.join(', ')}`],
+            appliedRuleIds: [],
+          });
+          continue;
+        }
+        survivors.push(v);
+      }
+      vendors = survivors;
+    }
+
     // Phase 2: build all per-vendor contexts up front, then evaluate them in
     // a single batch via the rules provider. The provider may be homegrown
     // (Cosmos + in-process apply), MOP (HTTP), or MOP-with-fallback.
@@ -1182,16 +1201,23 @@ export class VendorMatchingEngine {
     }));
 
     let ruleResults: RuleEvaluationResult[];
+    let rulesProviderError: { providerName: string; message: string } | undefined;
     try {
       ruleResults = await this.rulesProvider.evaluateForVendors(request.tenantId, contexts);
     } catch (err) {
       // Fail open: if the provider can't be reached at all (and its own
       // fallback chain — if any — also failed), proceed without rules. The
       // engine's pre-rules hard gates still apply.
+      // The envelope below is surfaced on the assignment trace so this
+      // outage is visible to operators (was previously silent — a long
+      // MOP outage could route orders into a state we'd normally deny
+      // and no one would know rules didn't run).
+      const message = err instanceof Error ? err.message : String(err);
       this.logger.error('Rules provider failed; continuing without rules', {
         provider: this.rulesProvider.name,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
+      rulesProviderError = { providerName: this.rulesProvider.name, message };
       ruleResults = contexts.map(() => ({
         eligible: true,
         scoreAdjustment: 0,
@@ -1201,7 +1227,10 @@ export class VendorMatchingEngine {
     }
 
     const eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
-    const denied: DeniedVendorEntry[] = [];
+    // Seed with capability-gate denials so the rules-engine loop's denied
+    // entries are appended to the same list, preserving downstream ordering
+    // semantics (capability gate runs before rules).
+    const denied: DeniedVendorEntry[] = [...capabilityDenied];
 
     for (let i = 0; i < vendors.length; i++) {
       const vendor = vendors[i];
@@ -1228,7 +1257,9 @@ export class VendorMatchingEngine {
       eligible.push({ vendor, distance, ruleResult });
     }
 
-    return { eligible, denied };
+    return rulesProviderError
+      ? { eligible, denied, rulesProviderError }
+      : { eligible, denied };
   }
 
   /**

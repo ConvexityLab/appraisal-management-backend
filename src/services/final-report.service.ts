@@ -404,6 +404,31 @@ export class FinalReportService {
       // ── URAR / DVR path ───────────────────────────────────────────────────
       const xmlGenerator = new MismoXmlGenerator();
       const mismoReport = this._buildMismoReport(ctx, qcReview, report);
+
+      // Overlay URAR v1.3 sections from the canonical doc (stored in `reporting`
+      // container at finalization) so addV13Extensions in MismoXmlGenerator has
+      // the real data rather than undefined stubs from order-level metadata.
+      const canonicalDocs = await this.db.queryDocuments<CanonicalReportDocument>(
+        this.REPORTING_CONTAINER,
+        'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+        [{ name: '@orderId', value: orderId }],
+      );
+      const canonicalDoc = canonicalDocs[0];
+      if (canonicalDoc) {
+        const sp = mismoReport.subjectProperty as any;
+        sp.disasterMitigation     = canonicalDoc.disasterMitigation;
+        sp.energyEfficiency       = canonicalDoc.energyEfficiency;
+        sp.manufacturedHome       = canonicalDoc.manufacturedHome;
+        sp.vehicleStorage         = canonicalDoc.vehicleStorage;
+        sp.outbuildings           = canonicalDoc.outbuildings;
+        sp.amenities              = canonicalDoc.amenities;
+        sp.overallQualityCondition = canonicalDoc.overallQualityCondition;
+        sp.functionalObsolescence = canonicalDoc.functionalObsolescence;
+        sp.subjectListings        = canonicalDoc.subjectListings;
+        sp.revisionHistory        = (canonicalDoc as any).revisionHistory;
+        sp.reconsiderationOfValue = (canonicalDoc as any).reconsiderationOfValue;
+      }
+
       xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
     }
 

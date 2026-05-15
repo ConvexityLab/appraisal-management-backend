@@ -17,6 +17,10 @@ import {
   CanonicalComp,
   CanonicalAdjustments,
   CanonicalAppraiserInfo,
+  CanonicalCondoDetail,
+  CanonicalPudDetail,
+  CanonicalHoaDetail,
+  CanonicalManufacturedHome,
   HighestAndBestUse,
   ValueType,
 } from '@l1/shared-types';
@@ -186,6 +190,131 @@ function buildCompContext(comp: CanonicalComp | null | undefined, slotLabel: str
     locationRating:       a(comp.locationRating),
     adjustments:          buildAdjContext(comp.adjustments),
     adjSign:              buildAdjSignContext(comp.adjustments),
+  };
+}
+
+// ── Section context builders (Phases B, C, D — URAR_CONDITIONAL_RENDERING_PLAN.md) ──────────
+
+/**
+ * Phase B — Build Handlebars context for the condo project analysis section (Form 1073).
+ * Maps CanonicalCondoDetail + CanonicalHoaDetail → flat object for urar-v2.hbs.
+ * Returns null when no condoDetail is present (guard: {{#if hasCondoDetail}}).
+ */
+function buildCondoDetailContext(
+  detail: CanonicalCondoDetail | null | undefined,
+  hoa:    CanonicalHoaDetail   | null | undefined,
+): Record<string, unknown> | null {
+  if (!detail) return null;
+  return {
+    projectName:                  a(detail.projectName),
+    projectType:                  a(detail.projectType),
+    projectInfoDataSource:        a(detail.projectInfoDataSource),
+    totalUnits:                   num(detail.totalUnits),
+    unitsSold:                    num(detail.unitsSold),
+    unitsForSale:                 num(detail.unitsForSale),
+    unitsRented:                  num(detail.unitsRented),
+    ownerOccupancyPct:            pct(detail.ownerOccupancyPct),
+    singleEntityOwnershipPct:     pct(detail.singleEntityOwnershipPct),
+    // FNMA LL-2022-01: single entity > 10% of total units is a concentration flag
+    singleEntityConcentrationFlag: (detail.singleEntityOwnershipPct ?? 0) > 10,
+    isPhased:                     detail.isPhased ?? false,
+    commonElementsComplete:       detail.commonElementsComplete ?? false,
+    pendingLitigation:            detail.pendingLitigation ?? false,
+    pendingLitigationDetails:     a(detail.pendingLitigationDetails),
+    hasSpecialAssessment:         !!detail.specialAssessmentDetails || (detail.specialAssessment ?? 0) > 0,
+    specialAssessment:            currency(detail.specialAssessment),
+    specialAssessmentDetails:     a(detail.specialAssessmentDetails),
+    developerControlled:          detail.developerControlled ?? false,
+    unitFloorLevel:               num(detail.unitFloorLevel),
+    buildingTotalFloors:          num(detail.buildingTotalFloors),
+    nonResidentialUsePct:         pct(detail.nonResidentialUsePct),
+    isHotelMotel:                 detail.isHotelMotel ?? false,
+    hasIncomeRestrictions:        detail.hasIncomeRestrictions ?? false,
+    ageRestricted:                detail.ageRestrictedCommunity ?? false,
+    groundRent:                   detail.groundRent ?? false,
+    groundRentAmount:             currency(detail.groundRentAmount),
+    comments:                     a(detail.comments),
+    // HOA block — present when CanonicalHoaDetail was provided
+    hoaName:                      hoa ? a(hoa.hoaName) : '',
+    hoaFee:                       hoa ? currency(hoa.hoaFee) : '',
+    hoaFrequency:                 hoa ? a(hoa.hoaFrequency) : '',
+    hoaIncludes:                  hoa ? a(hoa.hoaIncludes) : '',
+    specialAssessmentMonthly:     hoa ? currency(hoa.specialAssessmentAmount) : '',
+    managementCompany:            hoa ? a(hoa.managementCompany) : '',
+    reserveFundBalance:           hoa ? currency(hoa.reserveFundBalance) : '',
+    reserveFundAdequacy:          hoa ? a(hoa.reserveFundAdequacy) : '',
+    delinquentDues60Day:          hoa ? num(hoa.delinquentDues60Day) : '',
+    masterInsurancePremium:       hoa ? currency(hoa.masterInsurancePremium) : '',
+    masterInsuranceCoverage:      hoa ? a(hoa.masterInsuranceCoverage) : '',
+    fidelityBondCoverage:         hoa ? currency(hoa.fidelityBondCoverage) : '',
+  };
+}
+
+/**
+ * Phase C — Build Handlebars context for the PUD project analysis section.
+ * Maps CanonicalPudDetail + CanonicalHoaDetail → flat object for urar-v2.hbs.
+ * Returns null when no pudDetail is present (guard: {{#if hasPudDetail}}).
+ */
+function buildPudDetailContext(
+  detail: CanonicalPudDetail | null | undefined,
+  hoa:    CanonicalHoaDetail  | null | undefined,
+): Record<string, unknown> | null {
+  if (!detail) return null;
+  return {
+    projectName:                  a(detail.projectName),
+    pudType:                      a(detail.pudType),
+    totalUnits:                   num(detail.totalUnits),
+    totalPhases:                  num(detail.totalPhases),
+    unitsSold:                    num(detail.unitsSold),
+    unitsForSale:                 num(detail.unitsForSale),
+    unitsRented:                  num(detail.unitsRented),
+    ownerOccupancyPct:            pct(detail.ownerOccupancyPct),
+    developerControlled:          detail.developerControlled ?? false,
+    commonElementsComplete:       detail.commonElementsComplete ?? false,
+    isPhased:                     detail.isPhased ?? false,
+    projectComplete:              detail.projectComplete ?? false,
+    observedDeficiencies:         detail.observedDeficiencies ?? false,
+    observedDeficienciesDescription: a(detail.observedDeficienciesDescription),
+    comments:                     a(detail.comments),
+    // HOA block
+    hoaFee:                       hoa ? currency(hoa.hoaFee) : '',
+    hoaFrequency:                 hoa ? a(hoa.hoaFrequency) : '',
+    hoaIncludes:                  hoa ? a(hoa.hoaIncludes) : '',
+    managementCompany:            hoa ? a(hoa.managementCompany) : '',
+    reserveFundBalance:           hoa ? currency(hoa.reserveFundBalance) : '',
+  };
+}
+
+/**
+ * Phase D — Build Handlebars context for the manufactured home addendum (Form 1004C).
+ * Maps CanonicalManufacturedHome → flat object for urar-v2.hbs.
+ * Returns null when no manufacturedHome is present (guard: {{#if hasManufacturedHome}}).
+ */
+function buildManufacturedHomeContext(
+  mfh: CanonicalManufacturedHome | null | undefined,
+): Record<string, unknown> | null {
+  if (!mfh) return null;
+  const totalCostRaw = (mfh.invoiceCost ?? 0)
+    + (mfh.deliveryCost ?? 0)
+    + (mfh.installationCost ?? 0)
+    + (mfh.setupCost ?? 0);
+  return {
+    hudDataPlatePresent:       mfh.hudDataPlatePresent ?? false,
+    hudLabelNumbers:           a(mfh.hudLabelNumbers),
+    manufacturer:              a(mfh.manufacturer),
+    model:                     a(mfh.model),
+    serialNumber:              a(mfh.serialNumber),
+    yearManufactured:          num(mfh.yearManufactured),
+    widthType:                 a(mfh.widthType),
+    invoiceCost:               currency(mfh.invoiceCost),
+    deliveryCost:              currency(mfh.deliveryCost),
+    installationCost:          currency(mfh.installationCost),
+    setupCost:                 currency(mfh.setupCost),
+    // Sum of all four cost components for the "Total Cost New" row
+    totalCost:                 totalCostRaw > 0 ? currency(totalCostRaw) : '',
+    foundationType:            a(mfh.foundationType),
+    factoryBuiltCertification: a(mfh.factoryBuiltCertification),
+    narrative:                 a(mfh.narrative),
   };
 }
 
@@ -500,6 +629,16 @@ export class Urar1004Mapper implements IFieldMapper {
       locationRating:       a(subject?.locationRating),
       additionalFeatures:   a(subject?.additionalFeatures),
       hpiTrend:             a(subject?.hpiTrend),
+      // ── UAD 3.6 — Component Update Status & ADU ───────────────────────────
+      accessoryDwellingUnits: subject?.accessoryDwellingUnits != null ? num(subject.accessoryDwellingUnits) : null,
+      constructionStage:    a(subject?.constructionStage),
+      kitchenUpdateStatus:  subject?.kitchenUpdateStatus
+        ? { timeFrame: a(subject.kitchenUpdateStatus.timeFrame), quality: a(subject.kitchenUpdateStatus.quality), condition: a(subject.kitchenUpdateStatus.condition) }
+        : null,
+      bathroomUpdateStatus: subject?.bathroomUpdateStatus
+        ? { timeFrame: a(subject.bathroomUpdateStatus.timeFrame), quality: a(subject.bathroomUpdateStatus.quality), condition: a(subject.bathroomUpdateStatus.condition) }
+        : null,
+      hasUpdateStatus: !!(subject?.kitchenUpdateStatus || subject?.bathroomUpdateStatus),
     };
 
     // ── Report metadata context ───────────────────────────────────────────────
@@ -565,6 +704,51 @@ export class Urar1004Mapper implements IFieldMapper {
     const eaList: string[] = reconciliation?.extraordinaryAssumptions?.filter((s): s is string => !!s) ?? [];
     const hcList: string[] = reconciliation?.hypotheticalConditions?.filter((s): s is string => !!s) ?? [];
 
+    // ── Form-type / assignment-type flags (Phase A — URAR_CONDITIONAL_RENDERING_PLAN.md) ──────
+    // All reportType checks use the full AppraisalFormType enum string ('FORM_1073', not '1073').
+    const propertyTypeLower = (subject?.propertyType ?? '').toLowerCase();
+    const isCondo = doc.reportType === 'FORM_1073'
+                    || doc.reportType === 'FORM_1033'
+                    || propertyTypeLower.includes('condo')
+                    || propertyTypeLower.includes('co-op')
+                    || propertyTypeLower.includes('cooperative');
+    const isManufactured = doc.reportType === 'FORM_1004C'
+                    || subject?.constructionMethod === 'Manufactured';
+    const isPUD = propertyTypeLower.includes('pud')
+                    || propertyTypeLower.includes('planned unit');
+    const isExteriorOnly = doc.reportType === 'FORM_2055'
+                    || /exterior/i.test(doc.scopeOfWork?.inspectionType ?? '');
+    const isNewConstruction = typeof subject?.yearBuilt === 'number'
+                    && subject.yearBuilt >= new Date().getFullYear() - 1;
+
+    // Short display form number ('1073') — separate from AppraisalFormType enum ('FORM_1073').
+    const gseFormNumber = isCondo        ? '1073'
+                        : isManufactured  ? '1004C'
+                        : isExteriorOnly  ? '2055'
+                        : '1004';
+    const gseFormLabel  = isCondo        ? 'Individual Condominium Unit Appraisal Report \u2014 Form 1073'
+                        : isManufactured  ? 'Manufactured Home Appraisal Report \u2014 Form 1004C'
+                        : isExteriorOnly  ? 'Exterior-Only Inspection Residential Appraisal Report \u2014 Form 2055'
+                        : 'Uniform Residential Appraisal Report \u2014 Form 1004';
+
+    // Phase E — Scope-of-work statement (drives {{scopeStatement}} in template)
+    const approachTypes: string[] = ['Sales Comparison'];
+    if (costCtx) approachTypes.push('Cost');
+    if (incomeCtx) approachTypes.push('Income');
+    const approachPhrase = approachTypes.length === 1
+      ? 'Sales Comparison Approach'
+      : approachTypes.slice(0, -1).join(', ') + ', and ' + approachTypes[approachTypes.length - 1] + ' Approaches';
+    const inspectionPrefix = isExteriorOnly
+      ? 'Exterior-only inspection performed'
+      : 'Interior and exterior inspection performed';
+    const scopeStatement = [
+      inspectionPrefix,
+      m?.inspectionDate ? shortDate(m.inspectionDate) + '.' : 'date not reported.',
+      'Public records searched. MLS sales data reviewed.',
+      approachPhrase + ' developed.',
+      'Market conditions analyzed per Fannie Mae Market Conditions Addendum guidance.',
+    ].join(' ');
+
     // ── Final context object ──────────────────────────────────────────────────
     return {
       reportId:            doc.reportId,
@@ -598,9 +782,199 @@ export class Urar1004Mapper implements IFieldMapper {
       hasCostDepreciationBreakdown,
       hasRentComps:        ((incomeCtx as { rentComps?: unknown[] } | null)?.rentComps?.length ?? 0) > 0,
       hasSecondaryComps:   secondaryComps.some(c => !(c as { empty?: boolean }).empty),
+      // ── Form-type flags (Phase A — URAR_CONDITIONAL_RENDERING_PLAN.md) ──────
+      isCondo,
+      isManufactured,
+      isPUD,
+      isExteriorOnly,
+      isNewConstruction,
+      gseFormNumber,
+      gseFormLabel,
+      hasCondoDetail:      isCondo && !!subject?.condoDetail,
+      hasPudDetail:        isPUD   && !!subject?.pudDetail,
+      hasHoaDetail:        !!(subject?.hoaDetail),
+      hasManufacturedHome: isManufactured && !!doc.manufacturedHome,
+      // Section context objects (null when the section does not apply)
+      condoDetail:         isCondo       ? buildCondoDetailContext(subject?.condoDetail, subject?.hoaDetail) : null,
+      pudDetail:           isPUD         ? buildPudDetailContext(subject?.pudDetail, subject?.hoaDetail)     : null,
+      manufacturedHome:    isManufactured ? buildManufacturedHomeContext(doc.manufacturedHome)               : null,
+      // Cost approach label changes for new construction (Phase F)
+      costApproachLabel: isNewConstruction
+        ? 'Cost Approach to Value (Required \u2014 New Construction per FNMA B4-1.3-05)'
+        : 'Cost Approach to Value (Not Required by Fannie Mae)',
+      costApproachRequiredWarning: isNewConstruction && !costCtx
+        ? 'WARNING: Cost approach data is required for new construction (FNMA B4-1.3-05) but was not provided.'
+        : null,
+      // ── UAD 3.6 — Subject listings & Days on Market ─────────────────────
+      subjectListings: (doc.subjectListings ?? []).map(sl => ({
+        dataSource:             a(sl.dataSource),
+        listingStatus:          a(sl.listingStatus),
+        listingType:            a(sl.listingType),
+        listingId:              a(sl.listingId),
+        startDate:              shortDate(sl.startDate),
+        endDate:                shortDate(sl.endDate),
+        daysOnMarket:           sl.daysOnMarket != null ? num(sl.daysOnMarket) : '',
+        startingListPrice:      currency(sl.startingListPrice),
+        currentOrFinalListPrice: currency(sl.currentOrFinalListPrice),
+      })),
+      hasSubjectListings: (doc.subjectListings?.length ?? 0) > 0,
+      totalDaysOnMarket:  (doc.subjectListings ?? []).reduce((sum, sl) => sum + (sl.daysOnMarket ?? 0), 0),
+      daysOnMarket:       doc.subjectListings?.[0]?.daysOnMarket != null ? num(doc.subjectListings[0].daysOnMarket) : '',
+      // ── UAD 3.6 — Defects (URAR Page 4 / Page 37) ────────────────────────
+      defects: (subject?.defects ?? []).map(d => ({
+        feature:              a(d.feature),
+        location:             a(d.location),
+        description:          a(d.description),
+        affectsSoundness:     d.affectsSoundnessOrStructuralIntegrity,
+        recommendedAction:    a(d.recommendedAction),
+        estimatedCostToRepair: currency(d.estimatedCostToRepair),
+      })),
+      hasDefects: (subject?.defects?.length ?? 0) > 0,
+      // ── UAD 3.6 — Overall Quality & Condition ────────────────────────────
+      overallQualityCondition: doc.overallQualityCondition ?? null,
+      hasOverallQC: !!doc.overallQualityCondition,
+      // Phase E
+      scopeStatement,
       generatedAt:         new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
       }),
+
+      // ── URAR v1.3 — Disaster Mitigation (Page 9) ─────────────────────────
+      disasterMitigationItems: (doc.disasterMitigation?.items ?? []).map(item => ({
+        disasterCategory:  a(item.disasterCategory),
+        mitigationFeature: a(item.mitigationFeature),
+        detail:            a(item.detail),
+      })),
+      disasterMitigationNarrative: a(doc.disasterMitigation?.narrative),
+      disasterMitigationPrograms:  a(doc.disasterMitigation?.communityPrograms),
+      hasDisasterMitigation: (doc.disasterMitigation?.items?.length ?? 0) > 0 || !!doc.disasterMitigation?.narrative,
+
+      // ── URAR v1.3 — Energy Efficiency & Green Features (Page 10) ─────────
+      energyEfficiencyFeatures: (doc.energyEfficiency?.features ?? []).map(f => ({
+        feature:       a(f.feature),
+        detail:        a(f.detail),
+        impact:        a(f.impact),
+      })),
+      energyEfficiencyNarrative:     a(doc.energyEfficiency?.narrative),
+      energyEfficiencyCertification: a(doc.energyEfficiency?.buildingCertification),
+      energyEfficiencyRatingValue:   doc.energyEfficiency?.energyEfficiencyRating != null
+        ? num(doc.energyEfficiency.energyEfficiencyRating)
+        : '',
+      hasEnergyEfficiencySection: (doc.energyEfficiency?.features?.length ?? 0) > 0
+        || !!doc.energyEfficiency?.narrative
+        || !!doc.energyEfficiency?.buildingCertification,
+
+      // ── URAR v1.3 — Functional Obsolescence Items (standalone) ───────────
+      functionalObsolescenceItems: (doc.functionalObsolescence ?? []).map(fo => ({
+        feature:     a(fo.feature),
+        description: a(fo.description),
+        detail:      a(fo.detail),
+        impact:      a(fo.impact),
+        curable:     fo.curable !== false,
+        comment:     a(fo.comment),
+      })),
+      hasFunctionalObsolescenceItems: (doc.functionalObsolescence?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Vehicle Storage (Page 17) ────────────────────────────
+      vehicleStorages: (doc.vehicleStorage ?? []).map(vs => ({
+        type:           a(vs.type),
+        spaces:         vs.spaces != null ? num(vs.spaces) : '',
+        detail:         a(vs.detail),
+        impact:         a(vs.impact),
+        surfaceArea:    vs.surfaceArea != null ? num(vs.surfaceArea) : '',
+        yearBuilt:      vs.yearBuilt != null ? num(vs.yearBuilt) : '',
+        interiorStorage: vs.interiorStorage ?? false,
+      })),
+      hasVehicleStorage: (doc.vehicleStorage?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Outbuildings (Page 16) ───────────────────────────────
+      outbuildings: (doc.outbuildings ?? []).map(ob => ({
+        type:          a(ob.type),
+        gba:           ob.gba != null ? num(ob.gba) : '',
+        condition:     a(ob.condition),
+        quality:       a(ob.quality),
+        yearBuilt:     ob.yearBuilt != null ? num(ob.yearBuilt) : '',
+        comment:       a(ob.comment),
+      })),
+      hasOutbuildings: (doc.outbuildings?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Property Amenities (Page 18) ─────────────────────────
+      amenities: (doc.amenities ?? []).map(am => ({
+        category: a(am.category),
+        feature:  a(am.feature),
+        detail:   a(am.detail),
+        impact:   a(am.impact),
+        comment:  a(am.comment),
+      })),
+      hasAmenities: (doc.amenities?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Analyzed Properties Not Used (Pages 29–30) ──────────
+      analyzedPropertiesNotUsed: (doc.analyzedPropertiesNotUsed ?? []).map(p => ({
+        address:      a(p.address),
+        salePrice:    currency(p.salePrice),
+        saleDate:     shortDate(p.saleDate),
+        status:       a(p.status),
+        reasonNotUsed: a(p.reasonNotUsed),
+        comment:      a(p.comment),
+      })),
+      hasAnalyzedNotUsed: (doc.analyzedPropertiesNotUsed?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Prior Transfers (detailed) ───────────────────────────
+      priorTransfers: (doc.priorTransfers ?? []).map(pt => ({
+        transactionDate: shortDate(pt.transactionDate),
+        salePrice:       currency(pt.salePrice),
+        seller:          a(pt.seller),
+        buyer:           a(pt.buyer),
+        transferType:    a(pt.transferType),
+        dataSource:      a(pt.dataSource),
+        isArmsLength:    pt.isArmsLength ?? false,
+        daysOnMarket:    pt.daysOnMarket != null ? num(pt.daysOnMarket) : '',
+        notes:           a(pt.notes),
+      })),
+      hasPriorTransfers: (doc.priorTransfers?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Revision History ─────────────────────────────────────
+      revisionHistory: (doc.revisionHistory ?? []).map(rv => ({
+        revisionDate: shortDate(rv.revisionDate),
+        urarSection:  a(rv.urarSection),
+        description:  a(rv.description),
+      })),
+      hasRevisionHistory: (doc.revisionHistory?.length ?? 0) > 0,
+
+      // ── URAR v1.3 — Reconsideration of Value ─────────────────────────────
+      reconsiderationOfValue: doc.reconsiderationOfValue
+        ? {
+            type:        a(doc.reconsiderationOfValue.type),
+            date:        shortDate(doc.reconsiderationOfValue.date),
+            result:      a(doc.reconsiderationOfValue.result),
+            commentary:  a(doc.reconsiderationOfValue.commentary),
+          }
+        : null,
+      hasReconsideration: !!doc.reconsiderationOfValue,
+
+      // ── URAR v1.3 — Assignment Conditions ────────────────────────────────
+      assignmentConditions: doc.assignmentConditions
+        ? {
+            intendedUse:                 a(doc.assignmentConditions.intendedUse),
+            intendedUsers:               a(doc.assignmentConditions.intendedUsers),
+            extraordinaryAssumptions:    doc.assignmentConditions.extraordinaryAssumptions ?? [],
+            hypotheticalConditions:      doc.assignmentConditions.hypotheticalConditions ?? [],
+            subjectToConditions:         doc.assignmentConditions.subjectToConditions ?? [],
+            jurisdictionalExceptions:    doc.assignmentConditions.jurisdictionalExceptions ?? [],
+            marketValueDefinition:       a(doc.assignmentConditions.marketValueDefinition),
+            marketValueDefinitionSource: a(doc.assignmentConditions.marketValueDefinitionSource),
+            propertyRightsAppraised:     a(doc.assignmentConditions.propertyRightsAppraised),
+          }
+        : null,
+      hasAssignmentConditions: !!doc.assignmentConditions,
+
+      // ── URAR v1.3 — Additional Comments ──────────────────────────────────
+      additionalComments: (doc.additionalComments ?? []).map(c => ({
+        sectionRef: a(c.sectionRef),
+        heading:    a(c.heading),
+        body:       a(c.body),
+      })),
+      hasAdditionalComments: (doc.additionalComments?.length ?? 0) > 0,
 
       // ── Capability-5: AI insights + enrichment ────────────────────
       aiInsights:      buildAiInsightsContext(doc),

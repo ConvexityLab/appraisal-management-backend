@@ -165,7 +165,50 @@ export const URAR_1004_BASE: ReportConfigBaseDocument = {
         { key: 'computed_decision',      label: 'Computed Decision',              type: 'text',   required: false, visible: true, order: 3 },
       ],
     },
+    // ── Form-type conditional sections — hidden by default, enabled via product delta ──────────
+    //
+    // `project-info`: collects CanonicalCondoDetail + CanonicalPudDetail + CanonicalHoaDetail.
+    // - Enabled by: delta-urar-1073 (URAR_1073 product) setting visible: true
+    // - Also data-driven via visibleWhen: show when reportType is FORM_1073 OR condoDetail present
+    // - Rendered by: ProjectInfoSection.tsx (self-contained, reads from Redux selectDraftCondoDetail)
+    {
+      key: 'project-info',
+      label: 'Project Information',
+      order: 35,
+      required: false,
+      visible: false,
+      templateBlockKey: 'project-info',
+      visibleWhen: {
+        or: [
+          { '==': [{ var: 'reportType' }, 'FORM_1073'] },
+          { '==': [{ var: 'reportType' }, 'FORM_1033'] },
+          { in: ['ondo', { var: 'subject.propertyType' }] },
+          { in: ['PUD',  { var: 'subject.propertyType' }] },
+          { '!=': [{ var: 'subject.condoDetail' }, null] },
+        ],
+      },
+      fields: [],  // All field editing is handled by ProjectInfoSection.tsx component
+    },
+    // `manufactured-home`: collects CanonicalManufacturedHome.
+    // - Enabled by: delta-full-1004C (FULL_1004C product) setting visible: true
+    // - Also data-driven via visibleWhen: show when reportType is FORM_1004C OR constructionMethod Manufactured
+    // - Rendered by: ManufacturedHomeSection.tsx (self-contained, reads from Redux)
+    {
+      key: 'manufactured-home',
+      label: 'Manufactured Home',
+      order: 36,
+      required: false,
+      visible: false,
+      templateBlockKey: 'manufactured-home',
+      visibleWhen: {
+        or: [
+          { '==': [{ var: 'reportType' }, 'FORM_1004C'] },
+          { '==': [{ var: 'subject.constructionMethod' }, 'Manufactured'] },
+        ],
+      },
+      fields: [],  // All field editing is handled by ManufacturedHomeSection.tsx component
+    },
   ],
   createdAt: '2026-05-11T00:00:00.000Z',
-  updatedAt: '2026-05-11T00:00:00.000Z',
+  updatedAt: '2026-05-13T00:00:00.000Z',
 };

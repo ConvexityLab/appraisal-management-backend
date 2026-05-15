@@ -438,6 +438,11 @@ export class AutoAssignmentOrchestratorService {
     // on the assignment-trace doc so Sandbox replay can re-evaluate against
     // the SAME facts that drove the original decision.
     let evaluationsSnapshot: Awaited<ReturnType<typeof this.matchingEngine.findMatchingVendorsAndDenied>>['evaluationsSnapshot'] = [];
+    // When the rules provider fell open during this run, the engine surfaces
+    // a {providerName, message} envelope so the trace doc can flag the run
+    // as having bypassed rules. Operators query for these to audit silent
+    // fail-open events.
+    let rulesProviderError: { providerName: string; message: string } | undefined;
     try {
       const result = await this.matchingEngine.findMatchingVendorsAndDenied(
         {
@@ -464,6 +469,7 @@ export class AutoAssignmentOrchestratorService {
       matchResults = result.matches;
       deniedVendors = result.denied;
       evaluationsSnapshot = result.evaluationsSnapshot;
+      rulesProviderError = result.rulesProviderError;
 
       rankedVendors = matchResults.map((r) => ({
         vendorId: r.vendorId,
@@ -500,6 +506,7 @@ export class AutoAssignmentOrchestratorService {
         deniedVendors,
         matchResults: [],
         evaluationsSnapshot,
+        ...(rulesProviderError ? { rulesProviderError } : {}),
         outcome: 'escalated',
         selectedVendorId: null,
       });
@@ -569,6 +576,7 @@ export class AutoAssignmentOrchestratorService {
         deniedVendors,
         matchResults,
         evaluationsSnapshot,
+        ...(rulesProviderError ? { rulesProviderError } : {}),
         outcome,
         selectedVendorId: top?.vendorId ?? null,
       });
@@ -1401,6 +1409,12 @@ export class AutoAssignmentOrchestratorService {
     matchResults: VendorMatchResult[];
     /** Phase D.faithful — frozen facts the engine evaluated. */
     evaluationsSnapshot?: AssignmentTraceDocument['evaluationsSnapshot'];
+    /**
+     * Set when the rules provider failed and the engine fell open during
+     * this run. Recorded on the trace so operators can audit which
+     * assignments bypassed rule evaluation.
+     */
+    rulesProviderError?: { providerName: string; message: string };
     outcome: AssignmentTraceDocument['outcome'];
     selectedVendorId: string | null;
   }): Promise<void> {
@@ -1450,6 +1464,7 @@ export class AutoAssignmentOrchestratorService {
       ...(args.evaluationsSnapshot && args.evaluationsSnapshot.length > 0
         ? { evaluationsSnapshot: args.evaluationsSnapshot }
         : {}),
+      ...(args.rulesProviderError ? { rulesProviderError: args.rulesProviderError } : {}),
     };
 
     await this.traceRecorder.record(trace);

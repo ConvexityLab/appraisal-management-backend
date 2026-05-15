@@ -101,6 +101,18 @@ export interface AssignmentTraceDocument {
     originalScore: number;
   }>;
 
+  /**
+   * Populated when the rules provider failed and the engine fell open
+   * (treated all vendors as rule-eligible). Lets operators audit which
+   * assignments ran without rule evaluation — silent fail-open could
+   * route an order in a state we'd normally deny, so this surface is
+   * how that becomes visible after the fact.
+   */
+  rulesProviderError?: {
+    providerName: string;
+    message: string;
+  };
+
   // ── Phase M.1 — operator override fields (additive) ──────────────────────
   /** New disposition the operator chose (e.g., 'manual_assign' or another vendor id). */
   overrideOutcome?: string;

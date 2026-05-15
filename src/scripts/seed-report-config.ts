@@ -19,6 +19,7 @@ import { CosmosClient } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { URAR_1004_BASE } from '../seed-data/report-config/urar-1004-base.js';
 import { DELTA_FULL_1004 } from '../seed-data/report-config/delta-full-1004.js';
+import { DELTA_FULL_1004C } from '../seed-data/report-config/delta-full-1004c.js';
 import { DELTA_URAR_1073 } from '../seed-data/report-config/delta-urar-1073.js';
 import { DELTA_BPO } from '../seed-data/report-config/delta-bpo.js';
 import { DELTA_DRIVE_BY_2055 } from '../seed-data/report-config/delta-drive-by-2055.js';
@@ -56,8 +57,9 @@ async function main(): Promise<void> {
   await upsert(BASE_CONTAINER, URAR_1004_BASE);
 
   console.log('\n[report-config-deltas]');
-  // Product deltas (8 products)
+  // Product deltas (9 products)
   await upsert(DELTAS_CONTAINER, DELTA_FULL_1004);
+  await upsert(DELTAS_CONTAINER, DELTA_FULL_1004C);
   await upsert(DELTAS_CONTAINER, DELTA_URAR_1073);
   await upsert(DELTAS_CONTAINER, DELTA_BPO);
   await upsert(DELTAS_CONTAINER, DELTA_DRIVE_BY_2055);

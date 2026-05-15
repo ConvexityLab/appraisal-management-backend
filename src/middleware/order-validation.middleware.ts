@@ -131,7 +131,69 @@ export function validateCancelOrder() {
   ];
 }
 
+/**
+ * Validates the body of POST /api/orders/:orderId/hold.
+ * reason is optional; if provided it must be a non-empty string.
+ */
+export function validateHoldOrder() {
+  return [
+    param('orderId')
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('orderId is required'),
+    body('reason')
+      .optional()
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('reason must be a non-empty string when provided'),
+    handleValidationErrors,
+  ];
+}
+
+/**
+ * Validates the body of POST /api/orders/:orderId/resume.
+ * reason is optional; if provided it must be a non-empty string.
+ */
+export function validateResumeOrder() {
+  return [
+    param('orderId')
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('orderId is required'),
+    body('reason')
+      .optional()
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('reason must be a non-empty string when provided'),
+    handleValidationErrors,
+  ];
+}
+
 // ─── POST /search ──────────────────────────────────────────────────────────
+
+/**
+ * Validates the body of POST /api/orders/:orderId/vendor-message.
+ * subject and content must be non-empty strings.
+ */
+export function validateSendVendorMessage() {
+  return [
+    param('orderId')
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('orderId is required'),
+    body('subject')
+      .isString()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage('subject is required'),
+    body('content')
+      .isString()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage('content is required'),
+    handleValidationErrors,
+  ];
+}
 
 /**
  * Validates the body of POST /api/orders/search.

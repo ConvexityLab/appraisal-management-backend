@@ -85,40 +85,6 @@ const baseHeaders = [
   header('X-Correlation-Id').isString().notEmpty().withMessage('X-Correlation-Id header is required'),
 ];
 
-const extractionValidators = [
-  ...baseHeaders,
-  body('documentId').isString().notEmpty().withMessage('documentId is required'),
-  body('runReason').isString().notEmpty().withMessage('runReason is required'),
-  body('schemaKey').isObject().withMessage('schemaKey is required'),
-  body('schemaKey.clientId').isString().notEmpty().withMessage('schemaKey.clientId is required'),
-  body('schemaKey.subClientId').isString().notEmpty().withMessage('schemaKey.subClientId is required'),
-  body('schemaKey.documentType').isString().notEmpty().withMessage('schemaKey.documentType is required'),
-  body('schemaKey.version').isString().notEmpty().withMessage('schemaKey.version is required'),
-  body('engineTarget').optional().isIn(['AXIOM', 'MOP_PRIO']).withMessage('engineTarget must be AXIOM or MOP_PRIO'),
-  body('enginePolicyRef').optional().isString().notEmpty(),
-  body('engagementId').optional().isString().notEmpty(),
-  body('loanPropertyContextId').optional().isString().notEmpty(),
-];
-
-const criteriaValidators = [
-  ...baseHeaders,
-  body('snapshotId').isString().notEmpty().withMessage('snapshotId is required'),
-  body('programKey').isObject().withMessage('programKey is required'),
-  body('programKey.clientId').isString().notEmpty().withMessage('programKey.clientId is required'),
-  body('programKey.subClientId').isString().notEmpty().withMessage('programKey.subClientId is required'),
-  body('programKey.programId').isString().notEmpty().withMessage('programKey.programId is required'),
-  body('programKey.version').isString().notEmpty().withMessage('programKey.version is required'),
-  body('runMode').isIn(['FULL', 'STEP_ONLY']).withMessage('runMode must be FULL or STEP_ONLY'),
-  body('engineTarget').optional().isIn(['AXIOM', 'MOP_PRIO']).withMessage('engineTarget must be AXIOM or MOP_PRIO'),
-  body('enginePolicyRef').optional().isString().notEmpty(),
-  body('rerunReason').optional().isString().notEmpty(),
-  body('parentRunId').optional().isString().notEmpty(),
-  body('criteriaStepKeys').optional().isArray().withMessage('criteriaStepKeys must be an array of step keys'),
-  body('criteriaStepKeys.*').optional().isString().notEmpty().withMessage('criteriaStepKeys entries must be non-empty strings'),
-  body('engagementId').optional().isString().notEmpty(),
-  body('loanPropertyContextId').optional().isString().notEmpty(),
-];
-
 const criteriaStepValidators = [
   ...baseHeaders,
   param('criteriaRunId').isString().notEmpty().withMessage('criteriaRunId is required'),
@@ -197,95 +163,6 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
         error: {
           code: 'RUN_LIST_FAILED',
           message: error instanceof Error ? error.message : 'Failed to list runs',
-        },
-      });
-    }
-  });
-
-  router.post('/extraction', extractionValidators, async (req: UnifiedAuthRequest, res: Response) => {
-    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'EXTRACTION'
-    res.setHeader('Deprecation', 'true');
-    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
-    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
-
-    if (validationErrorResponse(req, res)) return;
-
-    try {
-      const tenantId = resolveTenantId(req);
-      const submission = await getAnalysisSubmissionService(dbService).submit({
-        analysisType: 'EXTRACTION',
-        documentId: req.body.documentId,
-        schemaKey: req.body.schemaKey,
-        runReason: req.body.runReason,
-        engineTarget: req.body.engineTarget,
-        enginePolicyRef: req.body.enginePolicyRef,
-        engagementId: req.body.engagementId,
-        loanPropertyContextId: req.body.loanPropertyContextId,
-      }, {
-        tenantId,
-        initiatedBy: resolveInitiatedBy(req),
-        correlationId: String(req.header('X-Correlation-Id')),
-        idempotencyKey: String(req.header('Idempotency-Key')),
-      });
-
-      if (!submission.run) {
-        throw new Error('Unified extraction submission did not return a run record');
-      }
-
-      res.status(202).json({ success: true, data: submission.run });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'RUN_CREATE_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to create extraction run',
-        },
-      });
-    }
-  });
-
-  router.post('/criteria', criteriaValidators, async (req: UnifiedAuthRequest, res: Response) => {
-    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'CRITERIA'
-    res.setHeader('Deprecation', 'true');
-    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
-    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
-
-    if (validationErrorResponse(req, res)) return;
-
-    try {
-      const tenantId = resolveTenantId(req);
-      const submission = await getAnalysisSubmissionService(dbService).submit({
-        analysisType: 'CRITERIA',
-        snapshotId: req.body.snapshotId,
-        programKey: req.body.programKey,
-        runMode: req.body.runMode,
-        engineTarget: req.body.engineTarget,
-        enginePolicyRef: req.body.enginePolicyRef,
-        rerunReason: req.body.rerunReason,
-        parentRunId: req.body.parentRunId,
-        criteriaStepKeys: req.body.criteriaStepKeys,
-        engagementId: req.body.engagementId,
-        loanPropertyContextId: req.body.loanPropertyContextId,
-      }, {
-        tenantId,
-        initiatedBy: resolveInitiatedBy(req),
-        correlationId: String(req.header('X-Correlation-Id')),
-        idempotencyKey: String(req.header('Idempotency-Key')),
-      });
-
-      if (!submission.run) {
-        throw new Error('Unified criteria submission did not return a run record');
-      }
-
-      res.status(202).json({ success: true, data: { run: submission.run, stepRuns: submission.stepRuns ?? [] } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create criteria run';
-      const statusCode = message.includes('not found') ? 404 : 500;
-      res.status(statusCode).json({
-        success: false,
-        error: {
-          code: 'RUN_CREATE_FAILED',
-          message,
         },
       });
     }

@@ -21,12 +21,24 @@ import { Request, Response, Router } from 'express';
 import archiver from 'archiver';
 import { DeliveryWorkflowService } from '../services/delivery-workflow.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import { BlobStorageService } from '../services/blob-storage.service';
+import { CosmosDbService } from '../services/cosmos-db.service';
+import { VendorOrderNotificationService } from '../services/vendor-integrations/VendorOrderNotificationService.js';
+import { VendorOutboundOutboxService } from '../services/vendor-integrations/VendorOutboundOutboxService.js';
 
 export class DeliveryController {
   private deliveryService: DeliveryWorkflowService;
+  private blobService: BlobStorageService;
+  private vendorNotificationService: VendorOrderNotificationService;
 
   constructor(deliveryService?: DeliveryWorkflowService) {
     this.deliveryService = deliveryService || new DeliveryWorkflowService();
+    const dbService = new CosmosDbService();
+    this.blobService = new BlobStorageService();
+    this.vendorNotificationService = new VendorOrderNotificationService(
+      dbService,
+      new VendorOutboundOutboxService(dbService),
+    );
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -433,6 +445,43 @@ export class DeliveryController {
       }
 
       res.json({ success: true, data: result.data });
+
+      // Fire-and-forget: notify the vendor system that completed appraisal files
+      // are ready. Runs AFTER the HTTP response so it never delays the client.
+      // If the order has no vendor integration context, notifyFileDelivery
+      // silently returns false — no error, no side-effect.
+      void (async () => {
+        try {
+          const docsResult = await this.deliveryService.getOrderDocuments(orderId, tenantId, {
+            status: 'APPROVED',
+            latestOnly: true,
+          });
+          const finalDocs = (docsResult.data ?? []).filter((d) => d.isFinal);
+          if (finalDocs.length === 0) return;
+
+          const vendorFiles = await Promise.all(
+            finalDocs.map(async (doc) => {
+              const buffer = await this.blobService.downloadBlobAsBuffer(
+                doc.blobContainer,
+                doc.blobPath,
+              );
+              return {
+                fileId: doc.id,
+                filename: doc.fileName,
+                category: doc.documentType as string,
+                content: buffer.toString('base64'),
+              };
+            }),
+          );
+
+          await this.vendorNotificationService.notifyFileDelivery(orderId, tenantId, vendorFiles);
+        } catch (err) {
+          console.error('Failed to dispatch vendor file delivery notification', {
+            orderId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
     } catch (error) {
       console.error('Error completing order delivery:', error);
       res.status(500).json({

@@ -78,7 +78,7 @@ Create one unified analysis experience and contract across Engagement, Order, an
 - [x] Backend integration tests for unified route (`analysis-submission.controller.test.ts`).
 - [x] Contract tests for legacy compatibility wrappers (`runs-legacy-wrapper.test.ts`).
 - [x] UI API contract tests for `analysisApi` (`analysisApi.test.ts`).
-- [ ] UI component tests for `AnalysisWorkbench`.
+- [x] UI component tests for `AnalysisWorkbench`.
 - [ ] E2E smoke tests: engagement, order, bulk row.
 
 ## Phase 8 — Rollout & Decommission

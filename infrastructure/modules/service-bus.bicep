@@ -13,6 +13,9 @@ param environment string
 @description('Tags to apply to resources')
 param tags object
 
+@description('Log Analytics workspace resource ID for Service Bus diagnostic settings')
+param logAnalyticsWorkspaceId string
+
 // Environment-specific configurations
 var serviceBusConfigs = {
   dev: {
@@ -532,6 +535,45 @@ resource bulkIngestionFinalizerServiceSubscription 'Microsoft.ServiceBus/namespa
     lockDuration: 'PT5M'
     defaultMessageTimeToLive: 'P14D'
     deadLetteringOnMessageExpiration: true
+  }
+}
+
+// ── Diagnostic Settings ────────────────────────────────────────────────────
+// Stream all Service Bus operational logs + metrics to Log Analytics so every
+// message send/receive/complete/abandon/deadletter is queryable via KQL.
+// Tables: AzureDiagnostics (operations), AzureMetrics (throughput gauges).
+resource serviceBusDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'servicebus-to-log-analytics'
+  scope: serviceBusNamespace
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        // Operational logs: Send, Receive, Complete, Abandon, DeadLetter, etc.
+        category: 'OperationalLogs'
+        enabled: true
+        retentionPolicy: { enabled: false, days: 0 }
+      }
+      {
+        // VNet/firewall rule evaluation — useful for diagnosing dropped connections
+        category: 'VNetAndIPFilteringLogs'
+        enabled: false
+        retentionPolicy: { enabled: false, days: 0 }
+      }
+      {
+        // Runtime audit: sent/received counts per entity per hour
+        category: 'RuntimeAuditLogs'
+        enabled: true
+        retentionPolicy: { enabled: false, days: 0 }
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+        retentionPolicy: { enabled: false, days: 0 }
+      }
+    ]
   }
 }
 

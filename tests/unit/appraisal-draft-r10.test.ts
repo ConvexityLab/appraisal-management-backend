@@ -43,6 +43,7 @@ function makeReportDoc(overrides: Partial<CanonicalReportDocument> = {}): Canoni
     status: 'draft' as any,
     schemaVersion: SCHEMA_VERSION,
     metadata: {} as any,
+    // Fully valid subject so validateCanonicalCore (UAD-100) does not fire
     subject: {
       address: {
         streetAddress: '123 Main St',
@@ -51,8 +52,27 @@ function makeReportDoc(overrides: Partial<CanonicalReportDocument> = {}): Canoni
         zipCode: '30301',
       },
       parcelNumber: 'ABC-123',
+      propertyType: 'SFR',
+      condition: 'C3',
+      quality: 'Q3',
+      yearBuilt: 2005,
+      grossLivingArea: 1800,
     } as any,
-    comps: [] as any,
+    // Valid comps with one selected so UAD-200 does not fire
+    comps: [
+      {
+        selected: true,
+        salePrice: 350000,
+        saleDate: '2025-01-15',
+        grossLivingArea: 1750,
+        address: { streetAddress: '456 Oak Ave' },
+      },
+    ] as any,
+    // Valid valuation so UAD-500 does not fire
+    valuation: {
+      estimatedValue: 360000,
+      effectiveDate: '2025-02-01',
+    } as any,
     ...overrides,
   } as CanonicalReportDocument;
 }
@@ -129,6 +149,7 @@ function makeDbStub(draft: AppraisalDraft, order = FAKE_ORDER) {
     })),
     initialize: vi.fn(),
     queryDocuments: vi.fn(async () => []),
+    upsertDocument: vi.fn(async () => ({})),
   };
 }
 
@@ -212,7 +233,7 @@ describe('AppraisalDraftService.finalizeDraft (R-10)', () => {
 
     // Should resolve without throwing
     const result = await svc.finalizeDraft('draft-1', 'order-1', 'user-1');
-    expect(result.status).toBe(DraftStatus.FINALIZED);
+    expect(result.draft.status).toBe(DraftStatus.FINALIZED);
   });
 
   it('fails if a config-required visible section is incomplete', async () => {
@@ -249,7 +270,7 @@ describe('AppraisalDraftService.finalizeDraft (R-10)', () => {
     const svc = new AppraisalDraftService(db as any, makeMergerStub(config) as any);
 
     const result = await svc.finalizeDraft('draft-1', 'order-1', 'user-1');
-    expect(result.status).toBe(DraftStatus.FINALIZED);
+    expect(result.draft.status).toBe(DraftStatus.FINALIZED);
   });
 
   it('ignores required=true sections that are visible=false', async () => {
@@ -270,6 +291,6 @@ describe('AppraisalDraftService.finalizeDraft (R-10)', () => {
 
     // Should succeed — hidden section cannot be completed so it must not block
     const result = await svc.finalizeDraft('draft-1', 'order-1', 'user-1');
-    expect(result.status).toBe(DraftStatus.FINALIZED);
+    expect(result.draft.status).toBe(DraftStatus.FINALIZED);
   });
 });

@@ -60,9 +60,9 @@ Stabilize the backend authorization system around one canonical policy source in
 
 ### Phase 4 — Capability-source convergence
 
-- [ ] Replace in-memory `PLATFORM_CAPABILITY_MATRIX` as the long-term source of Casbin capability rules.
-- [ ] Materialize Casbin capability tuples from Cosmos-backed policy/config documents.
-- [ ] Remove duplicated capability definitions once Cosmos-backed Casbin loading is stable.
+- [x] Replace in-memory `PLATFORM_CAPABILITY_MATRIX` as the long-term source of Casbin capability rules.
+- [x] Materialize Casbin capability tuples from Cosmos-backed policy/config documents.
+- [x] Remove duplicated capability definitions once Cosmos-backed Casbin loading is stable.
 
 ### Phase 5 — Verification
 
@@ -97,3 +97,17 @@ Stabilize the backend authorization system around one canonical policy source in
    - `pnpm vitest run tests/authorization/policy-management-http.test.ts`
    - `pnpm vitest run tests/authorization/policy-evaluator-parity.test.ts tests/authorization/policy-management-http.test.ts`
    - `pnpm exec tsc --noEmit`
+
+### 2026-05-09 (Phase 4 close-out)
+
+- Confirmed Phase 4 fully implemented: `CasbinAuthorizationEngine.loadCapabilityRules()` queries
+  Cosmos `authorization-policies` for `type='authorization-capability'` at runtime with no
+  in-memory fallback — throws descriptively if 0 documents found.
+- `src/data/platform-capability-matrix.ts` is seed-only: the matrix file's only `src/` runtime
+  import is the `AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID` constant.  All other imports
+  of the file are in `tests/` (Cosmos stub setup) and `src/scripts/seed/` (not the API server
+  process).
+- "Remove duplicated capability definitions" is satisfied: the Casbin enforcer never reads the
+  TypeScript definitions at runtime.  The definitions remain solely so the seed script can
+  repopulate an empty Cosmos container — they are not a second runtime policy source.
+- Marked all three Phase 4 checkboxes complete.

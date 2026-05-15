@@ -140,8 +140,8 @@ function mapSubjectProperty(doc: CanonicalReportDocument): UadSubjectProperty {
     ...(s.basementFinishedSqFt != null ? { basementFinishedArea: s.basementFinishedSqFt } : {}),
     ...(s.effectiveAge != null ? { effectiveAge: s.effectiveAge } : {}),
 
-    // Pool
-    pool: s.pool ? 'InGround' : 'None', // boolean → UAD string; 'AboveGround' not inferrable from boolean
+    // Pool — use poolType when present to distinguish InGround vs AboveGround
+    pool: s.pool ? (s.poolType === 'AboveGround' ? 'AboveGround' : 'InGround') : 'None',
 
     // UAD ratings
     qualityRating,
@@ -159,19 +159,26 @@ function mapSubjectProperty(doc: CanonicalReportDocument): UadSubjectProperty {
     vehicleStorage: doc.vehicleStorage as any,
     amenities: doc.amenities as any,
     overallQualityCondition: doc.overallQualityCondition as any,
-    subjectListing: doc.subjectListings as any,
+    subjectListings: doc.subjectListings as any,
     rentalInformation: doc.rentalInformation as any,
+    // Document-level v1.3 sections piggy-backed on subject for XML emission
+    revisionHistory: doc.revisionHistory as any,
+    reconsiderationOfValue: doc.reconsiderationOfValue as any,
 
     // Utilities
     publicUtilities: mapUtilities(s.utilities as any),
 
-    // Street
-    street: { paved: true }, 
+    // Street — read from canonical; default paved when unknown (conservative, avoids GSE flags)
+    street: {
+      paved: s.streetSurface == null || s.streetSurface.toLowerCase() === 'paved',
+      ...(s.streetSurface != null ? { surfaceType: s.streetSurface } : {}),
+      ...(s.streetType   != null ? { streetType:  s.streetType   } : {}),
+    },
 
     // Form meta
     occupancyType: mapOccupancyType(s.occupant), 
     currentUse: 'Single Family Residence', 
-    buildingStatus: mapBuildingStatus(s.yearBuilt), 
+    buildingStatus: mapBuildingStatus(s),
     highestAndBestUse: (s.highestAndBestUse as any) ?? 'Present',
   };
 }
@@ -211,14 +218,15 @@ function mapOccupancyType(occupant: CanonicalSubject['occupant']): UadOccupancyT
   }
 }
 
-function mapBuildingStatus(yearBuilt: number): UadBuildingStatusType {
+function mapBuildingStatus(s: CanonicalSubject): UadBuildingStatusType {
+  // constructionStage is authoritative when set by the appraiser
+  if (s.constructionStage === 'Proposed')          return UadBuildingStatusType.PROPOSED;
+  if (s.constructionStage === 'UnderConstruction') return UadBuildingStatusType.UNDER_CONSTRUCTION;
+  if (s.constructionStage === 'Complete')          return UadBuildingStatusType.EXISTING;
+  // Fall back to yearBuilt heuristic for legacy records without constructionStage
   const currentYear = new Date().getFullYear();
-  if (yearBuilt > currentYear) {
-    return UadBuildingStatusType.PROPOSED;
-  }
-  if (yearBuilt === currentYear) {
-    return UadBuildingStatusType.UNDER_CONSTRUCTION;
-  }
+  if (s.yearBuilt > currentYear)  return UadBuildingStatusType.PROPOSED;
+  if (s.yearBuilt === currentYear) return UadBuildingStatusType.UNDER_CONSTRUCTION;
   return UadBuildingStatusType.EXISTING;
 }
 

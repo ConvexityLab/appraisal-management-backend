@@ -39,6 +39,7 @@ import type {
   VendorLoanNumberUpdatedPayload,
   VendorDomainEvent,
 } from '../types/vendor-integration.types.js';
+import { appInsightsMetrics } from './app-insights-metrics.service.js';
 
 type OrderSnapshot = Record<string, any>;
 
@@ -219,9 +220,24 @@ export class VendorIntegrationEventConsumerService {
     // vendor must not be echoed back — the vendor already knows (they sent it), and
     // doing so creates an unnecessary round-trip or, for some types, an echo loop.
     const domainEvent = this.toVendorDomainEvent(event);
+
+    appInsightsMetrics.trackVendorConsumerProcessing({
+      correlationId: event.id,
+      eventType: event.type,
+      vendorOrderId: event.data.vendorOrderId ?? 'unknown',
+      origin: domainEvent.origin ?? 'unknown',
+    });
+
     if (this.outboundDispatcher && event.data.connectionId && domainEvent.origin === 'internal') {
       this.outboundDispatcher.dispatch(domainEvent, event.data.connectionId)
         .catch((err) => this.logger.error('Outbound dispatch failed for internal vendor event', { eventId: event.id, error: err }));
+    } else if (this.outboundDispatcher && domainEvent.origin !== 'internal') {
+      appInsightsMetrics.trackVendorOutboundSuppressed({
+        correlationId: event.id,
+        eventType: event.type,
+        vendorOrderId: event.data.vendorOrderId ?? 'unknown',
+        reason: 'inbound-echo-prevention',
+      });
     }
 
     switch (event.type) {

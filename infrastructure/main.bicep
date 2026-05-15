@@ -524,6 +524,7 @@ module serviceBus 'modules/service-bus.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 

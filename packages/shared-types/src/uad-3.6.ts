@@ -260,8 +260,11 @@ export interface UadSubjectProperty {
   vehicleStorage?: UadVehicleStorage[];
   amenities?: UadPropertyAmenity[];
   overallQualityCondition?: UadOverallQualityCondition;
-  subjectListing?: UadSubjectListing;
+  subjectListings?: UadSubjectListing[];
   rentalInformation?: UadRentalInformation;
+  /** Revision and reconsideration history — document-level, piggy-backed here for XML emission. */
+  revisionHistory?: Array<{ revisionDate: string; urarSection: string; description: string }>;
+  reconsiderationOfValue?: { type: string; date: string; result: string; commentary: string };
 
   // Flood Zone
   femaFloodZone?: string;

@@ -12,6 +12,7 @@ import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { v4 as uuidv4 } from 'uuid';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ReportConfigMergerService } from './report-config-merger.service.js';
+import { UadValidationService } from './uad-validation.service.js';
 import { evaluateJsonLogic } from '../utils/validate-canonical-ingress.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
@@ -25,7 +26,23 @@ import {
   DRAFT_SECTION_IDS,
   createInitialSectionStatus,
 } from '../types/appraisal-draft.types.js';
-import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress } from '@l1/shared-types';
+import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress, UadValidationError } from '@l1/shared-types';
+
+/**
+ * Thrown by `finalizeDraft` when URAR v1.3 canonical section validation
+ * produces one or more ERROR-severity failures. The `validationErrors` array
+ * carries the full structured UAD error list so the API layer can return a
+ * well-formed 422 body without re-parsing the message string.
+ */
+export class UadFinalizationValidationError extends Error {
+  readonly validationErrors: UadValidationError[];
+  constructor(errors: UadValidationError[]) {
+    const summary = errors.map(e => `${e.fieldPath}: ${e.errorMessage} (${e.uadRule})`).join('; ');
+    super(`Cannot finalize: UAD v1.3 section validation failed — ${summary}`);
+    this.name = 'UadFinalizationValidationError';
+    this.validationErrors = errors;
+  }
+}
 import { SCHEMA_VERSION } from '@l1/shared-types';
 import { LoanPurpose } from '../types/index.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
@@ -63,9 +80,24 @@ const SECTION_FIELD_MAP: Record<string, ReadonlyArray<keyof CanonicalReportDocum
   'certification': ['appraiserInfo'],
   'photos': ['photos'],
   'addenda': ['addenda'],                    // scope of work + assumptions + free-form pages
+  // ── URAR v1.3 sections ─────────────────────────────────────────────────────
+  'disaster-mitigation':       ['disasterMitigation'],
+  'energy-efficiency':         ['energyEfficiency'],
+  'functional-obsolescence':   ['functionalObsolescence'],
+  'vehicle-storage':           ['vehicleStorage'],
+  'outbuildings':              ['outbuildings'],
+  'amenities':                 ['amenities'],
+  'overall-quality-condition': ['overallQualityCondition'],
+  'analyzed-properties':       ['analyzedPropertiesNotUsed'],
+  'prior-transfers':           ['priorTransfers'],
+  'revision-history':          ['revisionHistory'],
+  'reconsideration':           ['reconsiderationOfValue'],
+  'assignment-conditions':     ['assignmentConditions', 'scopeOfWork'],
 };
 
 // ── Service ──────────────────────────────────────────────────────────────────
+
+const uadValidator = new UadValidationService();
 
 export class AppraisalDraftService {
   private _container: Container | null = null;
@@ -375,9 +407,9 @@ export class AppraisalDraftService {
 
   /**
    * Finalize a draft — validates all sections are complete, then marks FINALIZED.
-   * The caller is responsible for copying the report to the `reporting` container.
+   * Promotes the reportDocument to the `reporting` container so PDF generation works.
    */
-  async finalizeDraft(draftId: string, orderId: string, userId: string): Promise<AppraisalDraft> {
+  async finalizeDraft(draftId: string, orderId: string, userId: string): Promise<{ draft: AppraisalDraft; canonicalWarnings: UadValidationError[] }> {
     const existing = await this.getDraft(draftId, orderId);
 
     if (existing.status === DraftStatus.FINALIZED || existing.status === DraftStatus.SUBMITTED) {
@@ -399,6 +431,14 @@ export class AppraisalDraftService {
       );
     }
 
+    // URAR v1.3 canonical section validation — gate on ERROR-severity failures.
+    const allCanonicalResults = uadValidator.validateCanonicalSections(existing.reportDocument);
+    const canonicalErrors  = allCanonicalResults.filter(e => e.severity === 'ERROR');
+    const canonicalWarnings = allCanonicalResults.filter(e => e.severity === 'WARNING');
+    if (canonicalErrors.length > 0) {
+      throw new UadFinalizationValidationError(canonicalErrors);
+    }
+
     const now = new Date().toISOString();
     const finalized: AppraisalDraft = {
       ...existing,
@@ -413,8 +453,19 @@ export class AppraisalDraftService {
       throw new Error(`Failed to finalize draft ${draftId}`);
     }
 
-    logger.info('Draft finalized', { draftId });
-    return resource as AppraisalDraft;
+    // Promote reportDocument to the `reporting` container so PDF generation and
+    // preview can find it.  The document id matches the draft id (deterministic:
+    // re-finalizing the same draft overwrites the same reporting doc).
+    const reportingDoc = {
+      ...finalized.reportDocument,
+      id: finalized.id,
+      orderId,
+      updatedAt: now,
+    };
+    await this.dbService.upsertDocument('reporting', reportingDoc);
+
+    logger.info('Draft finalized', { draftId, warningCount: canonicalWarnings.length });
+    return { draft: resource as AppraisalDraft, canonicalWarnings };
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────────

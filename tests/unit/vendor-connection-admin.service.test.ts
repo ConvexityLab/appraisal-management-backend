@@ -141,4 +141,84 @@ describe('VendorConnectionAdminService', () => {
 
     await expect(service.deactivateConnection('missing', 'tenant-1', 'user-1')).rejects.toBeInstanceOf(VendorConnectionNotFoundError);
   });
+
+  it('creates a valid ClassValuation connection', async () => {
+    const db = makeDb();
+    db.queryDocuments.mockResolvedValue([]);
+    db.createDocument.mockImplementation(async (_container: string, document: VendorConnection) => document);
+    const service = new VendorConnectionAdminService(db as any);
+
+    const created = await service.createConnection('tenant-1', {
+      vendorType: 'class-valuation',
+      lenderId: 'lender-1',
+      lenderName: 'Lender One',
+      inboundIdentifier: 'cv-account-123',
+      credentials: {
+        inboundHmacSecretName: 'cv-inbound-hmac',
+        outboundHmacSecretName: 'cv-outbound-hmac',
+      },
+      outboundEndpointUrl: 'https://cv-vendor.example.com/webhook',
+      active: true,
+    }, 'user-1');
+
+    expect(created).toMatchObject({
+      tenantId: 'tenant-1',
+      type: 'vendor-connection',
+      vendorType: 'class-valuation',
+      inboundIdentifier: 'cv-account-123',
+      active: true,
+      createdBy: 'user-1',
+    });
+  });
+
+  it('rejects ClassValuation connection missing inboundHmacSecretName', async () => {
+    const db = makeDb();
+    const service = new VendorConnectionAdminService(db as any);
+
+    await expect(service.createConnection('tenant-1', {
+      vendorType: 'class-valuation',
+      lenderId: 'lender-1',
+      lenderName: 'Lender One',
+      inboundIdentifier: 'cv-account-123',
+      credentials: {
+        outboundHmacSecretName: 'cv-outbound-hmac',
+      },
+      outboundEndpointUrl: 'https://cv-vendor.example.com/webhook',
+      active: true,
+    }, 'user-1')).rejects.toBeInstanceOf(VendorConnectionValidationError);
+  });
+
+  it('rejects ClassValuation connection missing outboundHmacSecretName', async () => {
+    const db = makeDb();
+    const service = new VendorConnectionAdminService(db as any);
+
+    await expect(service.createConnection('tenant-1', {
+      vendorType: 'class-valuation',
+      lenderId: 'lender-1',
+      lenderName: 'Lender One',
+      inboundIdentifier: 'cv-account-123',
+      credentials: {
+        inboundHmacSecretName: 'cv-inbound-hmac',
+      },
+      outboundEndpointUrl: 'https://cv-vendor.example.com/webhook',
+      active: true,
+    }, 'user-1')).rejects.toBeInstanceOf(VendorConnectionValidationError);
+  });
+
+  it('rejects ClassValuation connection with both HMAC secrets missing', async () => {
+    const db = makeDb();
+    const service = new VendorConnectionAdminService(db as any);
+
+    await expect(service.createConnection('tenant-1', {
+      vendorType: 'class-valuation',
+      lenderId: 'lender-1',
+      lenderName: 'Lender One',
+      inboundIdentifier: 'cv-account-123',
+      credentials: {
+        outboundApiKeySecretName: 'irrelevant-key',
+      },
+      outboundEndpointUrl: 'https://cv-vendor.example.com/webhook',
+      active: true,
+    }, 'user-1')).rejects.toBeInstanceOf(VendorConnectionValidationError);
+  });
 });
