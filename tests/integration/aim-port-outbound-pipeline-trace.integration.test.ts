@@ -269,9 +269,9 @@ describe('AIM-Port outbound pipeline trace — callback URL + published events',
       await driveConsumer(makeVendorEvent('vendor.order.assigned' as any));
 
       console.log('[TRACE] vendor.order.assigned published events:', JSON.stringify(publishedEvents, null, 2));
-      // Document the complete set — update this snapshot if new events are added intentionally
+      // vendor.order.assigned only updates Cosmos status — no SB events published
       const types = publishedEvents.map((e) => e.type);
-      expect(types).toMatchSnapshot();
+      expect(types).toEqual([]);
     });
   });
 
@@ -355,8 +355,9 @@ describe('AIM-Port outbound pipeline trace — callback URL + published events',
       await driveConsumer(makeVendorEvent('vendor.order.cancelled' as any));
 
       console.log('[TRACE] vendor.order.cancelled published events:', JSON.stringify(publishedEvents, null, 2));
+      // vendor.order.cancelled only updates Cosmos status — no SB events published
       const types = publishedEvents.map((e) => e.type);
-      expect(types).toMatchSnapshot();
+      expect(types).toEqual([]);
     });
   });
 
@@ -385,8 +386,9 @@ describe('AIM-Port outbound pipeline trace — callback URL + published events',
       }));
 
       console.log('[TRACE] vendor.order.completed published events:', JSON.stringify(publishedEvents, null, 2));
+      // vendor.order.completed persists files + updates Cosmos status — no SB events published
       const types = publishedEvents.map((e) => e.type);
-      expect(types).toMatchSnapshot();
+      expect(types).toEqual([]);
     });
   });
 
