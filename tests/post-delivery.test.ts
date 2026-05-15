@@ -135,11 +135,18 @@ describe('PostDeliveryService', () => {
     });
 
     it('should return recert status when task exists', async () => {
-      await service.generateDeliveryTasks('ORD-001', 'tenant-1', '2026-01-15');
+      // Use a recent (but not future) effective date so the 120-day recert
+      // window is still active at test time. Previously hardcoded
+      // '2026-01-15' which aged out after the 120-day window elapsed and
+      // made daysRemaining=0 once real-world time passed May 2026.
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0]!;
+      await service.generateDeliveryTasks('ORD-001', 'tenant-1', thirtyDaysAgo);
       const result = await service.checkRecertificationStatus('ORD-001', 'tenant-1');
       expect(result).toBeDefined();
       expect(result!.orderId).toBe('ORD-001');
-      expect(result!.effectiveDate).toBe('2026-01-15');
+      expect(result!.effectiveDate).toBe(thirtyDaysAgo);
       expect(result!.daysRemaining).toBeGreaterThan(0);
     });
   });
