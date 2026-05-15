@@ -14,10 +14,8 @@ import type {
   VendorFile,
   VendorInspectionPropertyAccess,
   VendorInspectionRequestedBy,
-  VendorOrderHeldPayload,
   VendorOrderReceivedPayload,
   VendorOrderScheduledPayload,
-  VendorOrderResumedPayload,
   VendorOrderUpdatedPayload,
   VendorProductsListedPayload,
 } from '../../types/vendor-integration.types.js';
@@ -285,6 +283,7 @@ export class AimPortAdapter implements VendorAdapter {
       lenderId: connection.lenderId,
       tenantId: connection.tenantId,
       occurredAt: new Date().toISOString(),
+      origin: 'inbound' as const,
     };
 
     const events: VendorDomainEvent[] = this.mapInboundEvents(requestType, envelope, baseEvent, connection.productMappings);
@@ -579,22 +578,15 @@ export class AimPortAdapter implements VendorAdapter {
         // If received (data error, test harness, etc.) produce no domain events so we
         // cannot accidentally trigger a second assignment/acceptance cycle.
         return [];
-      case 'OrderHoldRequest': {
-        const order = asRecord(envelope?.order);
-        const message = stringValue(order?.hold_message);
-        const payload: VendorOrderHeldPayload = message ? { message } : {};
-        return [{ ...baseEvent, eventType: 'vendor.order.held', payload }];
-      }
-      case 'OrderResumeRequest': {
-        const order = asRecord(envelope?.order);
-        const message = stringValue(order?.resume_message);
-        const payload: VendorOrderResumedPayload = message ? { message } : {};
-        return [{ ...baseEvent, eventType: 'vendor.order.resumed', payload }];
-      }
-      case 'OrderCancelledRequest': {
-        const order = asRecord(envelope?.order);
-        return [{ ...baseEvent, eventType: 'vendor.order.cancelled', payload: { message: stringValue(order?.cancellation_message) ?? 'Cancelled by AIM-Port client' } }];
-      }
+      case 'OrderHoldRequest':
+      case 'OrderResumeRequest':
+      case 'OrderCancelledRequest':
+        // These are "Vendor to Client" events per the AIM-Port spec (v2.9 pp. 8-10).
+        // We are the vendor — we SEND hold/resume/cancel outbound to the lender's AIM-Port system.
+        // AIM-Port reflects these back to our inbound URL as an echo-confirmation of receipt.
+        // Producing domain events for them would re-trigger outbound notifications, creating
+        // an infinite hold→echo→hold→echo loop. Return empty so they are fully suppressed.
+        return [];
       case 'OrderScheduledRequest': {
         const order = asRecord(envelope?.order);
         return [{ ...baseEvent, eventType: 'vendor.order.scheduled', payload: buildScheduledPayload(order) }];

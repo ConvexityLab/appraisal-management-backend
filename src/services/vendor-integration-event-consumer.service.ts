@@ -19,7 +19,6 @@ import type {
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
-import type { VendorDomainEvent } from '../types/vendor-integration.types.js';
 import type {
   VendorInspectionRequestedBy,
   VendorEventType,
@@ -38,9 +37,15 @@ import type {
   VendorRevisionRequestedPayload,
   VendorFhaCaseNumberUpdatedPayload,
   VendorLoanNumberUpdatedPayload,
+  VendorDomainEvent,
 } from '../types/vendor-integration.types.js';
 
 type OrderSnapshot = Record<string, any>;
+
+/** Minimal interface satisfied by VendorOutboundDispatcher (and test mocks). */
+interface OutboundDispatcher {
+  dispatch(event: VendorDomainEvent, connectionId: string): Promise<void>;
+}
 
 type VendorFilePersistor = (params: {
   eventId: string;
@@ -118,17 +123,13 @@ function inferMimeType(filename: string): string {
   }
 }
 
-export interface OutboundVendorDispatcher {
-  dispatch(event: VendorDomainEvent, connectionId: string): Promise<void>;
-}
-
 export class VendorIntegrationEventConsumerService {
   private readonly logger = new Logger('VendorIntegrationEventConsumerService');
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: EventPublisher;
   private readonly filePersistor: VendorFilePersistor;
   private readonly contextLoader: OrderContextLoader;
-  private readonly outboundDispatcher: OutboundVendorDispatcher | undefined;
+  private readonly outboundDispatcher: OutboundDispatcher | undefined;
   private documentService: DocumentService | null = null;
   private isStarted = false;
 
@@ -136,9 +137,8 @@ export class VendorIntegrationEventConsumerService {
     private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem' | 'getContainer'> = new CosmosDbService(),
     publisher?: EventPublisher,
     filePersistor?: VendorFilePersistor,
-    outboundDispatcher?: OutboundVendorDispatcher,
+    outboundDispatcher?: OutboundDispatcher,
   ) {
-    this.outboundDispatcher = outboundDispatcher;
     this.publisher = publisher ?? new ServiceBusEventPublisher();
     this.contextLoader = new OrderContextLoader(this.dbService as CosmosDbService);
     this.subscriber = new ServiceBusEventSubscriber(
@@ -147,6 +147,7 @@ export class VendorIntegrationEventConsumerService {
       'vendor-integration-event-consumer-service',
     );
     this.filePersistor = filePersistor ?? this.persistVendorFiles.bind(this);
+    this.outboundDispatcher = outboundDispatcher;
   }
 
   async start(): Promise<void> {
@@ -179,33 +180,6 @@ export class VendorIntegrationEventConsumerService {
     this.logger.info('VendorIntegrationEventConsumerService stopped');
   }
 
-  private toVendorDomainEvent(event: VendorIntegrationEvent): VendorDomainEvent {
-    return {
-      id: event.id,
-      eventType: event.type,
-      vendorType: event.data.vendorType,
-      vendorOrderId: event.data.vendorOrderId,
-      ourOrderId: event.data.ourOrderId,
-      lenderId: event.data.lenderId,
-      tenantId: event.data.tenantId,
-      occurredAt: event.data.occurredAt,
-      payload: event.data.payload,
-    };
-  }
-
-  private tryDispatchOutbound(event: VendorIntegrationEvent): void {
-    if (!this.outboundDispatcher || !event.data.connectionId) return;
-    const domainEvent = this.toVendorDomainEvent(event);
-    this.outboundDispatcher.dispatch(domainEvent, event.data.connectionId).catch((err) => {
-      this.logger.warn('Outbound vendor callback failed — not retrying synchronously', {
-        eventType: event.type,
-        vendorOrderId: event.data.vendorOrderId,
-        connectionId: event.data.connectionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  }
-
   private async onVendorEvent(event: VendorIntegrationEvent): Promise<void> {
     // vendor.order.stalled uses a non-standard data shape (published by
     // VendorOrderStuckCheckerJob, not the normal vendor push pipeline).
@@ -231,12 +205,6 @@ export class VendorIntegrationEventConsumerService {
 
     const { ourOrderId, tenantId } = event.data;
 
-    // Fire-and-forget: mirror the normalised inbound event back to the vendor's
-    // outbound endpoint (e.g. AIM-Port OrderAssignedRequest / OrderFilesRequest).
-    // The dispatcher returns null for event types it has no mapping for, so
-    // calling it unconditionally is safe.
-    this.tryDispatchOutbound(event);
-
     if (!ourOrderId) {
       this.logger.warn('Vendor event has no mapped internal order id; skipping downstream consumer work', {
         eventId: event.id,
@@ -244,6 +212,16 @@ export class VendorIntegrationEventConsumerService {
         vendorOrderId: event.data.vendorOrderId,
       });
       return;
+    }
+
+    // Fire-and-forget outbound dispatch: only for events that our own platform raised
+    // (origin === 'internal'). Events that originated as an inbound webhook FROM the
+    // vendor must not be echoed back — the vendor already knows (they sent it), and
+    // doing so creates an unnecessary round-trip or, for some types, an echo loop.
+    const domainEvent = this.toVendorDomainEvent(event);
+    if (this.outboundDispatcher && event.data.connectionId && domainEvent.origin === 'internal') {
+      this.outboundDispatcher.dispatch(domainEvent, event.data.connectionId)
+        .catch((err) => this.logger.error('Outbound dispatch failed for internal vendor event', { eventId: event.id, error: err }));
     }
 
     switch (event.type) {
@@ -964,6 +942,26 @@ export class VendorIntegrationEventConsumerService {
     }
 
     return result.data?.[0] ?? null;
+  }
+
+  private toVendorDomainEvent(event: VendorIntegrationEvent): VendorDomainEvent {
+    const domainEvent: VendorDomainEvent = {
+      id: event.id,
+      eventType: event.type as VendorDomainEvent['eventType'],
+      vendorType: event.data.vendorType as VendorDomainEvent['vendorType'],
+      vendorOrderId: event.data.vendorOrderId,
+      ourOrderId: event.data.ourOrderId ?? null,
+      lenderId: event.data.lenderId,
+      tenantId: event.data.tenantId,
+      occurredAt: typeof event.data.occurredAt === 'string'
+        ? event.data.occurredAt
+        : new Date(event.data.occurredAt as unknown as string).toISOString(),
+      payload: event.data.payload as VendorDomainEvent['payload'],
+    };
+    if (event.data.origin !== undefined) {
+      domainEvent.origin = event.data.origin;
+    }
+    return domainEvent;
   }
 
   private makeHandler<T extends BaseEvent>(

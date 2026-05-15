@@ -319,6 +319,12 @@ export interface VendorIntegrationEvent extends BaseEvent {
     occurredAt: string;
     payload: VendorEventPayload;
     priority: EventPriority;
+    /**
+     * Mirrors VendorDomainEvent.origin — 'inbound' for events from the vendor,
+     * 'internal' for events raised by our own platform. Absent on legacy events;
+     * treated as 'inbound' (no outbound dispatch) when missing.
+     */
+    origin?: 'inbound' | 'internal';
   };
 }
 

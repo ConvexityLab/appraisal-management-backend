@@ -187,6 +187,16 @@ export interface VendorDomainEvent {
   occurredAt: string;              // ISO-8601
   payload: VendorEventPayload;
   /**
+   * Tracks where this domain event originated.
+   * - 'inbound'  — parsed from an inbound webhook/message received FROM the vendor.
+   *                The consumer must NOT echo these back outbound (the vendor already
+   *                knows — they sent it).
+   * - 'internal' — raised by our own platform (e.g. a dispatcher marks an order assigned).
+   *                The consumer SHOULD dispatch these outbound to notify the vendor.
+   * Defaults to 'inbound' when absent for backward-compat with older persisted events.
+   */
+  origin?: 'inbound' | 'internal';
+  /**
    * External party identifier — equals VendorConnection.inboundIdentifier.
    * Duplicated here so downstream consumers never need the connection record.
    */

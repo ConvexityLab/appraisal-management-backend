@@ -144,6 +144,7 @@ export class ClassValuationWebhookAdapter implements VendorAdapter {
       lenderId: connection.lenderId,
       tenantId: connection.tenantId,
       occurredAt: stringValue(payload?.occurredAt) ?? new Date().toISOString(),
+      origin: 'inbound' as const,
     };
 
     switch (eventName) {

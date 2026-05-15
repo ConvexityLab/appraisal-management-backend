@@ -366,13 +366,14 @@ describe('VendorIntegrationEventConsumerService — outbound dispatch', () => {
     };
   }
 
-  it('calls outboundDispatcher.dispatch fire-and-forget when dispatcher is provided', async () => {
+  it('calls outboundDispatcher.dispatch fire-and-forget for events with origin=internal', async () => {
     const db = makeDbWithOrder();
     const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
     const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined) };
     const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
 
-    const event = makeEvent('vendor.order.assigned', {});
+    // origin=internal means our platform raised this event — must be dispatched outbound
+    const event = makeEvent('vendor.order.assigned', {}, { origin: 'internal' });
     await (service as any).onVendorEvent(event);
 
     expect(dispatcher.dispatch).toHaveBeenCalledOnce();
@@ -382,9 +383,34 @@ describe('VendorIntegrationEventConsumerService — outbound dispatch', () => {
         vendorType: 'aim-port',
         vendorOrderId: 'AP-1001',
         tenantId: 'tenant-1',
+        origin: 'internal',
       }),
       'vc-1',
     );
+  });
+
+  it('does NOT call outboundDispatcher for events with origin=inbound (already came from vendor)', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined) };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
+
+    const event = makeEvent('vendor.order.assigned', {}, { origin: 'inbound' });
+    await (service as any).onVendorEvent(event);
+
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call outboundDispatcher for events with no origin (legacy/unknown — treat as inbound)', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined) };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
+
+    const event = makeEvent('vendor.order.assigned', {});
+    await (service as any).onVendorEvent(event);
+
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
   });
 
   it('does NOT call outboundDispatcher when none is provided', async () => {
