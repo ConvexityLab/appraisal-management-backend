@@ -250,6 +250,14 @@ export class AutoAssignmentOrchestratorService {
       this.logger.warn('AutoAssignmentOrchestrator already started');
       return;
     }
+    // Set the flag BEFORE the awaits below — api-server.ts calls .start()
+    // twice (once from initializeDatabase for tests, once from
+    // startBackgroundJobs for prod). Both callers fire synchronously, so
+    // without setting isStarted up-front, the second one sees `false` and
+    // races a duplicate subscription set. Result was every event being
+    // handled twice → duplicate bid invitations going out to the same
+    // vendor. Surfaced by J16's BE log inspection.
+    this.isStarted = true;
 
     this.logger.info('Starting AutoAssignmentOrchestrator — registering event handlers');
 
@@ -302,7 +310,7 @@ export class AutoAssignmentOrchestratorService {
       ),
     ]);
 
-    this.isStarted = true;
+    // isStarted set above the awaits to prevent the double-start race.
     this.logger.info('AutoAssignmentOrchestrator started — listening for assignment workflow events');
   }
 

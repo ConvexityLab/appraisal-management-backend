@@ -65,11 +65,15 @@ export class ReviewProgramOrchestrator {
 			this.logger.warn('ReviewProgramOrchestrator already started');
 			return;
 		}
+		// Same async-init race fix as AutoAssignmentOrchestrator: set the flag
+		// BEFORE the await so a second caller racing through start() doesn't
+		// double-subscribe. Caused duplicate review-program evaluations per
+		// order-created event.
+		this.isStarted = true;
 		await this.subscriber.subscribe<EngagementOrderCreatedEvent>(
 			'engagement.order.created',
 			this.makeHandler('engagement.order.created', this.onEngagementOrderCreated.bind(this)),
 		);
-		this.isStarted = true;
 		this.logger.info('ReviewProgramOrchestrator started — subscribed to engagement.order.created');
 	}
 
