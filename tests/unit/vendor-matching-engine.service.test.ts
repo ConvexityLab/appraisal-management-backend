@@ -73,17 +73,28 @@ function makeAvailability(overrides: Partial<VendorAvailability> = {}): VendorAv
 }
 
 describe('VendorMatchingEngine.calculatePerformanceScore', () => {
-  it('returns 0 for null performance', () => {
-    expect(e.calculatePerformanceScore(null)).toBe(0);
+  // Previously this returned 0 for null performance, which codified a
+  // chicken-and-egg onboarding bug: a brand-new vendor with no metrics
+  // got 0 on the 30% performance weight, making them un-matchable, but
+  // they could never accumulate metrics without first getting matched.
+  // The corrected behavior returns a neutral midpoint (50) — see
+  // VendorMatchingEngine.NEW_VENDOR_NEUTRAL_PERFORMANCE_SCORE.
+  it('returns new-vendor neutral midpoint (50) for null performance', () => {
+    expect(e.calculatePerformanceScore(null)).toBe(50);
   });
 
-  it('returns overallScore directly', () => {
+  it('returns overallScore directly when performance metrics exist', () => {
     expect(e.calculatePerformanceScore(makePerformance({ overallScore: 0 }))).toBe(0);
     expect(e.calculatePerformanceScore(makePerformance({ overallScore: 50 }))).toBe(50);
     expect(e.calculatePerformanceScore(makePerformance({ overallScore: 100 }))).toBe(100);
   });
 
-  it('returns 0 when overallScore is undefined', () => {
+  // When the performance doc exists but overallScore is missing, that's
+  // a data-integrity issue (we have a metrics row but no aggregate score)
+  // — distinct from "new vendor with no metrics at all". Still returns 0
+  // because a present-but-broken metrics doc should not be treated as
+  // "new vendor."
+  it('returns 0 when overallScore is undefined on a present metrics doc', () => {
     const perf = makePerformance();
     delete (perf as any).overallScore;
     expect(e.calculatePerformanceScore(perf)).toBe(0);

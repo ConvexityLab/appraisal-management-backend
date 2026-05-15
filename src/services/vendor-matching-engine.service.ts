@@ -682,20 +682,63 @@ export class VendorMatchingEngine {
     // Phase 1.5.5: Internal staff have no vendor-availability container docs.
     // Synthesize an availability snapshot from their vendor doc capacity fields
     // so they aren't unfairly penalised with a 0 on the 25% availability weight.
+    //
+    // Failing loud when capacity is unconfigured (no `maxConcurrentOrders` /
+    // `maxActiveOrders` on the vendor doc): previously this defaulted to 5
+    // silently, which made unconfigured staff look maximally available and
+    // routed them work the platform couldn't actually account for. Per the
+    // "no silent defaults" rule we now treat unconfigured staff as
+    // not-accepting-orders and log a warning so the operator can fix the
+    // vendor doc instead of routing real work into an unmodeled queue.
     let effectiveAvailability = availability;
     if (!effectiveAvailability && (vendor as any).staffType === 'internal') {
-      const active: number = (vendor as any).activeOrderCount ?? (vendor as any).currentActiveOrders ?? 0;
-      const max: number = (vendor as any).maxConcurrentOrders ?? (vendor as any).maxActiveOrders ?? 5;
-      effectiveAvailability = {
-        currentLoad: active,
-        maxCapacity: max,
-        availableSlots: Math.max(0, max - active),
-        isAcceptingOrders: active < max,
-      } as any;
+      const vendorWithCapacity = vendor as {
+        activeOrderCount?: number;
+        currentActiveOrders?: number;
+        maxConcurrentOrders?: number;
+        maxActiveOrders?: number;
+      };
+      const max =
+        vendorWithCapacity.maxConcurrentOrders ?? vendorWithCapacity.maxActiveOrders;
+      if (typeof max !== 'number' || max <= 0) {
+        this.logger.warn(
+          'Internal staff vendor has no maxConcurrentOrders/maxActiveOrders configured — treating as not accepting orders',
+          {
+            vendorId: vendor.id,
+            tenantId: request.tenantId,
+          },
+        );
+        effectiveAvailability = {
+          currentLoad: 0,
+          maxCapacity: 0,
+          availableSlots: 0,
+          isAcceptingOrders: false,
+        } as any;
+      } else {
+        const active =
+          vendorWithCapacity.activeOrderCount ?? vendorWithCapacity.currentActiveOrders;
+        if (typeof active !== 'number') {
+          this.logger.warn(
+            'Internal staff vendor has no activeOrderCount/currentActiveOrders — capacity calculations will assume 0 load',
+            {
+              vendorId: vendor.id,
+              tenantId: request.tenantId,
+              configuredMax: max,
+            },
+          );
+        }
+        const activeLoad = typeof active === 'number' ? active : 0;
+        effectiveAvailability = {
+          currentLoad: activeLoad,
+          maxCapacity: max,
+          availableSlots: Math.max(0, max - activeLoad),
+          isAcceptingOrders: activeLoad < max,
+        } as any;
+      }
     }
 
     // Calculate individual scores
-    const performanceScore = this.calculatePerformanceScore(performance);
+    const performanceScore = this.calculatePerformanceScore(performance, vendor.id);
     const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability, request.dueDate);
     const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState, precomputedDistance);
     const experienceScore = this.calculateExperienceScore(
@@ -813,12 +856,30 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Calculate performance score (0-100)
+   * Calculate performance score (0-100).
+   *
+   * New-vendor neutral score: when a vendor has no performance metrics yet
+   * (fresh onboarding, never received an order, or metrics-calculator failure),
+   * scoring 0 creates a chicken-and-egg problem — they can't earn metrics
+   * without orders, and can't get orders without metrics. We instead return
+   * a neutral midpoint so the 30% performance weight is "unknown, treat as
+   * average" rather than "definitely terrible." This is a domain choice for
+   * onboarding, not a silent config fallback — it's logged so the trace
+   * reveals which vendors received the neutral score on each run.
    */
+  private static readonly NEW_VENDOR_NEUTRAL_PERFORMANCE_SCORE = 50;
+
   private calculatePerformanceScore(
-    performance: VendorPerformanceMetrics | null
+    performance: VendorPerformanceMetrics | null,
+    vendorId?: string,
   ): number {
-    if (!performance) return 0;
+    if (!performance) {
+      this.logger.info('Performance metrics unavailable — applying new-vendor neutral score', {
+        ...(vendorId ? { vendorId } : {}),
+        neutralScore: VendorMatchingEngine.NEW_VENDOR_NEUTRAL_PERFORMANCE_SCORE,
+      });
+      return VendorMatchingEngine.NEW_VENDOR_NEUTRAL_PERFORMANCE_SCORE;
+    }
 
     // Use the vendor's overall score directly
     return performance.overallScore || 0;
