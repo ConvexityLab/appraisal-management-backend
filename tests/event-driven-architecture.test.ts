@@ -3,6 +3,18 @@
  * Tests the Service Bus publisher, subscriber, and notification service integration
  */
 
+// Mock WebPubSubService to prevent real Azure WebPubSub connections.
+// In CI (NODE_ENV !== 'development'), NotificationService creates a real
+// WebPubSubService that calls DefaultAzureCredential → IMDS probe → hangs.
+vi.mock('../src/services/web-pubsub.service.js', () => ({
+  WebPubSubService: vi.fn().mockImplementation(() => ({
+    sendToUser: vi.fn().mockResolvedValue(undefined),
+    broadcastNotification: vi.fn().mockResolvedValue(undefined),
+    sendToGroup: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 // Mock InAppNotificationService to prevent real Cosmos DB connections.
 // DefaultAzureCredential probes the IMDS managed-identity endpoint in CI which
 // silently hangs for ~25s before failing, consuming the entire test timeout.
