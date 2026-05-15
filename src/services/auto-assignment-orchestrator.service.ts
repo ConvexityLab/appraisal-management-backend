@@ -681,6 +681,30 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
+    // Guard against accepting bids on orders that:
+    //   a) were cancelled between dispatch and acceptance
+    //   b) already have a manually-assigned vendor (operator override
+    //      via the human-fallback UI) that is NOT the accepting vendor
+    // Without these guards, a late acceptance overwrites the coordinator's
+    // manual assignment, and acceptance on a cancelled order proceeds as
+    // if it were still active.
+    const orderStatus = (order as { status?: string }).status;
+    if (orderStatus === 'CANCELLED' || orderStatus === 'cancelled') {
+      this.logger.info('onVendorBidAccepted: ignoring acceptance — order is cancelled', {
+        orderId, vendorId, status: orderStatus,
+      });
+      return;
+    }
+    const existingAssigned = (order as { assignedVendorId?: string }).assignedVendorId;
+    if (existingAssigned && existingAssigned !== vendorId) {
+      this.logger.warn('onVendorBidAccepted: ignoring late acceptance — order already assigned to a different vendor', {
+        orderId,
+        acceptingVendorId: vendorId,
+        existingAssignedVendorId: existingAssigned,
+      });
+      return;
+    }
+
     // Cancel all OTHER pending broadcast bids (everyone except the winner).
     // Filter by vendorId-prefix, not by reconstructing the bid ID with
     // event.timestamp.getTime() — the original bid ID was created at
@@ -847,6 +871,23 @@ export class AutoAssignmentOrchestratorService {
     const order = await this.loadOrder(orderId, tenantId);
     if (!order) {
       this.logger.warn('order.status.changed(SUBMITTED): order not found', { orderId });
+      return;
+    }
+
+    // Guard against re-queuing reviewers when a SUBMITTED event is
+    // redelivered for an order that's already past PENDING_ACCEPTANCE
+    // (Service Bus at-least-once + the makeHandler event-id dedup is in-
+    // process only, so a different replica can still see the redelivery).
+    // The downstream `initiateReviewAssignment` only blocks on
+    // PENDING_ACCEPTANCE — without this guard, ACCEPTED or EXHAUSTED
+    // orders get re-queued and reviewers get pinged a second time.
+    const reviewStatus = (order as { autoReviewAssignment?: { status?: string } })
+      .autoReviewAssignment?.status;
+    if (reviewStatus === 'ACCEPTED' || reviewStatus === 'EXHAUSTED' || reviewStatus === 'PENDING_ACCEPTANCE') {
+      this.logger.info('order.status.changed(SUBMITTED): ignoring — review already in progress or settled', {
+        orderId,
+        reviewStatus,
+      });
       return;
     }
 
@@ -1699,17 +1740,53 @@ export class AutoAssignmentOrchestratorService {
 
     const expiresAt = new Date(Date.now() + REVIEW_EXPIRY_HOURS * 60 * 60 * 1000);
 
-    // Persist assignment via QC queue service
+    // Persist assignment via QC queue service. If this fails, ABORT —
+    // do not persist order state and do not publish review.assigned.
+    // Previously the code logged + continued, which left QC service +
+    // event stream + order doc out of sync: downstream consumers
+    // believed the reviewer was assigned, but the QC queue still showed
+    // the review unassigned. That state desync caused "reviewer X never
+    // accepted my assignment" support tickets. Surfaced by code review.
     try {
       await this.qcQueueService.assignReview(state.qcReviewId, reviewer.reviewerId);
     } catch (err) {
-      this.logger.error('Failed to call qcQueueService.assignReview', {
+      this.logger.error('assignReviewer aborting — qcQueueService.assignReview failed', {
         orderId: order.id,
         qcReviewId: state.qcReviewId,
         reviewerId: reviewer.reviewerId,
-        error: err,
+        error: err instanceof Error ? { message: err.message, stack: err.stack } : String(err),
       });
-      // Don't throw — still persist state and publish event for observability
+      // Publish a dedicated failure event so observability can distinguish
+      // "reviewer assigned" from "tried to assign but QC queue refused".
+      try {
+        await this.publisher.publish({
+          id: uuidv4(),
+          type: 'review.assignment.failed',
+          timestamp: new Date(),
+          source: 'auto-assignment-orchestrator',
+          version: '1.0',
+          category: EventCategory.QC,
+          data: {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            tenantId,
+            clientId: order.clientId,
+            qcReviewId: state.qcReviewId,
+            attemptedReviewerId: reviewer.reviewerId,
+            attemptedReviewerName: reviewer.reviewerName,
+            failureReason: err instanceof Error ? err.message : String(err),
+          },
+        } as never);
+      } catch (publishErr) {
+        // Last-resort log; the assignReview failure is already the primary signal.
+        this.logger.warn('Failed to publish review.assignment.failed', {
+          orderId: order.id,
+          error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+        });
+      }
+      // Re-throw so Service Bus can retry the originating event and the
+      // caller's outer try/catch surfaces this as a real failure.
+      throw err;
     }
 
     // Persist state on order
@@ -2288,12 +2365,51 @@ export class AutoAssignmentOrchestratorService {
 
   /** Wrap an async handler. Errors propagate to the subscriber, which handles
    * retry/dead-letter semantics via Service Bus delivery count. */
+  /**
+   * Bounded LRU of recently-processed event ids. Service Bus delivers
+   * at-least-once and the in-memory mock fan-out is also not exactly-once.
+   * Without dedup, a redelivery of `vendor.bid.timeout` advances
+   * `currentAttempt` twice — vendor[N] gets skipped without ever
+   * receiving a bid. Same risk on every state-mutating handler.
+   *
+   * In-process cache only — not durable across replicas, so two
+   * replicas can both process the same redelivery. For the per-replica
+   * `tsx --watch` dev loop and for short delivery windows in prod,
+   * this still cuts duplicates dramatically. A durable
+   * `processedEventIds` doc on the order would be the correct
+   * long-term fix.
+   */
+  private readonly processedEventIds = new Map<string, number>();
+  private static readonly PROCESSED_EVENT_TTL_MS = 60 * 60 * 1000; // 1h
+  private static readonly PROCESSED_EVENT_MAX_ENTRIES = 5_000;
+
+  /** Returns true if this eventId is a duplicate that should be skipped. */
+  private isDuplicateEvent(eventId: string): boolean {
+    const now = Date.now();
+    const seenAt = this.processedEventIds.get(eventId);
+    if (seenAt !== undefined && now - seenAt < AutoAssignmentOrchestratorService.PROCESSED_EVENT_TTL_MS) {
+      return true;
+    }
+    this.processedEventIds.set(eventId, now);
+    // Prune oldest when over cap. Map iteration is insertion-ordered, so
+    // delete-the-first-key is O(1).
+    if (this.processedEventIds.size > AutoAssignmentOrchestratorService.PROCESSED_EVENT_MAX_ENTRIES) {
+      const oldest = this.processedEventIds.keys().next().value;
+      if (oldest !== undefined) this.processedEventIds.delete(oldest);
+    }
+    return false;
+  }
+
   private makeHandler<T extends BaseEvent>(
     eventType: string,
     fn: (event: T) => Promise<void>,
   ): EventHandler<T> {
     return {
       handle: async (event: T) => {
+        if (event.id && this.isDuplicateEvent(event.id)) {
+          this.logger.info('Duplicate event ignored', { eventType, eventId: event.id });
+          return;
+        }
         this.logger.debug(`Handling ${eventType}`, { eventId: event.id });
         await fn(event);
       },
