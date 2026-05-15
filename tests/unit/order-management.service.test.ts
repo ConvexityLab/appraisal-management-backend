@@ -12,6 +12,16 @@ vi.mock('../../src/services/service-bus-publisher.js', () => ({
   })),
 }));
 
+vi.mock('../../src/services/tenant-automation-config.service.js', () => ({
+  TenantAutomationConfigService: vi.fn().mockImplementation(() => ({
+    getConfig: vi.fn().mockResolvedValue({
+      autoAssignmentEnabled: true,
+      axiomProgramId: null,
+      axiomProgramVersion: null,
+    }),
+  })),
+}));
+
 import { OrderManagementService } from '../../src/services/order-management.service.js';
 
 function makeDependencies() {
