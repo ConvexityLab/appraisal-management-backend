@@ -4,7 +4,7 @@
  *
  * Upserts:
  *   report-config-base     ← URAR 1004 base document
- *   report-config-deltas   ← all product deltas (8 products) + client delta (client-demo-001)
+ *   report-config-deltas   ← all product deltas (11 products) + client delta (client-demo-001)
  *
  * Idempotent — uses document `id` as the upsert key. No createIfNotExists.
  *
@@ -29,6 +29,8 @@ import { DELTA_FIELD_REVIEW_2000 } from '../seed-data/report-config/delta-field-
 import { DELTA_RECERTIFICATION } from '../seed-data/report-config/delta-recertification.js';
 import { DELTA_ROV } from '../seed-data/report-config/delta-rov.js';
 import { DELTA_CLIENT_DEMO_001 } from '../seed-data/report-config/delta-client-demo-001.js';
+import { DELTA_STR_FEASIBILITY } from '../seed-data/report-config/delta-str-feasibility.js';
+import { DELTA_ABSORPTION_STUDY } from '../seed-data/report-config/delta-absorption-study.js';
 
 const endpoint = process.env.COSMOS_ENDPOINT ?? process.env.AZURE_COSMOS_ENDPOINT;
 if (!endpoint) {
@@ -57,7 +59,7 @@ async function main(): Promise<void> {
   await upsert(BASE_CONTAINER, URAR_1004_BASE);
 
   console.log('\n[report-config-deltas]');
-  // Product deltas (9 products)
+  // Product deltas (11 products)
   await upsert(DELTAS_CONTAINER, DELTA_FULL_1004);
   await upsert(DELTAS_CONTAINER, DELTA_FULL_1004C);
   await upsert(DELTAS_CONTAINER, DELTA_URAR_1073);
@@ -68,6 +70,8 @@ async function main(): Promise<void> {
   await upsert(DELTAS_CONTAINER, DELTA_FIELD_REVIEW_2000);
   await upsert(DELTAS_CONTAINER, DELTA_RECERTIFICATION);
   await upsert(DELTAS_CONTAINER, DELTA_ROV);
+  await upsert(DELTAS_CONTAINER, DELTA_STR_FEASIBILITY);
+  await upsert(DELTAS_CONTAINER, DELTA_ABSORPTION_STUDY);
   // Client deltas
   await upsert(DELTAS_CONTAINER, DELTA_CLIENT_DEMO_001);
 

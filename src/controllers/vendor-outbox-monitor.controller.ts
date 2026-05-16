@@ -175,7 +175,7 @@ export function createVendorOutboxMonitorRouter(dbService: Pick<CosmosDbService,
         [
           'SELECT TOP ' + limit,
           'c.id, c.status, c.direction, c.vendorType, c.eventType, c.vendorOrderId, c.ourOrderId,',
-          'c.receivedAt, c.completedAt, c.availableAt, c.attemptCount',
+          'c.receivedAt, c.completedAt, c.availableAt, c.attemptCount, c.payload',
           'FROM c',
           'WHERE c.type = @type',
           'AND c.tenantId = @tenantId',
