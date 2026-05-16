@@ -72,6 +72,8 @@ export const DocumentCategory = {
   AVM_REPORT:             'avm-report',
   FRAUD_ANALYSIS_REPORT:  'fraud-analysis-report',
   DVR_REPORT:             'dvr-report',
+  STR_FEASIBILITY_REPORT: 'str-feasibility-report',
+  ABSORPTION_STUDY_REPORT: 'absorption-study-report',
   SUPPORTING_DOCUMENT:    'supporting-document',
   PHOTO:                  'photo',
   FLOOR_PLAN:             'floor-plan',
@@ -157,6 +159,10 @@ export const ProductType = {
   FRAUD_ANALYSIS:   'FRAUD_ANALYSIS',
   /** FNMA Form 1033 Individual Appraisal Field Review */
   ANALYSIS_1033:    'ANALYSIS_1033',
+  /** Short-Term Rental Feasibility Report */
+  STR_FEASIBILITY:  'STR_FEASIBILITY',
+  /** Absorption Rate & Sellout Analysis */
+  ABSORPTION_STUDY: 'ABSORPTION_STUDY',
 } as const;
 
 export type ProductType = typeof ProductType[keyof typeof ProductType];
@@ -419,6 +425,24 @@ export const PRODUCT_CATALOG: Record<ProductType, ProductDefinition> = {
     requiresCertifiedAppraiser: true,
     isAutomated: false,
     bulkAnalysisType: 'ANALYSIS_1033',
+  },
+
+  STR_FEASIBILITY: {
+    label: 'Short-Term Rental Feasibility Report',
+    primaryDocumentCategory: DocumentCategory.STR_FEASIBILITY_REPORT,
+    supportingDocumentCategories: [DocumentCategory.SUPPORTING_DOCUMENT],
+    requiresPhysicalInspection: false,
+    requiresCertifiedAppraiser: false,
+    isAutomated: false,
+  },
+
+  ABSORPTION_STUDY: {
+    label: 'Absorption Rate & Sellout Analysis',
+    primaryDocumentCategory: DocumentCategory.ABSORPTION_STUDY_REPORT,
+    supportingDocumentCategories: [DocumentCategory.SUPPORTING_DOCUMENT, DocumentCategory.COMPARABLE_SALES],
+    requiresPhysicalInspection: false,
+    requiresCertifiedAppraiser: false,
+    isAutomated: false,
   },
 };
 

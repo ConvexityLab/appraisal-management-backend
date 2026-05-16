@@ -72,6 +72,8 @@ import {
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
+import { createStrFeasibilityRouter } from '../controllers/str-feasibility.controller.js';
+import { createAbsorptionStudyRouter } from '../controllers/absorption-study.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
 import { createAppraisalDraftRouter } from '../controllers/appraisal-draft.controller.js';
 import { createReportConfigRouter } from '../controllers/report-config.controller.js';
@@ -440,6 +442,7 @@ export class AppraisalManagementAPIServer {
   private qcChecklistRouter: express.Router;
   private qcExecutionRouter: express.Router;
   private qcResultsRouter: express.Router;
+  private httpServer?: import('http').Server;
 
   constructor(port = parseInt(process.env.PORT || '3000')) {
     this.app = express();
@@ -1850,6 +1853,18 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/arv',
       this.unifiedAuth.authenticate(),
       createArvRouter(this.dbService)
+    );
+
+    // STR Feasibility — short-term rental income analysis (AirROI + AirDNA + Airbnb comps)
+    this.app.use('/api/str-feasibility',
+      this.unifiedAuth.authenticate(),
+      createStrFeasibilityRouter(this.dbService)
+    );
+
+    // Absorption Study — new-construction sellout timeline analysis (Bridge MLS comps)
+    this.app.use('/api/absorption-study',
+      this.unifiedAuth.authenticate(),
+      createAbsorptionStudyRouter(this.dbService)
     );
 
     // Engagements moved to setupAuthorizationRoutes() where authzMiddleware is available.
@@ -5303,7 +5318,7 @@ export class AppraisalManagementAPIServer {
       // Start background jobs — throws in production if any critical service fails
       await this.startBackgroundJobs();
       
-      this.app.listen(this.port, () => {
+      this.httpServer = this.app.listen(this.port, () => {
         this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
         this.logger.info(`API Documentation available at http://localhost:${this.port}/api-docs`);
         this.logger.info(`Health check available at http://localhost:${this.port}/health`);
@@ -6037,6 +6052,9 @@ export class AppraisalManagementAPIServer {
       this.supervisionTimeoutWatcherJob.stop();
     }
     this.logger.info('Background jobs stopped');
+    if (this.httpServer) {
+      this.httpServer.close();
+    }
   }
 
   /**

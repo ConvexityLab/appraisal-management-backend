@@ -138,7 +138,9 @@ void (async () => {
   const gracefulShutdown = (signal: string) => {
     console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
     server.stopBackgroundJobs();
-    process.exit(0);
+    // Give the OS a moment to fully release the port before exiting,
+    // so tsx --watch restarts don't hit EADDRINUSE on the next boot.
+    setTimeout(() => process.exit(0), 300);
   };
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

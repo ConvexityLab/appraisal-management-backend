@@ -23,7 +23,7 @@
     "start": "node dist/src/app-production.js",
     "start:dev": "node dist/server.js",
     "start:minimal": "node dist/minimal-server.js",
-    "dev": "tsx --env-file .env --watch src/app-production.ts",
+    "dev": "npx kill-port 3011 && tsx --env-file .env --watch src/app-production.ts",
     "dev:minimal": "tsx --env-file .env --watch src/minimal-server.ts",
     "dev:production": "tsx --env-file .env --watch src/app-production.ts",
     "api": "tsx --env-file .env --watch src/app-production.ts",

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STR Feasibility Report – {{orderNumber}}</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7.5pt; color: #000; background: #fff; }
+
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ── Header bar ───────────────────────────────────────────── */
+  .report-header {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 2px solid #1a3c6e; padding: 6px 10px; background: #1a3c6e; margin-bottom: 4px;
+  }
+  .report-header-title { color: #fff; font-size: 13pt; font-weight: bold; letter-spacing: 0.5px; }
+  .report-header-sub   { color: #c8d8f0; font-size: 7.5pt; }
+  .report-header-meta  { text-align: right; color: #fff; font-size: 7.5pt; }
+
+  .section-header {
+    background: #1a3c6e; color: #fff; padding: 2px 6px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 4px; margin-bottom: 1px;
+  }
+  .section-header.light { background: #d0daea; color: #1a3c6e; }
+  .section-header.green { background: #1e7b34; }
+
+  /* ── Grid / cells ─────────────────────────────────────────── */
+  .grid { display: grid; border-left: 1px solid #8899bb; border-top: 1px solid #8899bb; width: 100%; }
+  .cell { border-right: 1px solid #8899bb; border-bottom: 1px solid #8899bb; padding: 2px 4px; min-height: 15px; }
+  .cell-label { font-size: 5.5pt; color: #555; display: block; text-transform: uppercase; letter-spacing: 0.2px; }
+  .cell-value  { font-size: 8pt; font-weight: bold; color: #111; }
+  .cell.narrative { min-height: 50px; white-space: pre-wrap; font-size: 7pt; font-weight: normal; }
+
+  .cols-2  { grid-template-columns: 1fr 1fr; }
+  .cols-3  { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-6  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2  { grid-column: span 2; }
+  .span-3  { grid-column: span 3; }
+  .span-4  { grid-column: span 4; }
+  .span-6  { grid-column: span 6; }
+  .right   { text-align: right; }
+  .center  { text-align: center; }
+  .bold    { font-weight: bold; }
+
+  /* ── Projection comparison table ──────────────────────────── */
+  .proj-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-top: 2px; }
+  .proj-table th { background: #1a3c6e; color: #fff; padding: 2px 5px; text-align: center; border: 1px solid #8899bb; font-size: 7pt; }
+  .proj-table td { border: 1px solid #8899bb; padding: 2px 5px; vertical-align: middle; }
+  .proj-table tr:nth-child(even) td { background: #f0f4fa; }
+  .proj-table td.metric { font-weight: bold; background: #e6eaf2; font-size: 7pt; }
+  .proj-table td.value  { text-align: right; }
+  .proj-table td.primary { background: #dff0e6; }
+
+  /* ── Comps table ──────────────────────────────────────────── */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 6.5pt; margin-top: 2px; }
+  .comp-table th { background: #1a3c6e; color: #fff; padding: 2px 4px; text-align: center; border: 1px solid #8899bb; }
+  .comp-table td { border: 1px solid #8899bb; padding: 2px 4px; vertical-align: top; }
+  .comp-table tr:nth-child(even) td { background: #f0f4fa; }
+  .comp-table td.addr { font-weight: bold; }
+  .comp-table td.num  { text-align: right; }
+  .comp-num-badge {
+    display: inline-block; width: 14px; height: 14px; line-height: 14px;
+    background: #1a3c6e; color: #fff; text-align: center;
+    border-radius: 50%; font-size: 7pt; font-weight: bold; margin-right: 3px;
+  }
+
+  /* ── Regulatory badge ─────────────────────────────────────── */
+  .reg-badge {
+    display: inline-block; border-radius: 3px; padding: 1px 6px;
+    font-size: 7.5pt; font-weight: bold; color: #fff;
+  }
+  .reg-allowed    { background: #1e7b34; }
+  .reg-restricted { background: #e67e22; }
+  .reg-prohibited { background: #c0392b; }
+
+  /* ── List items ────────────────────────────────────────────── */
+  .assumption-list { margin: 2px 0 0 12px; font-size: 7pt; }
+  .assumption-list li { margin-bottom: 1px; }
+
+  /* ── Footer ───────────────────────────────────────────────── */
+  .footer { margin-top: 8px; font-size: 6.5pt; color: #555; border-top: 1px solid #8899bb; padding-top: 4px; }
+  .sig-block { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .sig-line  { border-bottom: 1px solid #000; min-height: 18px; margin-bottom: 2px; }
+  .sig-label { font-size: 6pt; color: #555; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ PAGE 1 -->
+<div class="page">
+
+  <!-- Header -->
+  <div class="report-header">
+    <div>
+      <div class="report-header-title">SHORT-TERM RENTAL FEASIBILITY ADDENDUM</div>
+      <div class="report-header-sub">Not an Appraisal · USPAP Ethical Obligations Apply</div>
+    </div>
+    <div class="report-header-meta">
+      <div>Order #: {{orderNumber}}</div>
+      <div>Effective Date: {{effectiveDate}}</div>
+    </div>
+  </div>
+
+  <!-- Subject identification -->
+  <div class="section-header">Subject Property &amp; Assignment</div>
+  <div class="grid cols-4">
+    <div class="cell span-2">
+      <span class="cell-label">Subject Address</span>
+      <span class="cell-value">{{subjectAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">City / State / ZIP</span>
+      <span class="cell-value">{{subjectCity}}, {{subjectState}} {{subjectPostalCode}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Property Type</span>
+      <span class="cell-value">{{subjectPropertyType}}{{#if subjectDesign}} – {{subjectDesign}}{{/if}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Bedrooms</span>
+      <span class="cell-value">{{subjectBedrooms}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bathrooms</span>
+      <span class="cell-value">{{subjectBathrooms}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Sq Ft (est.)</span>
+      <span class="cell-value">{{#if subjectSquareFeet}}{{subjectSquareFeet}}{{else}}N/A{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Year Built</span>
+      <span class="cell-value">{{#if subjectYearBuilt}}{{subjectYearBuilt}}{{else}}N/A{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Client / Lender</span>
+      <span class="cell-value">{{clientName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Borrower</span>
+      <span class="cell-value">{{borrowerName}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Loan Number</span>
+      <span class="cell-value">{{lenderLoanNumber}}</span>
+    </div>
+    <div class="cell span-3">
+      <span class="cell-label">Subject Proximity / Location Description</span>
+      <span class="cell-value">{{subjectProximityDescription}}</span>
+    </div>
+  </div>
+
+  <!-- Subject & market description -->
+  {{#if subjectAndMarketDescription}}
+  <div class="section-header">Subject &amp; Market Description</div>
+  <div class="grid"><div class="cell narrative span-6">{{subjectAndMarketDescription}}</div></div>
+  {{/if}}
+
+  <!-- Data source projections -->
+  <div class="section-header">STR Revenue Projections by Data Source</div>
+  <table class="proj-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        {{#each projections}}
+        <th>{{sourceName}}{{#if (eq sourceName ../primarySourceName)}} ★{{/if}}</th>
+        {{/each}}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">Annual Gross Revenue</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          ${{formatNumber projectedAnnualRevenue}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Occupancy Rate</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          {{formatPercent occupancyRate}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Avg Daily Rate (ADR)</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          ${{formatNumber averageDailyRate}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">High Season Months</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          {{join highSeasonMonths ", "}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Low Season Months</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          {{join lowSeasonMonths ", "}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Est. Annual Operating Expenses</td>
+        {{#each projections}}
+        <td class="value {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}">
+          ${{formatNumber annualOperatingExpenses}}
+        </td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric" style="border-top:2px solid #1a3c6e;">Net Operating Income (NOI)</td>
+        {{#each projections}}
+        <td class="value bold {{#if (eq sourceName ../primarySourceName)}}primary{{/if}}"
+            style="border-top:2px solid #1a3c6e;">
+          ${{formatNumber estimatedNOI}}
+        </td>
+        {{/each}}
+      </tr>
+    </tbody>
+  </table>
+  {{#if primaryProjection.analystNote}}
+  <div style="font-size:6.5pt; color:#333; margin-top:2px; padding:2px 4px; background:#f5f5f5; border-left:3px solid #1a3c6e;">
+    <strong>★ Primary source note:</strong> {{primaryProjection.analystNote}}
+  </div>
+  {{/if}}
+
+</div><!-- /page 1 -->
+
+<!-- ═══════════════════════════════════════════════════════════════ PAGE 2 -->
+<div class="page">
+
+  <!-- STR Comparables -->
+  <div class="section-header">Short-Term Rental Comparables</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Address / Listing</th>
+        <th>Bed / Bath</th>
+        <th>Sq Ft</th>
+        <th>ADR</th>
+        <th>Occupancy</th>
+        <th>Est. Mo. Revenue</th>
+        <th>Key Amenities</th>
+        <th>Proximity</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each comparables}}
+      <tr>
+        <td class="center"><span class="comp-num-badge">{{compNumber}}</span></td>
+        <td class="addr">
+          {{#if listingName}}<strong>{{listingName}}</strong><br>{{/if}}
+          {{address}}<br>{{city}}, {{state}} {{postalCode}}
+        </td>
+        <td class="center">{{bedrooms}} / {{bathrooms}}</td>
+        <td class="num">{{#if squareFeet}}{{squareFeet}}{{else}}—{{/if}}</td>
+        <td class="num">${{formatNumber averageDailyRate}}</td>
+        <td class="num">{{formatPercent occupancyRate}}</td>
+        <td class="num">${{formatNumber estimatedMonthlyRevenue}}</td>
+        <td>{{join amenities ", "}}</td>
+        <td>{{distanceFromSubjectMiles}} mi{{#if proximityDescription}} · {{proximityDescription}}{{/if}}</td>
+        <td class="center">{{dataSource}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <!-- Regulatory / compliance summary -->
+  {{#if regulatoryProfile}}
+  <div class="section-header green">STR Regulatory Compliance — {{regulatoryProfile.jurisdictionDisplayName}}</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">STR Status</span>
+      <span class="cell-value">
+        {{#if regulatoryProfile.strProhibited}}
+          <span class="reg-badge reg-prohibited">PROHIBITED</span>
+        {{else}}
+          <span class="reg-badge reg-allowed">PERMITTED</span>
+        {{/if}}
+      </span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Minimum Rental Duration</span>
+      <span class="cell-value">
+        {{#if regulatoryProfile.minimumRentalDays}}
+          {{regulatoryProfile.minimumRentalDays}} nights
+        {{else}}
+          No minimum
+        {{/if}}
+      </span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Max Rentals / Year</span>
+      <span class="cell-value">{{#if regulatoryProfile.maxRentalsPerYear}}{{regulatoryProfile.maxRentalsPerYear}}{{else}}Unlimited{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Lodging Tax Rate</span>
+      <span class="cell-value">{{formatPercent regulatoryProfile.totalLodgingTaxRate}}</span>
+    </div>
+  </div>
+  <div class="grid cols-3">
+    <div class="cell">
+      <span class="cell-label">Business Tax Receipt Required</span>
+      <span class="cell-value">{{#if regulatoryProfile.requiresBusinessTaxReceipt}}Yes{{else}}No{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">DBPR Vacation Rental License</span>
+      <span class="cell-value">{{#if regulatoryProfile.requiresDBPRVacationRentalLicense}}Yes{{else}}No{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Certificate of Use Required</span>
+      <span class="cell-value">{{#if regulatoryProfile.requiresCertificateOfUse}}Yes{{else}}No{{/if}}</span>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="cell narrative span-6">{{regulatoryProfile.complianceSummaryText}}</div>
+  </div>
+  {{/if}}
+
+  <!-- Purpose & justification -->
+  {{#if purposeStatement}}
+  <div class="section-header">Purpose &amp; Intended Use</div>
+  <div class="grid"><div class="cell narrative">{{purposeStatement}}</div></div>
+  {{/if}}
+
+  {{#if justificationForStrIncome}}
+  <div class="section-header">Justification for STR Income</div>
+  <div class="grid"><div class="cell narrative">{{justificationForStrIncome}}</div></div>
+  {{/if}}
+
+  <!-- Key assumptions -->
+  {{#if keyAssumptions}}
+  <div class="section-header light">Key Assumptions &amp; Limiting Conditions</div>
+  <div style="padding: 4px 6px; font-size: 7pt; background:#fff; border:1px solid #8899bb;">
+    <ul class="assumption-list">
+      {{#each keyAssumptions}}<li>{{this}}</li>{{/each}}
+    </ul>
+  </div>
+  {{/if}}
+
+  <!-- USPAP compliance statement -->
+  {{#if uspapComplianceStatement}}
+  <div class="section-header light">USPAP Ethical Obligations</div>
+  <div class="grid"><div class="cell narrative">{{uspapComplianceStatement}}</div></div>
+  {{else}}
+  <div class="section-header light">USPAP Ethical Obligations</div>
+  <div class="grid"><div class="cell narrative">This STR Feasibility Addendum is not an appraisal.
+It was prepared consistent with applicable USPAP ethical obligations. The analyst has no present or
+contemplated future interest in the subject property and has no bias with respect to the parties
+involved. The compensation for this assignment is not contingent on a predetermined result.</div></div>
+  {{/if}}
+
+  <!-- Disclosure -->
+  {{#if disclosureText}}
+  <div class="grid"><div class="cell narrative" style="font-size:6.5pt;">{{disclosureText}}</div></div>
+  {{/if}}
+
+  <!-- Signature block -->
+  <div class="sig-block">
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Analyst Signature</div>
+    </div>
+    <div>
+      <div style="font-size:7.5pt; font-weight:bold; margin-bottom:2px;">{{completedByName}}</div>
+      <div style="font-size:7pt; color:#333;">{{completedByCredentials}}</div>
+      <div style="font-size:7pt; color:#555;">Completed: {{completedAt}}</div>
+    </div>
+  </div>
+
+</div><!-- /page 2 -->
+
+</body>
+</html>

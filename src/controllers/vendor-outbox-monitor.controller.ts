@@ -163,6 +163,49 @@ export function createVendorOutboxMonitorRouter(dbService: Pick<CosmosDbService,
     }
   });
 
+  router.get('/recent', async (req: Request, res: Response) => {
+    const tenantId = (req as any).user?.tenantId ?? 'unknown';
+    const limit = Math.max(1, Math.min(100, Number.parseInt(String(req.query['limit'] ?? '50'), 10) || 50));
+    const hours = Math.max(1, Math.min(168, Number.parseInt(String(req.query['hours'] ?? '72'), 10) || 72));
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    try {
+      const result = await dbService.queryItems<VendorOutboxListItem>(
+        VENDOR_EVENT_OUTBOX_CONTAINER,
+        [
+          'SELECT TOP ' + limit,
+          'c.id, c.status, c.direction, c.vendorType, c.eventType, c.vendorOrderId, c.ourOrderId,',
+          'c.receivedAt, c.completedAt, c.availableAt, c.attemptCount',
+          'FROM c',
+          'WHERE c.type = @type',
+          'AND c.tenantId = @tenantId',
+          'AND c.status = @status',
+          'AND c.receivedAt >= @since',
+          'ORDER BY c.receivedAt DESC',
+        ].join(' '),
+        [
+          { name: '@type', value: 'vendor-event-outbox' },
+          { name: '@tenantId', value: tenantId },
+          { name: '@status', value: 'COMPLETED' },
+          { name: '@since', value: since },
+        ],
+      );
+
+      if (!result.success) {
+        throw new Error(result.error?.message ?? 'Failed to query recent vendor outbox activity');
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data ?? [],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to query recent vendor outbox activity', { tenantId, error: message });
+      return res.status(500).json({ success: false, error: { message } });
+    }
+  });
+
   router.post('/:id/requeue', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId ?? 'unknown';
     const operatorId = resolveOperatorId(req);

@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AIM-Port outbound pipeline trace — callback URL + published events > vendor.order.assigned > published Service Bus events after vendor.order.assigned 1`] = `[]`;
+
+exports[`AIM-Port outbound pipeline trace — callback URL + published events > vendor.order.cancelled > published Service Bus events after vendor.order.cancelled 1`] = `[]`;
+
+exports[`AIM-Port outbound pipeline trace — callback URL + published events > vendor.order.completed > published Service Bus events after vendor.order.completed 1`] = `[]`;

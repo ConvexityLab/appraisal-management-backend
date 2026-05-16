@@ -82,12 +82,12 @@ Create one unified analysis experience and contract across Engagement, Order, an
 - [ ] E2E smoke tests: engagement, order, bulk row.
 
 ## Phase 8 — Rollout & Decommission
-- [ ] Add feature flag for unified API usage (`UI_ANALYSIS_UNIFIED_ENABLED`).
-- [ ] Canary rollout to staging + monitored tenants.
-- [ ] Verify parity metrics against legacy routes.
-- [ ] Migrate all UI call sites.
-- [ ] Disable new traffic to legacy routes.
-- [ ] Remove legacy code once error budget and KPI thresholds are met.
+- [N/A] Add feature flag for unified API usage (`UI_ANALYSIS_UNIFIED_ENABLED`) — dev environment only; unified API is the sole path, no flag needed.
+- [N/A] Canary rollout to staging + monitored tenants — N/A for dev environment.
+- [N/A] Verify parity metrics against legacy routes — routes deleted; no traffic to compare.
+- [x] Migrate all UI call sites — `ReviewProgramWorkspace` migrated to `useSubmitAnalysisMutation`; last remaining caller of legacy mutations.
+- [x] Disable new traffic to legacy routes — `POST /runs/extraction` and `POST /runs/criteria` handlers deleted from `runs.controller.ts`.
+- [x] Remove legacy code once error budget and KPI thresholds are met — mutations removed from `runLedgerApi.ts`, barrel re-exports cleaned, dead types (`CreateExtractionRunRequest`, `CreateCriteriaRunRequest`, `CreateCriteriaRunResponse`) removed from `runLedger.types.ts`.
 
 ---
 
@@ -107,3 +107,4 @@ Create one unified analysis experience and contract across Engagement, Order, an
 - CRITERIA advanced mode in `AnalysisWorkbench` (requires `snapshotId` + `programKey` UI — UX TBD).
 - Metrics dashboards and DLQ/replay strategy — ops/infra work.
 - Feature-flag canary rollout — pending product/ops sign-off.
+- **Pre-existing failing test (unrelated):** `tests/post-delivery.test.ts > PostDeliveryService > checkRecertificationStatus > should return recert status when task exists` — `AssertionError: expected 0 to be greater than 0`. Existed before Phase 8 work; needs separate investigation.

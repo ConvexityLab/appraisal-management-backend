@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Absorption Rate Analysis – {{orderNumber}}</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7.5pt; color: #000; background: #fff; }
+
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ── Header bar ───────────────────────────────────────────── */
+  .report-header {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 2px solid #1a3c6e; padding: 6px 10px; background: #1a3c6e; margin-bottom: 4px;
+  }
+  .report-header-title { color: #fff; font-size: 13pt; font-weight: bold; letter-spacing: 0.5px; }
+  .report-header-sub   { color: #c8d8f0; font-size: 7.5pt; }
+  .report-header-meta  { text-align: right; color: #fff; font-size: 7.5pt; }
+
+  .section-header {
+    background: #1a3c6e; color: #fff; padding: 2px 6px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 4px; margin-bottom: 1px;
+  }
+  .section-header.light { background: #d0daea; color: #1a3c6e; }
+
+  /* ── Grid / cells ─────────────────────────────────────────── */
+  .grid { display: grid; border-left: 1px solid #8899bb; border-top: 1px solid #8899bb; width: 100%; }
+  .cell { border-right: 1px solid #8899bb; border-bottom: 1px solid #8899bb; padding: 2px 4px; min-height: 15px; }
+  .cell-label { font-size: 5.5pt; color: #555; display: block; text-transform: uppercase; letter-spacing: 0.2px; }
+  .cell-value  { font-size: 8pt; font-weight: bold; color: #111; }
+  .cell.narrative { min-height: 50px; white-space: pre-wrap; font-size: 7pt; font-weight: normal; }
+
+  .cols-2  { grid-template-columns: 1fr 1fr; }
+  .cols-3  { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-6  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2  { grid-column: span 2; }
+  .span-3  { grid-column: span 3; }
+  .span-4  { grid-column: span 4; }
+  .span-6  { grid-column: span 6; }
+  .right   { text-align: right; }
+  .center  { text-align: center; }
+  .bold    { font-weight: bold; }
+
+  /* ── Unit mix table ───────────────────────────────────────── */
+  .mix-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-top: 2px; }
+  .mix-table th { background: #1a3c6e; color: #fff; padding: 2px 5px; text-align: center; border: 1px solid #8899bb; font-size: 7pt; }
+  .mix-table td { border: 1px solid #8899bb; padding: 2px 5px; vertical-align: middle; }
+  .mix-table tr:nth-child(even) td { background: #f0f4fa; }
+  .mix-table td.num { text-align: right; }
+  .mix-table tfoot td { background: #1a3c6e; color: #fff; font-weight: bold; padding: 2px 5px; border: 1px solid #8899bb; }
+  .mix-table tfoot td.num { text-align: right; }
+
+  /* ── Scenario table ───────────────────────────────────────── */
+  .scenario-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-top: 2px; }
+  .scenario-table th { background: #1a3c6e; color: #fff; padding: 3px 5px; text-align: center; border: 1px solid #8899bb; font-size: 7pt; }
+  .scenario-table td { border: 1px solid #8899bb; padding: 3px 5px; vertical-align: top; }
+  .scenario-table th.base     { background: #1e5799; }
+  .scenario-table th.upside   { background: #1e7b34; }
+  .scenario-table th.downside { background: #b5651d; }
+  .scenario-table td.metric   { font-weight: bold; background: #e6eaf2; font-size: 7pt; }
+  .scenario-table td.num      { text-align: right; }
+  .scenario-table td.base-val    { background: #dde8f5; }
+  .scenario-table td.upside-val  { background: #dff0e6; }
+  .scenario-table td.downside-val { background: #fdf0e2; }
+  .scenario-table td ul { margin: 0 0 0 10px; font-size: 6.5pt; }
+  .scenario-table td ul li { margin-bottom: 1px; }
+
+  /* ── Comparables table ────────────────────────────────────── */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 6.5pt; margin-top: 2px; }
+  .comp-table th { background: #1a3c6e; color: #fff; padding: 2px 4px; text-align: center; border: 1px solid #8899bb; }
+  .comp-table td { border: 1px solid #8899bb; padding: 2px 4px; vertical-align: top; }
+  .comp-table tr:nth-child(even) td { background: #f0f4fa; }
+  .comp-table td.num { text-align: right; }
+  .comp-table td.addr { font-weight: bold; }
+
+  /* ── Lists ────────────────────────────────────────────────── */
+  .assumption-list { margin: 2px 0 0 12px; font-size: 7pt; }
+  .assumption-list li { margin-bottom: 1px; }
+
+  /* ── Footer / sig ─────────────────────────────────────────── */
+  .footer { margin-top: 8px; font-size: 6.5pt; color: #555; border-top: 1px solid #8899bb; padding-top: 4px; }
+  .sig-block { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .sig-line  { border-bottom: 1px solid #000; min-height: 18px; margin-bottom: 2px; }
+  .sig-label { font-size: 6pt; color: #555; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ PAGE 1 -->
+<div class="page">
+
+  <!-- Header -->
+  <div class="report-header">
+    <div>
+      <div class="report-header-title">ABSORPTION RATE &amp; SELLOUT ANALYSIS</div>
+      <div class="report-header-sub">New Construction Market Study · Consistent with USPAP Advisory Opinion 34</div>
+    </div>
+    <div class="report-header-meta">
+      <div>Order #: {{orderNumber}}</div>
+      <div>Effective Date: {{completedAt}}</div>
+    </div>
+  </div>
+
+  <!-- Project / subject identification -->
+  <div class="section-header">Project Identification &amp; Assignment</div>
+  <div class="grid cols-4">
+    <div class="cell span-2">
+      <span class="cell-label">Project Name</span>
+      <span class="cell-value">{{projectName}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Subject Address</span>
+      <span class="cell-value">{{subjectAddress}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">City / State / ZIP</span>
+      <span class="cell-value">{{subjectCity}}, {{subjectState}} {{subjectPostalCode}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Client / Lender</span>
+      <span class="cell-value">{{clientName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Developer / Owner</span>
+      <span class="cell-value">{{developerName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Project Stage</span>
+      <span class="cell-value">{{projectStage}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Total Units</span>
+      <span class="cell-value">{{totalUnits}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Indicative $/SF</span>
+      <span class="cell-value">{{#if indicativePricePerSqFt}}${{formatNumber indicativePricePerSqFt}}{{else}}See unit mix{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Total Retail Sellout</span>
+      <span class="cell-value">{{#if totalRetailSelloutValue}}${{formatNumber totalRetailSelloutValue}}{{else}}See unit mix{{/if}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Anticipated Completion</span>
+      <span class="cell-value">{{#if anticipatedCompletionDate}}{{anticipatedCompletionDate}}{{else}}TBD{{/if}}</span>
+    </div>
+  </div>
+
+  <!-- Unit mix -->
+  <div class="section-header">Project Unit Mix</div>
+  <table class="mix-table">
+    <thead>
+      <tr>
+        <th>Unit Type</th>
+        <th>Sq Ft</th>
+        <th>Unit Count</th>
+        <th>Indicative $/SF</th>
+        <th>Indicative Unit Price</th>
+        <th>Price Range (Min – Max)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each unitMix}}
+      <tr>
+        <td>{{#if unitType}}{{unitType}}{{else}}—{{/if}}</td>
+        <td class="num">{{formatNumber squareFeet}}</td>
+        <td class="num center">{{unitCount}}</td>
+        <td class="num">{{#if indicativePricePerSqFt}}${{formatNumber indicativePricePerSqFt}}{{else}}—{{/if}}</td>
+        <td class="num">{{#if indicativeUnitPrice}}${{formatNumber indicativeUnitPrice}}{{else}}—{{/if}}</td>
+        <td class="num">
+          {{#if priceRange}}
+            ${{formatNumber priceRange.min}} – ${{formatNumber priceRange.max}}
+          {{else}}—{{/if}}
+        </td>
+      </tr>
+      {{/each}}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2">Total / Weighted Average</td>
+        <td class="num">{{totalUnits}}</td>
+        <td></td>
+        <td class="num">{{#if totalRetailSelloutValue}}${{formatNumber totalRetailSelloutValue}}{{else}}—{{/if}}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Market context -->
+  {{#if marketContextText}}
+  <div class="section-header">Market Context</div>
+  <div class="grid"><div class="cell narrative">{{marketContextText}}</div></div>
+  {{/if}}
+
+  {{#if submarketDescription}}
+  <div class="section-header">Submarket Description</div>
+  <div class="grid"><div class="cell narrative">{{submarketDescription}}</div></div>
+  {{/if}}
+
+</div><!-- /page 1 -->
+
+<!-- ═══════════════════════════════════════════════════════════════ PAGE 2 -->
+<div class="page">
+
+  <!-- Absorption scenarios -->
+  <div class="section-header">Absorption Rate &amp; Sellout Scenarios</div>
+  <table class="scenario-table">
+    <thead>
+      <tr>
+        <th style="width:22%">Metric</th>
+        {{#each scenarios}}
+        <th class="{{lower tier}}">{{label}}</th>
+        {{/each}}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">Presale Units</td>
+        {{#each scenarios}}
+        <td class="num {{lower tier}}-val">{{presaleUnits}} units</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Presale %</td>
+        {{#each scenarios}}
+        <td class="num {{lower tier}}-val">{{formatPercent presalePercent}}</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Remaining at Completion</td>
+        {{#each scenarios}}
+        <td class="num {{lower tier}}-val">{{remainingUnitsAtCompletion}} units</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Post-Completion Sellout</td>
+        {{#each scenarios}}
+        <td class="num {{lower tier}}-val">{{postCompletionMonths}} months</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Total Sellout Window</td>
+        {{#each scenarios}}
+        <td class="num bold {{lower tier}}-val">{{totalSelloutWindowMonths}} months</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Marketing Time / Unit</td>
+        {{#each scenarios}}
+        <td class="{{lower tier}}-val">{{marketingTimePerUnit}}</td>
+        {{/each}}
+      </tr>
+      <tr>
+        <td class="metric">Key Assumptions</td>
+        {{#each scenarios}}
+        <td class="{{lower tier}}-val">
+          <ul>{{#each keyAssumptions}}<li>{{this}}</li>{{/each}}</ul>
+        </td>
+        {{/each}}
+      </tr>
+      {{#if scenarios.[0].riskFactors}}
+      <tr>
+        <td class="metric">Risk Factors</td>
+        {{#each scenarios}}
+        <td class="{{lower tier}}-val">
+          {{#if riskFactors}}<ul>{{#each riskFactors}}<li>{{this}}</li>{{/each}}</ul>{{else}}—{{/if}}
+        </td>
+        {{/each}}
+      </tr>
+      {{/if}}
+    </tbody>
+  </table>
+
+  <!-- Appraisal-supported outlook -->
+  {{#if appraisalSupportedOutlookText}}
+  <div class="section-header">Appraisal-Supported Market Outlook</div>
+  <div class="grid"><div class="cell narrative">{{appraisalSupportedOutlookText}}</div></div>
+  {{/if}}
+
+  <!-- Comparable projects -->
+  {{#if comparables.length}}
+  <div class="section-header">Comparable Projects / Transactions</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>Project / Address</th>
+        <th>Units</th>
+        <th>Price Range ($/SF)</th>
+        <th>Presale %</th>
+        <th>Post-Comp Months</th>
+        <th>Total Sellout</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each comparables}}
+      <tr>
+        <td class="addr">
+          {{#if projectName}}<strong>{{projectName}}</strong><br>{{/if}}
+          {{address}}<br>{{city}}, {{state}} {{postalCode}}
+        </td>
+        <td class="num center">{{unitCount}}</td>
+        <td class="num">
+          {{#if pricePerSqFtMin}}${{formatNumber pricePerSqFtMin}}{{else}}—{{/if}}
+          {{#if pricePerSqFtMax}} – ${{formatNumber pricePerSqFtMax}}{{/if}}
+        </td>
+        <td class="num">{{#if presalePercent}}{{formatPercent presalePercent}}{{else}}—{{/if}}</td>
+        <td class="num">{{#if postCompletionMonths}}{{postCompletionMonths}} mo.{{else}}—{{/if}}</td>
+        <td class="num">{{#if totalSelloutMonths}}{{totalSelloutMonths}} mo.{{else}}—{{/if}}</td>
+        <td class="center">{{dataSource}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  <!-- Extraordinary assumptions -->
+  {{#if extraordinaryAssumptions}}
+  <div class="section-header light">Extraordinary Assumptions</div>
+  <div style="padding:4px 6px; font-size:7pt; background:#fff; border:1px solid #8899bb;">
+    <ul class="assumption-list">
+      {{#each extraordinaryAssumptions}}<li>{{this}}</li>{{/each}}
+    </ul>
+  </div>
+  {{/if}}
+
+  <!-- Limiting conditions -->
+  {{#if limitingConditions}}
+  <div class="section-header light">General Limiting Conditions</div>
+  <div style="padding:4px 6px; font-size:7pt; background:#fff; border:1px solid #8899bb;">
+    <ul class="assumption-list">
+      {{#each limitingConditions}}<li>{{this}}</li>{{/each}}
+    </ul>
+  </div>
+  {{/if}}
+
+  <!-- USPAP AO-34 alignment -->
+  <div class="section-header light">USPAP Advisory Opinion 34 Alignment</div>
+  <div class="grid"><div class="cell narrative">
+    {{#if uspapAlignmentStatement}}
+      {{uspapAlignmentStatement}}
+    {{else}}
+      This Absorption Rate and Sellout Analysis was prepared consistent with USPAP Advisory Opinion
+      34 (AO-34), which addresses the development and reporting of market analyses performed by
+      appraisers. It is not an appraisal assignment. The analyst has no present or contemplated
+      future interest in the subject property and has no bias with respect to the parties involved.
+      The compensation for this assignment is not contingent on a predetermined result.
+    {{/if}}
+  </div></div>
+
+  {{#if noGuaranteeStatement}}
+  <div class="grid"><div class="cell narrative" style="font-size:6.5pt;">{{noGuaranteeStatement}}</div></div>
+  {{else}}
+  <div class="grid"><div class="cell narrative" style="font-size:6.5pt;">
+    The projections contained herein are based on conditions reasonably believed to be accurate at
+    the time of this analysis. Actual absorption rates, prices, and sellout timelines may differ
+    from those projected. This report does not constitute a guarantee of any specific outcome.
+  </div></div>
+  {{/if}}
+
+  <!-- Signature block -->
+  <div class="sig-block">
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Analyst Signature</div>
+    </div>
+    <div>
+      <div style="font-size:7.5pt; font-weight:bold; margin-bottom:2px;">{{completedByName}}</div>
+      {{#if completedByFirmName}}<div style="font-size:7pt; color:#333;">{{completedByFirmName}}</div>{{/if}}
+      <div style="font-size:7pt; color:#555;">Completed: {{completedAt}}</div>
+    </div>
+  </div>
+
+</div><!-- /page 2 -->
+
+</body>
+</html>
